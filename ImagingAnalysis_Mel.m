@@ -3,7 +3,7 @@ imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frame
 pause_time  = 0.05;                         %pause this many seconds between each frame
 
 figure(1); clf                              %clear the current figure
-h           = imagesc(imgData(:,:,i));      %initialize an image object where we will update the color values in each frame 
+h           = imagesc(imgData(:,:,1));      %initialize an image object where we will update the color values in each frame 
 axis equal tight                            %make all pixels square, and keep axis tight for clean look
 colormap(bone)                              %set to favorite colormap. I like black and white
 
@@ -21,10 +21,11 @@ mask = roipoly;             %this create a black and white mask (logical) of the
 
 %% extract midline axis, and subsample for centroid locations
 n_centroid = 9;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
+smooth_factor = 50;
 mid  = bwmorph(mask,'thin',inf);                %thin the mask into a single midline. this is done by thinning infinite times, until mask cannot be thinned any more
 [y,x] = find(mid);                              %find the cartesian coordinates of the midline
-x = smooth(x,15);                               %smooth the coordinates of the midnight. this is set empirically to 15, CHECK THIS. Basically, it makes the midnight monotonic, and not jagged.
-y = smooth(y,15);
+x = smooth(x,smooth_factor);                    %smooth the coordinates of the midnight. this is set empirically to 15, CHECK THIS. Basically, it makes the midnight monotonic, and not jagged.
+y = smooth(y,smooth_factor);
 idx = round(linspace(1,length(y),n_centroid*2));  %linearly subsample the midline into the desired number of centroids.
 centroids = [y(idx),x(idx)];
 cmap = repmat(cbrewer2('set1',n_centroid),2,1);   %set a colormap to plot each centroid in a different color, and which repeats per hemisphere
@@ -60,11 +61,14 @@ muL = nan(size(avg_intensity,2),1);                         %initialize vectors 
 muR = nan(size(avg_intensity,2),1);                         %mu is thetahat
 kappaL = nan(size(avg_intensity,2),1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
 kappaR = nan(size(avg_intensity,2),1);
-
+ampL   = nan(size(avg_intensity,2),1);
+ampR   = nan(size(avg_intensity,2),1);
 
 for i = 1:size(avg_intensity,2)                                                             %for each frame
-    [muL(i), kappaL(i)] = circ_vmpar(alpha,avg_intensity(1:(n_centroid),i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
-    [muR(i), kappaR(i)] = circ_vmpar(alpha,avg_intensity((1:(n_centroid)) + n_centroid,i)); %do this for each hemisphere separately.
+    [muL(i), kappaL(i)] = circ_vmpar(alpha,avg_intensity(1:n_centroid,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
+    [muR(i), kappaR(i)] = circ_vmpar(alpha,avg_intensity((1:n_centroid) + n_centroid,i)); %do this for each hemisphere separately.
+    ampL(i)             = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muL(i),kappaL(i)) - avg_intensity(1:n_centroid,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    ampR(i)             = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muR(i),kappaL(i)) - avg_intensity((1:n_centroid) + n_centroid,i)).^2),1);
     if muL(i) < 0                                                                           %circ_stats does things from -pi:pi, but for convenience I will keep everything 0:2pi
         muL(i) = muL(i) + 2*pi;
     end
@@ -74,7 +78,7 @@ for i = 1:size(avg_intensity,2)                                                 
 end
 
 %% plot!
-pause_time = 0.05;                                                       %set the pause time
+pause_time = 0.2;                                                       %set the pause time
 
 figure(1); clf
 subplot(2,1,1)
@@ -102,9 +106,11 @@ for i = 1:size(avg_intensity,2)                                         %at each
     p(1).XData = muL(i);                                                %the mean of the left distribution
     p(1).XNegativeDelta = 1 - kappaL(i);                                %the spread of the left distribution
     p(1).XPositiveDelta = 1 - kappaL(i);
+    p(1).YNegativeDelta = ampL(i) / max(ampL);
     p(2).XData = muR(i) + 2*pi;                                         %same for right, just plotted +2pi
     p(2).XNegativeDelta = 1 - kappaR(i);
     p(2).XPositiveDelta = 1 - kappaR(i);
+    p(2).YNegativeDelta = ampR(i) / max(ampR);
     
     pause(pause_time)
 end
