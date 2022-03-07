@@ -24,7 +24,7 @@ end
 
 %% Play the movie
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
-pause_time  = 0.05;                         %pause this many seconds between each frame
+pause_time  = 0;                         %pause this many seconds between each frame
 
 figure(1); clf                              %clear the current figure
 h           = imagesc(imgData(:,:,1));      %initialize an image object where we will update the color values in each frame 
@@ -44,23 +44,29 @@ axis equal tight
 mask = roipoly;             %this create a black and white mask (logical) of the PB
 figure(2)
 imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
-%% extract midline axis, and subsample for centroid locations
-n_centroid = 9;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
-mid   = bwmorph(mask,'thin',inf);               %find the cartesian coordinates of the midline
-[y,x] = find(mid);
+
+%% extract midline axis, and subsample for centroid locations (using graph search)
+n_centroid = 40;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
+[x,y] = find(mask);
+mid   = bwskel(mask,'MinBranchLength',min(range(x),range(y)));  %find the midline as the skeleton, shaving out all sub branches
+[y,x] = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
 ep    = bwmorph(mid,'endpoints');               %find the endpoints of the midline
 [y0,x0] = find(ep,1);
+figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
+hold on; scatter(x0,y0,'b','filled')
 
-r_com = sum([x,y]) / numel(x);                  %now find the center of mass of all the points, and sort by the angle to center of mass to order them appropriately
-[~,I] = sort(atan2(y-r_com(2), x-r_com(1)),'descend');
-x = x(I);
-y = y(I);
-k = find(x==x0 & y==y0);                        %point are sorted in order, but we want to start at the end points
-x = circshift(x,-(k-1),1);                       %so find how far offset the starting point is in the array, and circshift it backwards.
-y = circshift(y,-(k-1),1);
+I = knnsearch([x,y],[x,y],'k',3);   %find the 3 nearest neighbors to each point in the midline (including self)
+G = graph;                          %initialize a graph object
+s = 1:size(x);                      %set starting nodes as the index to each point
+G = addedge(G,s,I(:,2));            %add an edge connecting each point to its nearest neighbor
+G = addedge(G,s,I(:,3));            %add an edge connecting each points to its second nearest neighbor
+k = find(x==x0 & y==y0);            %find the index of our starting point
+v = bfsearch(G,k);                  %discover all points in the graph, starting at our starting point. return the index of discover (such that you traverse the shortest path)
+x = x(v);                           %reorder the coordinates in order of discovery
+y = y(v);
 
-idx = round(linspace(1,length(y),n_centroid*2));  %linearly subsample the midline into the desired number of centroids.
-centroids = [y(idx),x(idx)];
+xq = linspace(1,length(y),n_centroid*2)';           %set query points for interpolation
+centroids = [interp1(1:length(y),y,xq),interp1(1:length(x),x,xq)]; %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
 cmap = repmat(cbrewer2('set1',n_centroid),2,1);   %set a colormap to plot each centroid in a different color, and which repeats per hemisphere
 
 figure(1); clf
@@ -70,8 +76,6 @@ hold on
 plot(x,y,'w')                                   %plot the midline in white
 scatter(centroids(:,2),centroids(:,1),[],cmap,'filled') %show the centroids in each of their colors
 axis equal tight
-figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
-hold on; scatter(r_com(1),r_com(2),'r','filled'); scatter(x0,y0,'b','filled')
 
 %% assign each pixel to a centroid
 [y_coor,x_coor] = find(mask);                   %find coordinates of every pixel in the mask
@@ -100,6 +104,7 @@ imagesc(subplot(2,2,2),imgData_2d)
 xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
 imagesc(subplot(2,1,2),avg_intensity)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
+
 %% Estimate von mises parameters
 alpha = linspace(0,2*pi,n_centroid);                        %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
 muL = nan(size(avg_intensity,2),1);                         %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
@@ -131,9 +136,10 @@ pause_time = 0;                                                           %set t
 figure(1); clf
 subplot(2,2,3)
 hold on
+clear h v p
 h(1) = plot([alpha,alpha+2*pi],nan(2*n_centroid,1),'k.-');                    %initialize a plot to show the average activity at each centroid over time
-v(1) = plot(alpha,nan(n_centroid,1),'Color',c1);
-v(2) = plot(alpha + 2*pi, nan(n_centroid,1),'Color',c2);
+v(1)= plot(alpha,nan(n_centroid,1),'Color',c1);
+v(2)= plot(alpha + 2*pi, nan(n_centroid,1),'Color',c2);
 pos = get(gca,'Position');
 legend('Activity','Left PB fit','Right PB fit','autoupdate','off','Location','northoutside')
 set(gca,'Position',pos, 'YLim',[min(avg_intensity,[],'all'),max(avg_intensity,[],'all')],...
