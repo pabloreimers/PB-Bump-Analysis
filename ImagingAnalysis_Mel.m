@@ -46,7 +46,7 @@ figure(2)
 imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
 
 %% extract midline axis, and subsample for centroid locations (using graph search)
-n_centroid = 40;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
+n_centroid = 20;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 [x,y] = find(mask);
 mid   = bwskel(mask,'MinBranchLength',min(range(x),range(y)));  %find the midline as the skeleton, shaving out all sub branches
 [y,x] = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
@@ -106,49 +106,59 @@ imagesc(subplot(2,1,2),avg_intensity)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 
 %% Estimate von mises parameters
-alpha = linspace(0,2*pi,n_centroid);                        %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
-muL = nan(size(avg_intensity,2),1);                         %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
-muR = nan(size(avg_intensity,2),1);                         %mu is thetahat
-kappaL = nan(size(avg_intensity,2),1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
-kappaR = nan(size(avg_intensity,2),1);
-ampL   = nan(size(avg_intensity,2),1);
-ampR   = nan(size(avg_intensity,2),1);
+n_frames = size(avg_intensity,2);
+alpha = linspace(-pi,pi,n_centroid);                        %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+muL = nan(n_frames,1);                         %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
+muR = nan(n_frames,1);                         %mu is thetahat
+kappaL = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
+kappaR = nan(n_frames,1);
+ampL   = nan(n_frames,1);
+ampR   = nan(n_frames,1);
+r2L    = nan(n_frames,1);
+r2R    = nan(n_frames,1);
 
 for i = 1:size(avg_intensity,2)                                                             %for each frame
     [muL(i), kappaL(i)] = circ_vmpar(alpha,avg_intensity(1:n_centroid,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
     [muR(i), kappaR(i)] = circ_vmpar(alpha,avg_intensity((1:n_centroid) + n_centroid,i)); %do this for each hemisphere separately.
-    ampL(i)             = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muL(i),kappaL(i)) - avg_intensity(1:n_centroid,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
-    ampR(i)             = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muR(i),kappaL(i)) - avg_intensity((1:n_centroid) + n_centroid,i)).^2),1);
-    if muL(i) < 0                                                                           %circ_stats does things from -pi:pi, but for convenience I will keep everything 0:2pi
-        muL(i) = muL(i) + 2*pi;
+    if any(isnan(circ_vmpdf(alpha,muL(i),kappaL(i)))) || any(isnan(circ_vmpdf(alpha,muR(i),kappaR(i))))
+        muL(i) = nan;
+        muR(i) = nan;
+        kappaL(i) = nan;
+        kappaR(i) = nan;
+        continue
     end
-    if muR(i) < 0
-        muR(i) = muR(i) + 2*pi;
-    end
+    [ampL(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muL(i),kappaL(i)) - avg_intensity(1:n_centroid,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    sst                 = sum( (ampL(i)*circ_vmpdf(alpha,muL(i),kappaL(i)) - mean(avg_intensity(1:n_centroid,i)) ).^2);
+    r2L(i)              = 1 - ssr/sst;
+    [ampR(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muR(i),kappaR(i)) - avg_intensity((1:n_centroid) + n_centroid,i)).^2),1);
+    sst                 = sum( (ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i)) - mean(avg_intensity((1:n_centroid)+n_centroid,i)) ).^2);
+    r2R(i)              = 1 - ssr/sst;
 end
 
-%% plot!
+%% plot! movie
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
 c2 = [0,0.5,1];
 n_frames = size(avg_intensity,2);
+n_ticks  = 4;
 pause_time = 0;                                                           %set the pause time
 
 figure(1); clf
 subplot(2,2,3)
 hold on
 clear h v p
-h(1) = plot([alpha,alpha+2*pi],nan(2*n_centroid,1),'k.-');                    %initialize a plot to show the average activity at each centroid over time
-v(1)= plot(alpha,nan(n_centroid,1),'Color',c1);
-v(2)= plot(alpha + 2*pi, nan(n_centroid,1),'Color',c2);
+h(1) = plot(1:(2*n_centroid),nan(2*n_centroid,1),'k.-');                    %initialize a plot to show the average activity at each centroid over time
+v(1)= plot(1:n_centroid,nan(n_centroid,1),'Color',c1);
+v(2)= plot((1:n_centroid) + n_centroid, nan(n_centroid,1),'Color',c2);
 pos = get(gca,'Position');
 legend('Activity','Left PB fit','Right PB fit','autoupdate','off','Location','northoutside')
+tick_vec  = 1:2*n_centroid;
+label_vec = [alpha,alpha];
+idx       = linspace(0,2*n_centroid,n_ticks+1);
+idx(1)    = [];
 set(gca,'Position',pos, 'YLim',[min(avg_intensity,[],'all'),max(avg_intensity,[],'all')],...
-    'XLim',[0,4*pi],'XTick',[alpha,2*pi+alpha(2:end)],'XTickLabels',[alpha,alpha(2:end)]/pi)
+    'XLim',[0,2*n_centroid],'XTick',tick_vec(idx),'XTickLabels',label_vec(idx)/pi)
 xlabel('Cluster (\pi)')
 ylabel('Activity (a.u.)')
-
-p(1) = errorbar(nan,max(avg_intensity,[],'all'),nan,'horizontal','Color',c1);      %initialize bump parameters on this, shown as little error bars with mu and sigma (1-kappa)
-p(2) = errorbar(nan,max(avg_intensity,[],'all'),nan,'horizontal','Color',c2);
 
 subplot(2,2,1)                                                                      %initialize another plot to show the movie as the extracted data plays
 h(2) = imagesc(imgData(:,:,i));
@@ -169,19 +179,12 @@ for i = 1:size(bump_params,1)                                                   
     bp_h{i,2} = plot(subplot(3,2,2*i),1:n_frames,nan(n_frames,1),'Color',c2);
 end
 xlabel('frame')
-set(subplot(3,2,4),'YTick',[0,pi,2*pi],'YTickLabels',{'0','\pi','2\pi'},'YLim',[0,2*pi])
+set(subplot(3,2,4),'YTick',[-pi,0,pi],'YTickLabels',{'-\pi','0','\pi'},'YLim',[-pi,pi])
 title(subplot(3,2,2),'Bump Parameters')
 
-for i = 1:n_frames                                       %at each frame, update:
+for i = 500:n_frames                                       %at each frame, update:
     h(1).YData = avg_intensity(:,i);                                    %the average intensity per centroids
     h(2).CData = imgData(:,:,i);                                        %the displayed image from the movie
- 
-    p(1).XData = muL(i);                                                %the mean of the left distribution
-    p(1).XNegativeDelta = 1 - kappaL(i);                                %the spread of the left distribution
-    p(1).XPositiveDelta = 1 - kappaL(i);
-    p(2).XData = muR(i) + 2*pi;                                         %same for right, just plotted +2pi
-    p(2).XNegativeDelta = 1 - kappaR(i);
-    p(2).XPositiveDelta = 1 - kappaR(i);
 
     v(1).YData = ampL(i)*circ_vmpdf(alpha,muL(i),kappaL(i));            %generate the fit von mises distribution, over the range of thetas, where it is centered at this time point, and how concentrated. scale it, too
     v(2).YData = ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i));
@@ -202,3 +205,62 @@ for i = 1:n_frames                                       %at each frame, update:
 
     pause(pause_time)
 end
+
+%% plot fictract parameters
+% if nanmedian(r2L) < 0
+%     ampL = mean(avg_intensity(1:n_centroid,:),1);
+%     muL  = zeros(size(muL));
+% end
+% if nanmedian(r2R) < 0
+%     ampR = mean(avg_intensity((1:n_centroid)+n_centroid,:),1);
+%     muR  = zeros(size(muR));
+% end
+%smooth_window = 5e-3; %smoothing window, in seconds
+total_t = max(ftData.frameTimes{1});
+b_smooth = 1; %(n_frames / total_t) * 5e-3;
+f_smooth = 20; %(length(ftData.frameTimes{1}) / total_t) * 100e-3;
+figure(3); clf
+h(1) = subplot(3,1,1);
+tmp = smoothdata(ftData.intHD{1},1,'movmean',f_smooth);
+tmp(tmp>pi) = tmp(tmp>pi) - 2*pi;
+idx = abs(diff(tmp)) > pi;
+tmp(idx) = nan;
+plot(ftData.frameTimes{1},tmp,'k')
+ylabel('heading')
+yticks([-pi,0,pi])
+yticklabels({'-\pi',0,'\pi'})
+ylim([-pi,pi])
+yyaxis right
+plot(linspace(0,total_t,n_frames),smoothdata(muL,1,'movmean',b_smooth),'-','Color',c1)
+hold on
+plot(linspace(0,total_t,n_frames),smoothdata(muR,1,'movmean',b_smooth),'-','Color',c2)
+ylabel('Position')
+yticks([])
+
+h(2) = subplot(3,1,2);
+plot(ftData.frameTimes{1},smoothdata(abs(ftData.yawSpeed{1}),1,'movmean',f_smooth),'k')
+ylabel('Rotational speed')
+yyaxis right
+plot(linspace(0,total_t,n_frames),smoothdata(ampL,1,'movmean',b_smooth),'-','Color',c1)
+hold on
+plot(linspace(0,total_t,n_frames),smoothdata(ampR,1,'movmean',b_smooth),'-','Color',c2)
+ylabel('Amplitude')
+
+h(3) = subplot(3,1,3);
+plot(ftData.frameTimes{1},smoothdata(ftData.fwSpeed{1},1,'movmean',f_smooth),'k')
+ylabel('Forward speed')
+yyaxis right
+plot(linspace(0,total_t,n_frames),smoothdata(ampL,1,'movmean',b_smooth),'-','Color',c1)
+hold on
+plot(linspace(0,total_t,n_frames),smoothdata(ampR,1,'movmean',b_smooth),'-','Color',c2)
+ylabel('Amplitude')
+xlabel('time (s)')
+yyaxis left
+y = ylim;
+text(total_t,y(2),sprintf('bump smooth: %.2fs \nfictrac smooth: %.2fs',...
+     b_smooth*(total_t/n_frames),f_smooth*(total_t/length(ftData.frameTimes{1}))),...
+     'VerticalAlignment','top','HorizontalAlignment','right')
+ ylim(y)
+
+linkaxes(h,'x')
+xlim([0,total_t])
