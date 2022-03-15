@@ -140,7 +140,7 @@ c1 = [1,0.5,0];                                                             %def
 c2 = [0,0.5,1];
 n_frames = size(avg_intensity,2);
 n_ticks  = 4;
-pause_time = 0;                                                           %set the pause time
+pause_time = .5;                                                           %set the pause time
 
 figure(1); clf
 subplot(2,2,3)
@@ -162,6 +162,10 @@ ylabel('Activity (a.u.)')
 
 subplot(2,2,1)                                                                      %initialize another plot to show the movie as the extracted data plays
 h(2) = imagesc(imgData(:,:,i));
+hold on
+[y,x] = find(bwmorph(mask,'remove'));
+[y,x] = graph_sort(y,x);
+plot(x,y,'w')
 axis equal tight
 colormap(bone)
 xticks([])
@@ -182,7 +186,7 @@ xlabel('frame')
 set(subplot(3,2,4),'YTick',[-pi,0,pi],'YTickLabels',{'-\pi','0','\pi'},'YLim',[-pi,pi])
 title(subplot(3,2,2),'Bump Parameters')
 
-for i = 500:n_frames                                       %at each frame, update:
+for i = 1:n_frames                                       %at each frame, update:
     h(1).YData = avg_intensity(:,i);                                    %the average intensity per centroids
     h(2).CData = imgData(:,:,i);                                        %the displayed image from the movie
 

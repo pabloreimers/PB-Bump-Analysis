@@ -114,7 +114,8 @@ kappaL = nan(n_frames,1);                      %kappa is a measure of concentrat
 kappaR = nan(n_frames,1);
 ampL   = nan(n_frames,1);
 ampR   = nan(n_frames,1);
-r2L    = nan(n_frames
+r2L    = nan(n_frames,1);
+r2R    = nan(n_frames,1);
 
 for i = 1:size(avg_intensity,2)                                                             %for each frame
     [muL(i), kappaL(i)] = circ_vmpar(alpha,avg_intensity(1:n_centroid,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
@@ -131,7 +132,7 @@ for i = 1:size(avg_intensity,2)                                                 
     r2L(i)              = 1 - ssr/sst;
     [ampR(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muR(i),kappaR(i)) - avg_intensity((1:n_centroid) + n_centroid,i)).^2),1);
     sst                 = sum( (ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i)) - mean(avg_intensity((1:n_centroid)+n_centroid,i)) ).^2);
-    r2L(i)              = 1 - ssr/sst;
+    r2R(i)              = 1 - ssr/sst;
 end
 
 %% plot! movie
@@ -139,7 +140,7 @@ c1 = [1,0.5,0];                                                             %def
 c2 = [0,0.5,1];
 n_frames = size(avg_intensity,2);
 n_ticks  = 4;
-pause_time = 0.05;                                                           %set the pause time
+pause_time = .5;                                                           %set the pause time
 
 figure(1); clf
 subplot(2,2,3)
@@ -161,6 +162,9 @@ ylabel('Activity (a.u.)')
 
 subplot(2,2,1)                                                                      %initialize another plot to show the movie as the extracted data plays
 h(2) = imagesc(imgData(:,:,i));
+hold on
+[y,x] = find(bwmorph(mask,'remove')));
+scatter(x,y,'filled','w','MarkerFaceAlpha',0.01)
 axis equal tight
 colormap(bone)
 xticks([])
@@ -206,10 +210,18 @@ for i = 1:n_frames                                       %at each frame, update:
 end
 
 %% plot fictract parameters
+% if nanmedian(r2L) < 0
+%     ampL = mean(avg_intensity(1:n_centroid,:),1);
+%     muL  = zeros(size(muL));
+% end
+% if nanmedian(r2R) < 0
+%     ampR = mean(avg_intensity((1:n_centroid)+n_centroid,:),1);
+%     muR  = zeros(size(muR));
+% end
 %smooth_window = 5e-3; %smoothing window, in seconds
 total_t = max(ftData.frameTimes{1});
 b_smooth = 1; %(n_frames / total_t) * 5e-3;
-f_smooth = 50; %(length(ftData.frameTimes{1}) / total_t) * 100e-3;
+f_smooth = 20; %(length(ftData.frameTimes{1}) / total_t) * 100e-3;
 figure(3); clf
 h(1) = subplot(3,1,1);
 tmp = smoothdata(ftData.intHD{1},1,'movmean',f_smooth);
@@ -229,7 +241,7 @@ ylabel('Position')
 yticks([])
 
 h(2) = subplot(3,1,2);
-plot(ftData.frameTimes{1},smoothdata(abs(ftData.yawSpeed{1}),f_smooth),'k')
+plot(ftData.frameTimes{1},smoothdata(abs(ftData.yawSpeed{1}),1,'movmean',f_smooth),'k')
 ylabel('Rotational speed')
 yyaxis right
 plot(linspace(0,total_t,n_frames),smoothdata(ampL,1,'movmean',b_smooth),'-','Color',c1)
@@ -251,6 +263,7 @@ y = ylim;
 text(total_t,y(2),sprintf('bump smooth: %.2fs \nfictrac smooth: %.2fs',...
      b_smooth*(total_t/n_frames),f_smooth*(total_t/length(ftData.frameTimes{1}))),...
      'VerticalAlignment','top','HorizontalAlignment','right')
+ ylim(y)
 
 linkaxes(h,'x')
 xlim([0,total_t])
