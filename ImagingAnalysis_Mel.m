@@ -2,8 +2,8 @@
 clear all
 close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
-pause_time          = .05;                                                           %set the pause time if playing movies
-data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\';
+pause_time          = 0;                                                    %set the pause time if playing movies
+data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
 f0_pct              = 10;                                                   %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
@@ -75,7 +75,7 @@ ep              = bwmorph(mid,'endpoints');                               %find 
 figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
 hold on; scatter(x0,y0,'b','filled')
 
-[x_mid,y_mid]   = graph_sort(x_mid,y_mid,x0,y0);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
+[x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
 
 xq          = linspace(1,length(y_mid),n_centroid*2)';                           %set query points for interpolation (the number of centroids we want)
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)

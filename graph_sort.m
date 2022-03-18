@@ -1,8 +1,5 @@
-function [x,y] = graph_sort(x,y,x0,y0)
-if nargin < 3
-    x0 = x(1);
-    y0 = y(1);
-end
+function [x,y] = graph_sort(x,y)
+
 G = graph(pdist2([x,y],[x,y],'Chebychev') == 1);    %create a graph that connects adjacent points in an image. chebychev distance is chess move distance, aka touching pixels
 H = rmedge(G,find(all(ismember(G.Edges.EndNodes,find(degree(G) > 2)),2))); %if a pixel is connected to more than 2 pixels, remove the unnecessary edge
 
