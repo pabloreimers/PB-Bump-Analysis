@@ -112,7 +112,7 @@ end
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-figure(5); clf
+figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
 imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
@@ -156,7 +156,7 @@ c2 = [0,0.5,1];
 n_frames = size(dff_cluster,2);
 n_ticks  = 4;
 
-figure(6); clf
+figure(4); clf
 subplot(2,2,3)
 hold on
 clear h v p
@@ -265,7 +265,7 @@ ampR    = smoothdata(ampR,1,'gaussian',b_smooth);
 kappaL  = smoothdata(kappaL,1,'gaussian',b_smooth);
 kappaR  = smoothdata(kappaR,1,'gaussian',b_smooth);
 
-figure(3); clf
+figure(5); clf
 
 h(1) = subplot(3,1,1);
 tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan;
@@ -329,7 +329,7 @@ amp(isnan(amp)) = 0;
 [r_fit,r_gof]   = fit(r_speed_lag,amp,'poly1');
 [m_fit,m_gof]   = fit([r_speed_lag,f_speed_lag],amp,'poly11');
 
-figure(4);clf
+figure(6);clf
 subplot(2,1,1)
 plot(xb,f_speed,'k'); ylabel('Abs Forward Speed (mm/s)')
 yyaxis right; plot(xb, amp,'Color',c1); ylabel('Average dF/F'); ax = gca; ax.YAxis(2).Color = c1;
