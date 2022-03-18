@@ -1,9 +1,17 @@
-movie_flag          = false;
-
-%% clear all variables and graphs and ask user for data
-clearvars -except movie_flag
+%% reset the workspace and set script parameters
+clear all
 close all
+movie_flag          = false;                                                %set whether to play movies or just run straight through the script
+pause_time          = .05;                                                           %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\';
+f0_pct              = 10;                                                   %set the percentile that for the baseline fluorescence
+n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
+b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
+f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
+n_smooth            = 10;                                                   %set how many times to perform gaussian smoothing on fictrac
+max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
+
+%% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
 
@@ -35,13 +43,13 @@ end
 
 %% Make compress in z, and scale between 0 and 256
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
-imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all'));
+imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
 
 %% Play the movie
 pause_time  = 0;                         %pause this many seconds between each frame
 
 figure(1); clf                              %clear the current figure
-h           = image(imgData(:,:,1));      %initialize an image object where we will update the color values in each frame 
+h           = image(imgData(:,:,1));        %initialize an image object where we will update the color values in each frame 
 axis equal tight                            %make all pixels square, and keep axis tight for clean look
 colormap(bone)                              %set to favorite colormap. I like black and white
 
@@ -53,83 +61,81 @@ end
 end
 
 %% plot the pb and draw bounding box over the whole thing
-figure(1); clf              % clear the current figure
-mask = roipoly(uint8(max(imgData,[],3)));             %this create a black and white mask (logical) of the PB
+figure(1); clf                                          % clear the current figure
+mask = roipoly(uint8(max(imgData,[],3)));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
 figure(2)
 imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
 
 %% extract midline axis, and subsample for centroid locations (using graph search)
-n_centroid = 20;                                 %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
-[x,y] = find(mask);
-mid   = bwskel(mask,'MinBranchLength',min(range(x),range(y)));  %find the midline as the skeleton, shaving out all sub branches
-[y,x] = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
-ep    = bwmorph(mid,'endpoints');               %find the endpoints of the midline
-[y0,x0] = find(ep,1);
+[y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
+mid             = bwskel(mask,'MinBranchLength',min(range(x_mask),range(y_mask)));  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+[y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
+ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
+[y0,x0]         = find(ep,1);
 figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
 hold on; scatter(x0,y0,'b','filled')
 
-[x,y] = graph_sort(x,y,x0,y0);
+[x_mid,y_mid]   = graph_sort(x_mid,y_mid,x0,y0);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
 
-xq = linspace(1,length(y),n_centroid*2)';           %set query points for interpolation
-centroids = [interp1(1:length(y),y,xq),interp1(1:length(x),x,xq)]; %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
-cmap = repmat(cbrewer2('set1',n_centroid),2,1);   %set a colormap to plot each centroid in a different color, and which repeats per hemisphere
+xq          = linspace(1,length(y_mid),n_centroid*2)';                           %set query points for interpolation (the number of centroids we want)
+centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
+cmap        = repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
 
 figure(1); clf
-imagesc(max(imgData,[],3))                      %plot the image again with max intensity over time to show the whole pb
+imagesc(max(imgData,[],3))                                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
-plot(x,y,'w')                                   %plot the midline in white
-scatter(centroids(:,2),centroids(:,1),[],cmap,'filled') %show the centroids in each of their colors
+plot(x_mid,y_mid,'w')                                                   %plot the midline in white
+scatter(centroids(:,2),centroids(:,1),[],cmap,'filled')         %show the centroids in each of their colors
 axis equal tight
 
 %% assign each pixel to a centroid
-[y_coor,x_coor] = find(mask);                   %find coordinates of every pixel in the mask
-[dists,idx] = pdist2(centroids,[y_coor,x_coor],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask
+[~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 figure(1); clf
 imagesc(max(imgData,[],3))                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 for i = 1:2*n_centroid                          %overlay each pixel in its indexed color onto the pb image. 
-    scatter(x_coor(idx == i),y_coor(idx == i),'filled','MarkerFaceColor',cmap(i,:),'MarkerFaceAlpha',0.2)
+    scatter(x_mask(idx == i),y_mask(idx == i),'filled','MarkerFaceColor',cmap(i,:),'MarkerFaceAlpha',0.2)
 end
+plot(x_mid,y_mid,'w')                                                   %plot the midline in white
+scatter(centroids(:,2),centroids(:,1),[],cmap,'filled')         %show the centroids in each of their colors
 axis equal tight
 
 %% Find the mean activity in each group over time
-f0_pct = 10;
-
-imgData_2d = reshape(imgData,[],size(imgData,3));               %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
-centroid_log = false(2*n_centroid,size(imgData_2d,1));          %initialize a logical matrix that is of dimensions Centroids  x AllPixels
-for i = 1:2*n_centroid                                          %For each centroid, define which pixels are contained in that centroid
-    centroid_log(i, sub2ind(size(imgData),y_coor(idx==i),x_coor(idx ==i))) = true;
+imgData_2d      = reshape(imgData,[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
+centroid_log    = false(2*n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
+for i = 1:2*n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
+    centroid_log(i, sub2ind(size(imgData),y_mask(idx==i),x_mask(idx ==i))) = true;
 end
 
-f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2); %the summed activity in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
-f0              = prctile(f_cluster,f0_pct,2);
-dff_cluster     = (f_cluster - f0) ./ f0;
-figure(1); clf
-imagesc(subplot(2,2,1),centroid_log)
+f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
+f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
+dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
+figure(5); clf
+imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
-imagesc(subplot(2,2,2),imgData_2d)
+imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
 xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
-imagesc(subplot(2,1,2),dff_cluster)
+imagesc(subplot(2,1,2),dff_cluster); colormap('bone')
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 
 %% Estimate von mises parameters
-n_frames = size(dff_cluster,2);
-alpha = linspace(-pi,pi,n_centroid);                        %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
-muL = nan(n_frames,1);                         %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
-muR = nan(n_frames,1);                         %mu is thetahat
-kappaL = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
-kappaR = nan(n_frames,1);
-ampL   = nan(n_frames,1);
-ampR   = nan(n_frames,1);
-r2L    = nan(n_frames,1);
-r2R    = nan(n_frames,1);
+n_frames    = size(dff_cluster,2);
+alpha       = linspace(-pi,pi,n_centroid);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+muL         = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
+muR         = nan(n_frames,1);                      %mu is thetahat
+kappaL      = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
+kappaR      = nan(n_frames,1);
+ampL        = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
+ampR        = nan(n_frames,1);
+r2L         = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
+r2R         = nan(n_frames,1);
 
-for i = 1:n_frames                                                                          %for each frame
+for i = 1:n_frames                                                                      %for each frame
     [muL(i), kappaL(i)] = circ_vmpar(alpha,dff_cluster(1:n_centroid,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
     [muR(i), kappaR(i)] = circ_vmpar(alpha,dff_cluster((1:n_centroid) + n_centroid,i)); %do this for each hemisphere separately.
-    if any(isnan(circ_vmpdf(alpha,muL(i),kappaL(i)))) || any(isnan(circ_vmpdf(alpha,muR(i),kappaR(i))))
+    if any(isnan(circ_vmpdf(alpha,muL(i),kappaL(i)))) || any(isnan(circ_vmpdf(alpha,muR(i),kappaR(i)))) %if the distribution returns nans (calculated something too sharp, e.g.)
         muL(i) = nan;
         muR(i) = nan;
         kappaL(i) = nan;
@@ -137,22 +143,20 @@ for i = 1:n_frames                                                              
         continue
     end
     [ampL(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muL(i),kappaL(i)) - dff_cluster(1:n_centroid,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
-    sst                 = sum( (ampL(i)*circ_vmpdf(alpha,muL(i),kappaL(i)) - mean(dff_cluster(1:n_centroid,i)) ).^2);
-    r2L(i)              = 1 - ssr/sst;
+    sst                 = sum( (ampL(i)*circ_vmpdf(alpha,muL(i),kappaL(i)) - mean(dff_cluster(1:n_centroid,i)) ).^2);        %find the squared error with the mean
+    r2L(i)              = 1 - ssr/sst;                                                                                       %calculate r2 (which is 1- ratio of our fit/baseline fit).
     [ampR(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,muR(i),kappaR(i)) - dff_cluster((1:n_centroid) + n_centroid,i)).^2),1);
     sst                 = sum( (ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i)) - mean(dff_cluster((1:n_centroid)+n_centroid,i)) ).^2);
     r2R(i)              = 1 - ssr/sst;
 end
 
 %% plot! movie
-b_smooth = 10;                                                              %define how many frames to smooth the bump parameters, gaussian filter
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
 c2 = [0,0.5,1];
 n_frames = size(dff_cluster,2);
 n_ticks  = 4;
-pause_time = .05;                                                           %set the pause time
 
-figure(1); clf
+figure(6); clf
 subplot(2,2,3)
 hold on
 clear h v p
@@ -174,7 +178,7 @@ subplot(2,2,1)                                                                  
 h(2) = image(imgData(:,:,i));
 title('raw F')
 hold on
-[y,x] = find(bwmorph(mask,'remove'));
+[y,x] = find(bwmorph(mask,'remove'));                                               %overlay the outline of our mask
 [y,x] = graph_sort(y,x);
 plot(x,y,':','Color',[0.75,0.75,0.75])
 axis equal tight
@@ -182,9 +186,8 @@ colormap(bone)
 xticks([])
 yticks([])
 
-
-bump_params = {ampL,ampR;muL,muR;kappaL,kappaR};                                    %store all of the bump statistics in a cell array for easy repetitive access in a loop
-bump_params = cellfun(@(x)(smoothdata(x,1,'gaussian',b_smooth)),bump_params,'UniformOutput',false);
+bump_params = {ampL,ampR;muL,muR;kappaL,kappaR};                                                    %store all of the bump statistics in a cell array for easy repetitive access in a loop
+bump_params = cellfun(@(x)(smoothdata(x,1,'gaussian',b_smooth)),bump_params,'UniformOutput',false); %smooth all of the bump parameters.
 bp_names    = {'Amplitude','Position (\mu)','Concentration (\kappa)'};
 bp_h        = cell(3,2);
 
@@ -219,34 +222,30 @@ for i = 1:n_frames                                       %at each frame, update:
         bp_h{2,2}.YData(i) = nan;
     end
     end
-
+    
     pause(pause_time)
 end
 
 %% load fictrac data
-[filename,filepath] = uigetfile(filepath);
-load([filepath,'\',filename])
+[filename2,filepath2] = uigetfile(filepath);
+load([filepath2,'\',filename2])
 
 %% Process fictrac data
-b_smooth = 10;  %set how many frames to smooth for the pb (image)
-f_smooth = 50;  %set how many frames to smooth for fictrac
-n_smooth = 10;  %set how many times to perform gaussian smoothing on fictrac
-max_lag  = 1e3; %max lag to maximize cross correlation, in seconds
-
 f_speed = ftData.fwSpeed{:};                            %store each speed
 r_speed = ftData.yawSpeed{:};
 intHD   = ftData.intHD{:};
-f_speed = abs(f_speed);
-r_speed = abs(r_speed);
-intHD   = unwrap(intHD);                                %unwrap to perform circular smoothing. keps radians continuous
 
-for i = 1:n_smooth                                      %smooth each speed a number of times with a gaussian filter
+f_speed = abs(f_speed);                                 %turn each velocity into a speed
+r_speed = abs(r_speed);
+intHD   = unwrap(intHD);                                %unwrap heading to perform circular smoothing. keeps radians continuous, so that smoothing 0 and 2pi doesnt go to 1pi
+
+for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 f_speed = smoothdata(f_speed,1,'gaussian',f_smooth); 
 r_speed = smoothdata(r_speed,1,'gaussian',f_smooth);
 intHD   = smoothdata(intHD, 1, 'gaussian',f_smooth);
 end
 
-intHD = mod(intHD,2*pi);                                %rewrap, and put between -pi and pi.
+intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
 total_t = max(ftData.frameTimes{:});                    %find how long the trial was
 
@@ -259,7 +258,7 @@ r_speed = interp1(xf,r_speed,xb);
 intHD   = interp1(xf,intHD,xb);
 
 %% Plot bump params over fictrac data
-muL     = smoothdata(muL,1,'gaussian',b_smooth);
+muL     = smoothdata(muL,1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
 muR     = smoothdata(muR,1,'gaussian',b_smooth);
 ampL    = smoothdata(ampL,1,'gaussian',b_smooth);
 ampR    = smoothdata(ampR,1,'gaussian',b_smooth);
