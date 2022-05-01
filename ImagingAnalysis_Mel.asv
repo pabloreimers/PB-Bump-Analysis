@@ -2,14 +2,15 @@
 clear all
 close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
-pause_time          = .05;                                                           %set the pause time if playing movies
-data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\';
-f0_pct              = 10;                                                   %set the percentile that for the baseline fluorescence
+pause_time          = 0;                                                    %set the pause time if playing movies
+data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
+f0_pct              = 0;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 10;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
+cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
 
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
@@ -75,7 +76,7 @@ ep              = bwmorph(mid,'endpoints');                               %find 
 figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
 hold on; scatter(x0,y0,'b','filled')
 
-[x_mid,y_mid]   = graph_sort(x_mid,y_mid,x0,y0);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
+[x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
 
 xq          = linspace(1,length(y_mid),n_centroid*2)';                           %set query points for interpolation (the number of centroids we want)
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
@@ -112,7 +113,7 @@ end
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-figure(5); clf
+figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
 imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
@@ -156,7 +157,7 @@ c2 = [0,0.5,1];
 n_frames = size(dff_cluster,2);
 n_ticks  = 4;
 
-figure(6); clf
+figure(4); clf
 subplot(2,2,3)
 hold on
 clear h v p
@@ -202,6 +203,7 @@ xlabel('frame')
 set(subplot(3,2,4),'YTick',[-pi,0,pi],'YTickLabels',{'-\pi','0','\pi'},'YLim',[-pi,pi])
 title(subplot(3,2,2),'Bump Parameters')
 
+if
 for i = 1:n_frames                                       %at each frame, update:
     h(1).YData = dff_cluster(:,i);                                    %the average intensity per centroids
     h(2).CData = imgData(:,:,i);                                        %the displayed image from the movie
@@ -227,8 +229,8 @@ for i = 1:n_frames                                       %at each frame, update:
 end
 
 %% load fictrac data
-[filename,] = uigetfile();
-load([filepath,'\',filename])
+[filename2,filepath2] = uigetfile(filepath);
+load([filepath2,'\',filename2])
 
 %% Process fictrac data
 f_speed = ftData.fwSpeed{:};                            %store each speed
@@ -265,7 +267,7 @@ ampR    = smoothdata(ampR,1,'gaussian',b_smooth);
 kappaL  = smoothdata(kappaL,1,'gaussian',b_smooth);
 kappaR  = smoothdata(kappaR,1,'gaussian',b_smooth);
 
-figure(3); clf
+figure(5); clf
 
 h(1) = subplot(3,1,1);
 tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan;
@@ -294,18 +296,18 @@ xlabel('time (s)')
 linkaxes(h,'x')
 
 %% linear model fictrac params with dF/F
-mask_1d = reshape(mask,[],1);                           % reshape the mask into a single vector
-f       = reshape(imgData,size(mask_1d,1),[]);          % reshape the movie into pixels x frames
-f       = f(mask_1d,:);                                 % extract only pixels within the mask
-f0      = prctile(f,f0_pct,'dim',2);                    % find the baseline fluorescence in each pixel over time
-dff     = (f - f0) ./ f0;                               % calculate pixelwise df/f
-dff     = mean(dff,1)';
-dff     = smoothdata(dff,1,'gaussian',b_smooth);        % smooth dff
-
-dff     = smoothdata(mean(dff_cluster,1)',1,'gaussian',b_smooth);
+if cluster_flag
+    dff     = smoothdata(mean(dff_cluster,1)',1,'gaussian',b_smooth);
+else
+    mask_1d = reshape(mask,[],1);                           % reshape the mask into a single vector
+    f       = reshape(imgData,size(mask_1d,1),[]);          % reshape the movie into pixels x frames
+    f       = f(mask_1d,:);                                 % extract only pixels within the mask
+    f0      = prctile(f,f0_pct,'dim',2);                    % find the baseline fluorescence in each pixel over time
+    dff     = (f - f0) ./ f0;                               % calculate pixelwise df/f
+    dff     = mean(dff,1)';
+    dff     = smoothdata(dff,1,'gaussian',b_smooth);        % smooth dff
+end
 amp     = dff;
-
-%amp     = smoothdata(mean([ampL,ampR],2),1,'gaussian',b_smooth);
 
 [f_corr,f_lag]  = xcorr(f_speed,amp,ceil(max_lag/fr));
 [r_corr,r_lag]  = xcorr(r_speed,amp,ceil(max_lag/fr));
@@ -329,7 +331,7 @@ amp(isnan(amp)) = 0;
 [r_fit,r_gof]   = fit(r_speed_lag,amp,'poly1');
 [m_fit,m_gof]   = fit([r_speed_lag,f_speed_lag],amp,'poly11');
 
-figure(4);clf
+figure(6);clf
 subplot(2,1,1)
 plot(xb,f_speed,'k'); ylabel('Abs Forward Speed (mm/s)')
 yyaxis right; plot(xb, amp,'Color',c1); ylabel('Average dF/F'); ax = gca; ax.YAxis(2).Color = c1;

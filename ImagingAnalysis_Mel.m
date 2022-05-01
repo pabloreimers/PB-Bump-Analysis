@@ -4,12 +4,13 @@ close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
-f0_pct              = 10;                                                   %set the percentile that for the baseline fluorescence
+f0_pct              = 0;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 10;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
+cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
 
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
@@ -20,7 +21,7 @@ pause_time  = 0;                         %pause this many seconds between each f
 n_plane = size(regProduct,3);
 n_frame = size(regProduct,4);
 row    = ceil(sqrt(n_plane));
-col     = floor(sqrt(n_plane));
+col     = ceil(sqrt(n_plane));
 
 figure(1); clf
 for i = 1:n_plane
@@ -202,6 +203,7 @@ xlabel('frame')
 set(subplot(3,2,4),'YTick',[-pi,0,pi],'YTickLabels',{'-\pi','0','\pi'},'YLim',[-pi,pi])
 title(subplot(3,2,2),'Bump Parameters')
 
+if movie_flag
 for i = 1:n_frames                                       %at each frame, update:
     h(1).YData = dff_cluster(:,i);                                    %the average intensity per centroids
     h(2).CData = imgData(:,:,i);                                        %the displayed image from the movie
@@ -225,15 +227,18 @@ for i = 1:n_frames                                       %at each frame, update:
     
     pause(pause_time)
 end
+end
 
 %% load fictrac data
 [filename2,filepath2] = uigetfile(filepath);
 load([filepath2,'\',filename2])
 
 %% Process fictrac data
-f_speed = ftData.fwSpeed{:};                            %store each speed
-r_speed = ftData.yawSpeed{:};
-intHD   = ftData.intHD{:};
+idx     = ftData.yawSpeed{:} == 0;                         %find when fictrac errors, which is when the yaw velocity is zero (it should really neveer be zero)
+
+f_speed = ftData.fwSpeed{:}(~idx);                       %store each speed where it doesnt error
+r_speed = ftData.yawSpeed{:}(~idx);
+intHD   = ftData.intHD{:}(~idx);
 
 f_speed = abs(f_speed);                                 %turn each velocity into a speed
 r_speed = abs(r_speed);
@@ -247,9 +252,9 @@ end
 
 intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
-total_t = max(ftData.frameTimes{:});                    %find how long the trial was
 
-xf  = ftData.frameTimes{:};                             %create vectors with timestamps for each trace
+xf  = mean(diff(ftData.frameTimes{:})) * [1:length(f_speed)]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
+total_t = max(xf);
 xb  = linspace(0,total_t,size(imgData,3))';
 fr  = mean(diff(xb));
 
@@ -294,18 +299,18 @@ xlabel('time (s)')
 linkaxes(h,'x')
 
 %% linear model fictrac params with dF/F
-mask_1d = reshape(mask,[],1);                           % reshape the mask into a single vector
-f       = reshape(imgData,size(mask_1d,1),[]);          % reshape the movie into pixels x frames
-f       = f(mask_1d,:);                                 % extract only pixels within the mask
-f0      = prctile(f,f0_pct,'dim',2);                    % find the baseline fluorescence in each pixel over time
-dff     = (f - f0) ./ f0;                               % calculate pixelwise df/f
-dff     = mean(dff,1)';
-dff     = smoothdata(dff,1,'gaussian',b_smooth);        % smooth dff
-
-dff     = smoothdata(mean(dff_cluster,1)',1,'gaussian',b_smooth);
+if cluster_flag
+    dff     = smoothdata(mean(dff_cluster,1)',1,'gaussian',b_smooth);
+else
+    mask_1d = reshape(mask,[],1);                           % reshape the mask into a single vector
+    f       = reshape(imgData,size(mask_1d,1),[]);          % reshape the movie into pixels x frames
+    f       = f(mask_1d,:);                                 % extract only pixels within the mask
+    f0      = prctile(f,f0_pct,'dim',2);                    % find the baseline fluorescence in each pixel over time
+    dff     = (f - f0) ./ f0;                               % calculate pixelwise df/f
+    dff     = mean(dff,1)';
+    dff     = smoothdata(dff,1,'gaussian',b_smooth);        % smooth dff
+end
 amp     = dff;
-
-%amp     = smoothdata(mean([ampL,ampR],2),1,'gaussian',b_smooth);
 
 [f_corr,f_lag]  = xcorr(f_speed,amp,ceil(max_lag/fr));
 [r_corr,r_lag]  = xcorr(r_speed,amp,ceil(max_lag/fr));
