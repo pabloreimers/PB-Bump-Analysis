@@ -76,7 +76,8 @@ imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
 
 %% extract midline axis, and subsample for centroid locations (using graph search)
 [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
-mid             = bwskel(mask,'MinBranchLength',min(range(x_mask),range(y_mask)));  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+min_axis        = min(range(x_mask),range(y_mask));
+mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
 [y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
 ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
 [y0,x0]         = find(ep,1);
@@ -84,6 +85,14 @@ figure(2); imagesc(subplot(2,1,2),mid); colormap(bone); xticks([]); yticks([])
 hold on; scatter(x0,y0,'b','filled')
 
 [x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
+
+xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
+x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
+y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
+
+idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
+x_mid       = x_mid(idx);
+y_mid       = y_mid(idx);
 
 xq          = linspace(1,length(y_mid),n_centroid*2)';                           %set query points for interpolation (the number of centroids we want)
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
@@ -120,6 +129,7 @@ end
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
+dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
 figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
@@ -376,9 +386,14 @@ y = ylim; text(xb(end),y(2),sprintf('r^2: %.2f\njoint r^2: %.2f',...
 %% Plot heading with fluorescence data
 figure(7); clf; clear h
 h(1) = subplot(3,1,1);
-imagesc(xb,1:2*n_centroid,dff_cluster); xticks([]); ylabel('cluster'); title('\DeltaF/F0'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos)
+imagesc(xb,1:2*n_centroid,dff_cluster); xticks([]); ylabel('cluster'); title('\DeltaF/F0'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos); colormap(bone)
 h(2) = subplot(3,1,2);
-imagesc(xb,1:2*n_centroid,dff_cluster ./ max(dff_cluster,[],1)); xticks([]); ylabel('cluster'); title('\DeltaF/(F0*max(F_t))'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos)
+tmp = dff_cluster ./ sum(dff_cluster,1);
+top_val = prctile(tmp(:),95);
+bot_val = prctile(tmp(:),5);
+tmp( tmp > top_val) = top_val;
+tmp( tmp < bot_val) = bot_val;
+imagesc(xb,1:2*n_centroid,tmp); xticks([]); ylabel('cluster'); title('\DeltaF/(F0*sum(F_t))'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos); colormap(bone)
 h(3) = subplot(3,1,3); 
 tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan; plot(xb,tmp);
 axis tight; xlabel('time(s)'); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'}); ylim([-pi,pi]); ylabel('heading')
