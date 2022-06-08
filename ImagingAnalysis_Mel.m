@@ -61,6 +61,7 @@ figure(1); clf                              %clear the current figure
 h           = image(imgData(:,:,1));        %initialize an image object where we will update the color values in each frame 
 axis equal tight                            %make all pixels square, and keep axis tight for clean look
 colormap(bone)                              %set to favorite colormap. I like black and white
+colorbar
 
 if movie_flag
 for i = 50:300; %size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
@@ -136,7 +137,7 @@ imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
 imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
 xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
-imagesc(subplot(2,1,2),dff_cluster); colormap('bone')
+imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 
 %% Estimate von mises parameters
@@ -168,6 +169,39 @@ for i = 1:n_frames                                                              
     sst                 = sum( (ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i)) - mean(dff_cluster((1:n_centroid)+n_centroid,i)) ).^2);
     r2R(i)              = 1 - ssr/sst;
 end
+
+idxL = r2L < 0;
+idxR = r2R < 0;
+
+%muL(idxL) = 0;
+kappaL(idxL) = 0;
+%muR(idxR) = 0;
+kappaR(idxR) = 0;
+
+%% Estimate von mises (Mel Style)
+% n_frames    = size(dff_cluster,2);
+% alpha       = linspace(-pi,pi,n_centroid);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+% adj_rs      = nan(n_frames,1);
+% mu          = nan(n_frames,1);
+% amp         = nan(n_frames,1);
+% width       = nan(n_frames,1);
+% 
+% fo = fitoptions('Method','NonlinearLeastSquares',...
+%     'Lower',[0,0,0,-pi],... % [a,c,k,u]
+%     'Upper',[inf,inf,inf,pi],...
+%     'StartPoint',[1,0,1,0]);
+% ft = fittype('a*exp(k*cos(x-u))+c','options',fo);
+% 
+% for i = 1:n_frames
+%     [f, gof] = fit([alpha,alpha]',dff_cluster(:,i),ft,...
+%         'MaxIter',20000,'MaxFunEvals',20000);
+%     adj_rs(i) = gof.adjrsquare;
+%     mu(i)        = f.u;
+%     amp(i)       = f.a * ( exp(f.k) - exp(-f.k) );
+%     width(i)     = 2 * abs( acos( 1/f.k * log( 1/2 *( exp(f.k) + exp(-f.k) ))));
+%     fprintf('frame %i / %i\n',i,n_frame)
+% end
+
 
 %% plot! movie
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
@@ -285,13 +319,18 @@ intHD   = interp1(xf,intHD,xb,[],'extrap');
 
 %% Plot bump params over fictrac data
 for i = 1:n_smooth
-muL     = smoothdata(muL,1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
-muR     = smoothdata(muR,1,'gaussian',b_smooth);
+muL     = smoothdata(unwrap(muL),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+muR     = smoothdata(unwrap(muR),1,'gaussian',b_smooth);
 ampL    = smoothdata(ampL,1,'gaussian',b_smooth);
 ampR    = smoothdata(ampR,1,'gaussian',b_smooth);
 kappaL  = smoothdata(kappaL,1,'gaussian',b_smooth);
 kappaR  = smoothdata(kappaR,1,'gaussian',b_smooth);
 end
+
+muL = mod(muL,2*pi);                                %rewrap heading data, and put between -pi and pi.
+muL(muL > pi) = muL(muL > pi) - 2*pi;
+muR = mod(muR,2*pi);                                %rewrap heading data, and put between -pi and pi.
+muR(muR > pi) = muR(muR > pi) - 2*pi;
 
 figure(5); clf
 

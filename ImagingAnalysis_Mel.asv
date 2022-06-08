@@ -169,6 +169,39 @@ for i = 1:n_frames                                                              
     r2R(i)              = 1 - ssr/sst;
 end
 
+idxL = r2L < 0;
+idxR = r2R < 0;
+
+%muL(idxL) = 0;
+kappaL(idxL) = 0;
+%muR(idxR) = 0;
+kappaR(idxR) = 0;
+
+%% Estimate von mises (Mel Style)
+n_frames    = size(dff_cluster,2);
+alpha       = linspace(-pi,pi,n_centroid);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+adj_rs      = nan(n_frames,1);
+mu          = nan(n_frames,1);
+amp         = nan(n_frames,1);
+width       = nan(n_frames,1);
+
+fo = fitoptions('Method','NonlinearLeastSquares',...
+    'Lower',[0,0,0,-pi],... % [a,c,k,u]
+    'Upper',[inf,inf,inf,pi],...
+    'StartPoint',[1,0,1,0]);
+ft = fittype('a*exp(k*cos(x-u))+c','options',fo);
+
+for i = 1:n_frames
+    [f, gof] = fit([alpha,alpha]',dff_cluster(:,i),ft,...
+        'MaxIter',20000,'MaxFunEvals',20000);
+    adj_rs(i) = gof.adjrsquare;
+    mu(i)        = f.u;
+    amp(i)       = f.a * ( exp(f.k) - exp(-f.k) );
+    width(i)     = 2 * abs( acos( 1/f.k * log( 1/2 *( exp(f.k) + exp(-f.k) ))));
+    fprintf('frame %i / %i\n',i,n_frame)
+end
+
+
 %% plot! movie
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
 c2 = [0,0.5,1];
