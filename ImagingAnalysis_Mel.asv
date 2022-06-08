@@ -4,6 +4,7 @@ close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
+data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
 f0_pct              = 10;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
@@ -62,7 +63,7 @@ axis equal tight                            %make all pixels square, and keep ax
 colormap(bone)                              %set to favorite colormap. I like black and white
 
 if movie_flag
-for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
+for i = 50:300; %size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
     h.CData = imgData(:,:,i);
     pause(pause_time)
 end
@@ -86,11 +87,11 @@ hold on; scatter(x0,y0,'b','filled')
 
 [x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
 
-xq          = [-min_axis:(length(x_mid)+min_axis)];
+xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
 x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
 y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
 
-idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');
+idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
 x_mid       = x_mid(idx);
 y_mid       = y_mid(idx);
 
@@ -399,6 +400,50 @@ tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan; plot(xb,tmp);
 axis tight; xlabel('time(s)'); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'}); ylim([-pi,pi]); ylabel('heading')
 
 linkaxes(h,'x')
+
+%% Scatter plot of bump to fly velocity
+
+% fit bump parameters to joint pb right and left side
+n_frames    = size(dff_cluster,2);
+alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+mu          = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
+kappa       = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
+amp         = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
+r2          = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
+
+for i = 1:n_frames                                                                      %for each frame
+    [mu(i), kappa(i)] = circ_vmpar(alpha,dff_cluster(:,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
+    if any(isnan(circ_vmpdf(alpha,mu(i),kappa(i))))%if the distribution returns nans (calculated something too sharp, e.g.)
+        mu(i) = nan;
+        kappa(i) = nan;
+        continue
+    end
+    [amp(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,mu(i),kappa(i)) - dff_cluster(:,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    sst                 = sum( (amp(i)*circ_vmpdf(alpha,mu(i),kappa(i)) - mean(dff_cluster(:,i)) ).^2);        %find the squared error with the mean
+    r2(i)              = 1 - ssr/sst;
+end
+
+idx = r2 > 0; %find what points actually follow a VM distribution
+
+bump_vel = [diff(mu);0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
+fly_vel  = ftData.yawSpeed{:};
+for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
+fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
+end
+fly_vel = interp1(xf,fly_vel,xb,[],'extrap');
+
+
+figure(9); clf
+scatter(bump_vel(idx),fly_vel(idx),'filled')
+xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
+hold on
+[rho,pval] = corr(bump_vel(idx),fly_vel(idx));
+x = xlim;
+y = ylim;
+text(x(2),y(2),sprintf('$m = %.2f$\n$p < 10^{%i}$',rho,ceil(log10(pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
+plot([0,0],y,'k:')
+plot(x,[0,0],':k')
+fontsize(20)
 
 
 % %% load fly movie and interpolate at framerate (time consuming)
