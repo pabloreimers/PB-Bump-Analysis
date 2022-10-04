@@ -4,7 +4,7 @@ close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
-data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
+%data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
 f0_pct              = 10;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
@@ -13,6 +13,9 @@ n_smooth            = 10;                                                   %set
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
 avg_win             = 5;                                                    %when showing raw 2p data, set window averaging size
+vm_thresh           = 0;
+var_thresh          = 0;
+vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
@@ -64,7 +67,7 @@ colormap(bone)                              %set to favorite colormap. I like bl
 colorbar
 
 if movie_flag
-for i = 50:300; %size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
+for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
     h.CData = imgData(:,:,i);
     pause(pause_time)
 end
@@ -96,8 +99,9 @@ idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 
 x_mid       = x_mid(idx);
 y_mid       = y_mid(idx);
 
-xq          = linspace(1,length(y_mid),n_centroid*2)';                           %set query points for interpolation (the number of centroids we want)
+xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
+centroids   = centroids(2:2:end-1,:);                                                 %take every other so that we dont start at the edges, and all are same size
 cmap        = repmat(make_colors(n_centroid),2,1); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
 
 figure(1); clf
@@ -131,7 +135,8 @@ end
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
+zscore_cluster  = zscore(f_cluster,[],2);
+%dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
 figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
@@ -140,7 +145,7 @@ xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
 imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 
-%% Estimate von mises parameters
+%% Estimate von mises parameters (both sides)
 n_frames    = size(dff_cluster,2);
 alpha       = linspace(-pi,pi,n_centroid);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
 muL         = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
@@ -202,28 +207,78 @@ kappaR(idxR) = 0;
 %     fprintf('frame %i / %i\n',i,n_frame)
 % end
 
+%% estimate von mises for joint left and right
+n_frames    = size(dff_cluster,2);
+alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+mu          = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
+kappa       = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
+amp         = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
+r2          = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
+
+idx = var(dff_cluster,[],2) > var_thresh;
+
+for i = 1:n_frames                                                                      %for each frame
+    [mu(i), kappa(i)] = circ_vmpar(alpha(idx),dff_cluster(idx,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
+    if any(isnan(circ_vmpdf(alpha,mu(i),kappa(i))))%if the distribution returns nans (calculated something too sharp, e.g.)
+        mu(i) = nan;
+        kappa(i) = nan;
+        continue
+    end
+    [amp(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha(idx),mu(i),kappa(i)) - dff_cluster(idx,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    sst                 = sum( ( amp(i)*circ_vmpdf(alpha(idx),mu(i),kappa(i))   - mean(dff_cluster(idx,i))).^2);        %find the squared error with the mean
+    r2(i)              = 1 - ssr/sst;
+end
+
+%% estimate von mises for joint left and right (zscore data)
+n_frames    = size(dff_cluster,2);
+alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
+mu          = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
+kappa       = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
+amp         = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
+r2          = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
+
+for i = 1:n_frames                                                                      %for each frame
+    [mu(i), kappa(i)] = circ_vmpar(alpha,zscore_cluster(:,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
+    if any(isnan(circ_vmpdf(alpha,mu(i),kappa(i))))%if the distribution returns nans (calculated something too sharp, e.g.)
+        mu(i) = nan;
+        kappa(i) = nan;
+        continue
+    end
+    [amp(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,mu(i),kappa(i)) - zscore_cluster(:,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    sst                 = sum( ( amp(i)*circ_vmpdf(alpha,mu(i),kappa(i))   - mean(zscore_cluster(:,i))).^2);        %find the squared error with the mean
+    r2(i)              = 1 - ssr/sst;
+end
+
+for i = 1:n_smooth
+mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+amp    = smoothdata(amp,1,'gaussian',b_smooth);
+kappa  = smoothdata(kappa,1,'gaussian',b_smooth);
+end
+
+mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+mu(mu > pi) = mu(mu > pi) - 2*pi;
 
 %% plot! movie
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
 c2 = [0,0.5,1];
 n_frames = size(dff_cluster,2);
 n_ticks  = 4;
+f_data = zscore_cluster;
 
 figure(4); clf
 subplot(2,2,3)
 hold on
 clear h v p
 h(1) = plot(1:(2*n_centroid),nan(2*n_centroid,1),'k.-');                    %initialize a plot to show the average activity at each centroid over time
-v(1)= plot(1:n_centroid,nan(n_centroid,1),'Color',c1);
-v(2)= plot((1:n_centroid) + n_centroid, nan(n_centroid,1),'Color',c2);
+v(1)= plot(1:2*n_centroid,nan(2*n_centroid,1),'Color',c1);
 pos = get(gca,'Position');
-legend('Activity','Left PB fit','Right PB fit','autoupdate','off','Location','northoutside')
+legend('Activity','Fit','autoupdate','off','Location','northoutside')
 tick_vec  = 1:2*n_centroid;
 label_vec = [alpha,alpha];
 idx       = linspace(0,2*n_centroid,n_ticks+1);
 idx(1)    = [];
-set(gca,'Position',pos, 'YLim',[min(dff_cluster,[],'all'),max(dff_cluster,[],'all')],...
-    'XLim',[0,2*n_centroid],'XTick',tick_vec(idx),'XTickLabels',label_vec(idx)/pi)
+set(gca,'Position',pos, 'YLim',[min(f_data,[],'all'),max(f_data,[],'all')],...
+   'XLim',[0,2*n_centroid],'XTick',tick_vec(idx),'XTickLabels',label_vec(idx)/pi)
 xlabel('Cluster (\pi)')
 ylabel('Activity (a.u.)')
 
@@ -239,17 +294,16 @@ colormap(bone)
 xticks([])
 yticks([])
 
-bump_params = {ampL,ampR;muL,muR;kappaL,kappaR};                                                    %store all of the bump statistics in a cell array for easy repetitive access in a loop
+bump_params = {amp;mu;kappa};                                                    %store all of the bump statistics in a cell array for easy repetitive access in a loop
 bump_params = cellfun(@(x)(smoothdata(x,1,'gaussian',b_smooth)),bump_params,'UniformOutput',false); %smooth all of the bump parameters.
 bp_names    = {'Amplitude','Position (\mu)','Concentration (\kappa)'};
-bp_h        = cell(3,2);
+bp_h        = cell(3,1);
 
 for i = 1:size(bump_params,1)                                                       %initialize plots for each bump statistic over each frame
     set(subplot(3,2,2*i),'NextPlot','add','xlim',[0,n_frames],...
         'ylim',[min([bump_params{i,:}],[],'all'),max([bump_params{i,:}],[],'all')])
     ylabel(subplot(3,2,2*i),bp_names{i})
-    bp_h{i,1} = plot(subplot(3,2,2*i),1:n_frames,nan(n_frames,1),'Color',c1);
-    bp_h{i,2} = plot(subplot(3,2,2*i),1:n_frames,nan(n_frames,1),'Color',c2);
+    bp_h{i,1} = scatter(subplot(3,2,2*i),1:n_frames,nan(n_frames,1),'filled','MarkerFaceColor',c1);
 end
 xlabel('frame')
 set(subplot(3,2,4),'YTick',[-pi,0,pi],'YTickLabels',{'-\pi','0','\pi'},'YLim',[-pi,pi])
@@ -257,23 +311,18 @@ title(subplot(3,2,2),'Bump Parameters')
 
 if movie_flag
 for i = 1:n_frames                                       %at each frame, update:
-    h(1).YData = dff_cluster(:,i);                                    %the average intensity per centroids
+    h(1).YData = f_data(:,i);                                    %the average intensity per centroids
     h(2).CData = imgData2(:,:,i);                                        %the displayed image from the movie
 
-    v(1).YData = ampL(i)*circ_vmpdf(alpha,muL(i),kappaL(i));            %generate the fit von mises distribution, over the range of thetas, where it is centered at this time point, and how concentrated. scale it, too
-    v(2).YData = ampR(i)*circ_vmpdf(alpha,muR(i),kappaR(i));
+    v(1).YData = amp(i)*circ_vmpdf(alpha,mu(i),kappa(i));            %generate the fit von mises distribution, over the range of thetas, where it is centered at this time point, and how concentrated. scale it, too
     
     for j = 1:size(bump_params,1)                                       %update the current distribution statistics, too
         bp_h{j,1}.YData(i) = bump_params{j,1}(i);
-        bp_h{j,2}.YData(i) = bump_params{j,2}(i);
     end
     
     if i > 1                                                            %because circular, if the instantaneous position jump is more than pi radians, just blank the point (because the shortest path is actually out of frame)
-    if abs(bump_params{2,1}(i) - bump_params{2,1}(i-1)) > pi
+    if abs(bump_params{2,1}(i) - bump_params{2,1}(i-1)) > pi || r2(i) < vm_thresh
         bp_h{2,1}.YData(i) = nan;
-    end
-    if abs(bump_params{2,2}(i) - bump_params{2,2}(i-1)) > pi
-        bp_h{2,2}.YData(i) = nan;
     end
     end
     
@@ -282,7 +331,7 @@ end
 else
     for j = 1:size(bump_params,1)                                       %update the current distribution statistics, too
         bp_h{j,1}.YData = bump_params{j,1};
-        bp_h{j,2}.YData = bump_params{j,2};
+        bp_h{j,1}.YData(r2 < vm_thresh) = nan;
     end
 end
 
@@ -291,9 +340,20 @@ end
 load([filepath2,'\',filename2])
 
 %% Process fictrac data
-f_speed = ftData.fwSpeed{:};                       %store each speed
-r_speed = ftData.yawSpeed{:};
-intHD   = ftData.intHD{:};
+if ~exist('ftData_DAQ','var')
+    ftData_DAQ= ftData;
+    ftData_DAQ.velFor = ftData.fwSpeed;
+    ftData_DAQ.velYaw = ftData.yawSpeed;
+end
+
+% f_speed = ftData.fwSpeed{:};                       %store each speed
+% r_speed = ftData.yawSpeed{:};
+% intHD   = ftData.intHD{:};
+
+f_speed = ftData_DAQ.velFor{:};                       %store each speed
+r_speed = ftData_DAQ.velYaw{:};
+intHD   = ftData_DAQ.intHD{:};
+
 
 f_speed = f_speed;                                      %turn each velocity into a speed
 r_speed = abs(r_speed);
@@ -308,7 +368,10 @@ end
 intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
 
-xf  = mean(diff(ftData.frameTimes{:})) * [1:length(f_speed)]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
+xf  = mean(diff(ftData_DAQ.trialTime{:})) * [1:length(f_speed)]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
+if isduration(xf)
+    xf = seconds(xf);
+end
 total_t = max(xf);
 xb  = linspace(0,total_t,size(imgData,3))';
 fr  = mean(diff(xb));
@@ -318,45 +381,29 @@ r_speed = interp1(xf,r_speed,xb,[],'extrap');
 intHD   = interp1(xf,intHD,xb,[],'extrap');
 
 %% Plot bump params over fictrac data
-for i = 1:n_smooth
-muL     = smoothdata(unwrap(muL),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
-muR     = smoothdata(unwrap(muR),1,'gaussian',b_smooth);
-ampL    = smoothdata(ampL,1,'gaussian',b_smooth);
-ampR    = smoothdata(ampR,1,'gaussian',b_smooth);
-kappaL  = smoothdata(kappaL,1,'gaussian',b_smooth);
-kappaR  = smoothdata(kappaR,1,'gaussian',b_smooth);
-end
-
-muL = mod(muL,2*pi);                                %rewrap heading data, and put between -pi and pi.
-muL(muL > pi) = muL(muL > pi) - 2*pi;
-muR = mod(muR,2*pi);                                %rewrap heading data, and put between -pi and pi.
-muR(muR > pi) = muR(muR > pi) - 2*pi;
-
 figure(5); clf
 
 h(1) = subplot(3,1,1);
 tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan;
 plot(xb,-tmp,'k'); ylabel('Heading (rad)'); ylim([-pi,pi]); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'});
 yyaxis right; hold on
-tmp = muL; tmp(abs(diff(tmp)) > pi) = nan;
-plot(xb,tmp,'-','Color',c1)
-tmp = muR; tmp(abs(diff(tmp)) > pi) = nan;
-plot(xb,tmp,'-','Color',c2)
+tmp = mu; tmp(abs(diff(tmp)) > pi) = nan; tmp(r2 < vm_thresh) = nan;
+scatter(xb,tmp,'.','MarkerEdgeColor',c1)
 ylabel('Bump Position (\mu)'); yticks([])
 axis tight
 
 h(2) = subplot(3,1,2);
 plot(xb,f_speed,'k'); ylabel('Forward Speed (mm/s)');
 yyaxis right; hold on
-plot(xb, ampL,'-','Color',c1)
-plot(xb, ampR,'-','Color',c2)
+tmp = amp; tmp(r2 < vm_thresh) = nan;
+scatter(xb,tmp,'.','MarkerEdgeColor',c1)
 ylabel('Bump Amplitude'); yticks([]); axis tight
 
 h(3) = subplot(3,1,3);
 plot(xb,r_speed,'k'); ylabel('Rotational Speed (rad/s)');
 yyaxis right; hold on
-plot(xb, ampL,'-','Color',c1)
-plot(xb, ampR,'-','Color',c2)
+tmp = amp; tmp(r2 < vm_thresh) = nan;
+scatter(xb,tmp,'.','MarkerEdgeColor',c1)
 ylabel('Bump Amplitude'); yticks([]); axis tight
 xlabel('time (s)')
 
@@ -369,7 +416,7 @@ else
     mask_1d = reshape(mask,[],1);                           % reshape the mask into a single vector
     f       = reshape(imgData,size(mask_1d,1),[]);          % reshape the movie into pixels x frames
     f       = f(mask_1d,:);                                 % extract only pixels within the mask
-    f0      = prctile(f,f0_pct,'dim',2);                    % find the baseline fluorescence in each pixel over time
+    f0      = prctile(f,f0_pct,2);                    % find the baseline fluorescence in each pixel over time
     dff     = (f - f0) ./ f0;                               % calculate pixelwise df/f
     dff     = mean(dff,1)';
     dff     = smoothdata(dff,1,'gaussian',b_smooth);        % smooth dff
@@ -441,47 +488,44 @@ axis tight; xlabel('time(s)'); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'})
 linkaxes(h,'x')
 
 %% Scatter plot of bump to fly velocity
-
-% fit bump parameters to joint pb right and left side
-n_frames    = size(dff_cluster,2);
-alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
-mu          = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
-kappa       = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
-amp         = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
-r2          = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
-
-for i = 1:n_frames                                                                      %for each frame
-    [mu(i), kappa(i)] = circ_vmpar(alpha,dff_cluster(:,i));                %fit von mises paramters, where each angle is represented by alpha and the strength (or counts) of each angle are represented by the average intensity
-    if any(isnan(circ_vmpdf(alpha,mu(i),kappa(i))))%if the distribution returns nans (calculated something too sharp, e.g.)
-        mu(i) = nan;
-        kappa(i) = nan;
-        continue
-    end
-    [amp(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,mu(i),kappa(i)) - dff_cluster(:,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
-    sst                 = sum( (amp(i)*circ_vmpdf(alpha,mu(i),kappa(i)) - mean(dff_cluster(:,i)) ).^2);        %find the squared error with the mean
-    r2(i)              = 1 - ssr/sst;
-end
-
-idx = r2 > 0; %find what points actually follow a VM distribution
-
 bump_vel = [diff(mu);0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
-fly_vel  = ftData.yawSpeed{:};
+fly_vel  = ftData_DAQ.velYaw{:};
 for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
 end
 fly_vel = interp1(xf,fly_vel,xb,[],'extrap');
+vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh; %ignore outlier bump speeds with arbitrary threshold
 
 
 figure(9); clf
-scatter(bump_vel(idx),fly_vel(idx),'filled')
+scatter(bump_vel(r2 > vm_thresh & vel_idx),fly_vel(r2 > vm_thresh & vel_idx),'filled')
 xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
 hold on
-[rho,pval] = corr(bump_vel(idx),fly_vel(idx));
+[rho,pval] = corr(bump_vel(r2 > vm_thresh & vel_idx),fly_vel(r2 > vm_thresh & vel_idx));
 x = xlim;
 y = ylim;
 text(x(2),y(2),sprintf('$m = %.2f$\n$p < 10^{%i}$',rho,ceil(log10(pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
+
+%% plot heading over fluorescence data (ovie
+
+t_span = 1200:1500;
+figure(10); clf
+subplot(3,1,1)
+imagesc(dff_cluster(:,t_span) ./ sum(dff_cluster(:,t_span),1))
+subplot(3,1,2:3)
+hold on
+hh(1) = plot(alpha,nan(2*n_centroid,1),'k.-');  
+hh(2) = scatter(0,0,'r','filled')
+if movie_flag
+for i = t_span
+    hh(1).YData = dff_cluster(:,i);
+    hh(2).XData = intHD(i);
+    drawnow
+    pause(.1)
+end
+end
 
 
 % %% load fly movie and interpolate at framerate (time consuming)
