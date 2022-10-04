@@ -235,6 +235,7 @@ alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);          %create a vector
 mu          = nan(n_frames,1);                      %initialize vectors to store the estimate mean and kappa of each hemisphere, if modelled as a von mises distribution
 kappa       = nan(n_frames,1);                      %kappa is a measure of concentration. it is bounded [0,1] and is inversely proporitional to variance.
 amp         = nan(n_frames,1);                      %this will be used to scale the bump amplitude from a generic von mises pdf (integral 1) to something that matches the data
+c           = nan(n_frames,1);
 r2          = nan(n_frames,1);                      %rsquared values, telling how much of the variance in the distribution is explained by our fit (as compared to a flat line which is the mean)
 
 for i = 1:n_frames                                                                      %for each frame
@@ -244,10 +245,15 @@ for i = 1:n_frames                                                              
         kappa(i) = nan;
         continue
     end
-    [amp(i),ssr]       = fminsearch(@(a) sum((a*circ_vmpdf(alpha,mu(i),kappa(i)) - zscore_cluster(:,i)).^2),1);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
-    sst                 = sum( ( amp(i)*circ_vmpdf(alpha,mu(i),kappa(i))   - mean(zscore_cluster(:,i))).^2);        %find the squared error with the mean
+    [tmp,ssr]       = fminsearch(@(a) sum((a(1)*circ_vmpdf(alpha,mu(i),kappa(i))+a(2) - zscore_cluster(:,i)).^2),[1,0]);   %fit the amplitude of the von mises by minimizing the sum of the squared difference with scaled VM and data at current frame
+    amp(i)          = tmp(1);
+    c(i)            = tmp(2);
+    sst             = sum( ( amp(i)*circ_vmpdf(alpha,mu(i),kappa(i))+c(i)   - mean(zscore_cluster(:,i))).^2);        %find the squared error with the mean
     r2(i)              = 1 - ssr/sst;
 end
+
+c(isoutlier(c,'percentiles',[1,99])) = nan;
+amp(isoutlier(amp,'percentiles',[1,99])) = nan;
 
 for i = 1:n_smooth
 mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
