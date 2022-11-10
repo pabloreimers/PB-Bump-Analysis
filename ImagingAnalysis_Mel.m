@@ -16,6 +16,7 @@ avg_win             = 5;                                                    %whe
 vm_thresh           = 0;
 var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
+vel_min             = 1e-2;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
@@ -67,7 +68,7 @@ colormap(bone)                              %set to favorite colormap. I like bl
 colorbar
 
 if movie_flag
-for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
+for i = 4000:50000 %1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
     h.CData = imgData(:,:,i);
     pause(pause_time)
 end
@@ -299,6 +300,19 @@ end
 mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
 mu(mu > pi) = mu(mu > pi) - 2*pi;
 
+%% Find bump as PVA
+tmp_data    = dff_cluster;
+alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
+
+[x_tmp,y_tmp]   = pol2cart(alpha,tmp_data');
+[mu,amp]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+for i = 1:n_smooth
+mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+amp    = smoothdata(amp,1,'gaussian',b_smooth);
+end
+
+mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+mu(mu > pi) = mu(mu > pi) - 2*pi;
 
 %% plot! movie
 c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
@@ -541,7 +555,7 @@ for i = 1:n_smooth                                      %smooth fictrac data n t
 fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
 end
 fly_vel = interp1(xf,fly_vel,xb,[],'extrap');
-vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh; %ignore outlier bump speeds with arbitrary threshold
+vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
 
 
 figure(9); clf
