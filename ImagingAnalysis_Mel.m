@@ -76,7 +76,7 @@ end
 
 %% plot the pb and draw bounding box over the whole thing
 figure(1); clf                                          % clear the current figure
-mask = roipoly(uint8(max(imgData,[],3)));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
+mask = roipoly(uint8(mean(imgData2,3)));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
 figure(2)
 imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
 
@@ -420,7 +420,8 @@ cue     = cue / 192 * 2*pi - pi;
 for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 f_speed = smoothdata(f_speed,1,'gaussian',f_smooth); 
 r_speed = smoothdata(r_speed,1,'gaussian',f_smooth);
-intHD   = smoothdata(intHD, 1, 'gaussian',f_smooth);
+intHD   = smoothdata(intHD,  1,'gaussian',f_smooth);
+cue     = smoothdata(cue,    1,'gaussian',f_smooth);
 end
 
 intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
@@ -543,7 +544,7 @@ tmp( tmp > top_val) = top_val;
 tmp( tmp < bot_val) = bot_val;
 imagesc(xb,1:2*n_centroid,tmp); xticks([]); ylabel('cluster'); title('\DeltaF/(F0*sum(F_t))'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos); colormap(bone)
 h(3) = subplot(3,1,3); 
-tmp = intHD; tmp(abs(diff(tmp)) > pi) = nan; plot(xb,tmp);
+tmp = cue; tmp(abs(diff(tmp)) > pi) = nan; plot(xb,tmp);
 axis tight; xlabel('time(s)'); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'}); ylim([-pi,pi]); ylabel('heading')
 
 linkaxes(h,'x')
