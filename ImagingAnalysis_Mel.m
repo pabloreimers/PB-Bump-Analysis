@@ -3,8 +3,8 @@ clear all
 close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
-data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
-%data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
+%data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
+data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
 f0_pct              = 15;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
