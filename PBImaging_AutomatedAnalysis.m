@@ -154,3 +154,8 @@ for i = 1:n
 end
 
 T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2'});
+
+%% Label each trial by fly
+[~,~,fly_id] = unique(str2num([cell2mat(cellfun(@(x)x{1}(1:8),files_info,'UniformOutput',false)),...
+                                         cellfun(@(x)x{end},files_info),...
+                                         num2str(cellfun(@(x)contains(x{2},'LPsP'),files_info))]))

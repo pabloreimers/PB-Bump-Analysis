@@ -147,10 +147,15 @@ epg_idx     = cellfun(@(x)(contains(x,'EPG')),files_list(:,1)); %create a handle
 lpsp_idx    = cellfun(@(x)(contains(x,'LPsP')),files_list(:,1));
 dark_idx    = cellfun(@(x)(contains(x,'dark')),files_list(:,1));
 
-T = nan(size(files_list,1),5);
+T = nan(size(files_list,1),8);
 
-for i = n-3
-    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5)] = single_analysis([local_dir,'\',files_list{i,1}], true);
+for i = 1:n
+    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8)] = single_analysis([local_dir,'\',files_list{i,1}], true);
 end
 
-T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag'});
+T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2'});
+
+%% Label each trial by fly
+
+[~,~,lpsp_ind] = unique(str2num([cell2mat(cellfun(@(x)x{1}(1:8),files_info(lpsp_idx),'UniformOutput',false)),cellfun(@(x)x{end},files_info(lpsp_idx))]))
+[~,~,epg_ind] = unique(str2num([cell2mat(cellfun(@(x)x{1}(1:8),files_info(epg_idx),'UniformOutput',false)),cellfun(@(x)x{end},files_info(epg_idx))]))
