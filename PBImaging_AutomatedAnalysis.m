@@ -81,7 +81,7 @@ dest_dir = 'C:\Users\preim\Documents\Wilson Lab\data\to analyze';
 tmp_idx = find(ft_idx);
 time_vec = nan(size(tmp_idx));
 
-for j = 8:length(tmp_idx)
+for j = 25:length(tmp_idx)
     tic
     fprintf('%.2f%%....',j/length(tmp_idx)*100)
     i = tmp_idx(j);
@@ -96,6 +96,10 @@ for j = 8:length(tmp_idx)
     folder_name = ls([trial_list{i},'\*registration*']);
     name = ls([trial_list{i},'\*registration*\*imagingData*']);
     copyfile([trial_list{i,1},'\',folder_name,'\',name(1,:)],tmp_dir)
+    name = ls([trial_list{i},'\*mask*']);
+    if ~isempty(name)
+    copyfile([trial_list{i,1},'\',name(1,:)],tmp_dir)
+    end
 
     time_vec(j) = toc;
     catch
@@ -112,7 +116,9 @@ local_dir = uigetdir(local_dir,'Select local directory of images');
 files_list = dir(local_dir);
 files_list(1:2) = [];
 
-for i = 39:size(files_list,1)
+for i = 1:size(files_list,1)
+    disp(i)
+    if isempty(ls([local_dir,'\',files_list(i).name,'\*mask*']))
     name = ls([local_dir,'\',files_list(i).name,'\*imagingData*']);
     load([local_dir,'\',files_list(i).name,'\',name])
 
@@ -123,7 +129,7 @@ for i = 39:size(files_list,1)
     bot_int     = prctile(imgData2,5,'all');
     imgData2    = max(min(imgData2,top_int),bot_int) - bot_int;
     imgData2    = 256*imgData2/max(imgData2,[],'all');
-    imgData2    = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
+    %imgData2    = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
     
     figure(1); clf                                          % clear the current figure
     mask = roipoly(uint8(mean(imgData2,3)));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
@@ -131,6 +137,7 @@ for i = 39:size(files_list,1)
     imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
 
     save([local_dir,'\',files_list(i).name,'\mask.mat'],'mask')
+    end
 end
 end
 
@@ -147,10 +154,11 @@ epg_idx     = cellfun(@(x)(contains(x,'EPG')),files_list(:,1)); %create a handle
 lpsp_idx    = cellfun(@(x)(contains(x,'LPsP')),files_list(:,1));
 dark_idx    = cellfun(@(x)(contains(x,'dark')),files_list(:,1));
 
-T = nan(size(files_list,1),8);
+T = nan(size(files_list,1),9);
 
 for i = 1:n
-    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8)] = single_analysis([local_dir,'\',files_list{i,1}], true);
+    i/n
+    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8),T(i,9)] = single_analysis([local_dir,'\',files_list{i,1}], true);
 end
 
-T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2'});
+T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2','num_flash'});

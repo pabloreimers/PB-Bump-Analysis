@@ -1,4 +1,4 @@
-function [vel_rho,vel_pval,pva_corr,pva_pval,lag,f_r2,r_r2,j_r2] = single_analysis(base_dir,images_flag)
+function [vel_rho,vel_pval,pva_corr,pva_pval,lag,f_r2,r_r2,j_r2,num_flash] = single_analysis(base_dir,images_flag)
 %% script params
 f0_pct              = 15;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
@@ -21,9 +21,24 @@ load([base_dir,'\',name],'ftData_DAQ');
 name = ls([base_dir,'\*mask*']);
 load([base_dir,'\',name],'mask');
 
+% find the flashes as points outside mask
+imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
+imgData     = reshape(imgData,[],size(imgData,3)); %reshape imgData to be allpixels x frames
+background  = imgData(~reshape(mask,[],1),:); %extract points that are outside of the mask)
+med_pix     = median(background,1);
+flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+
+figure(5); clf
+plot(med_pix,'linewidth',2)
+hold on
+plot([0,length(med_pix)],(median(med_pix) + 2*std(med_pix))*[1,1],'linewidth',2)
+%plot([0,length(med_pix)], 500*[1,1],'linewidth',2)
+legend('Median Pixel Val','Inclusion Threshold')
+num_flash = sum(flash_idx);
+
 %process the data to make image figures
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
-imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
+imgData     = 256*(imgData - min(imgData(:,:,~flash_idx),[],'all'))/(max(imgData(:,:,~flash_idx),[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
 imgData2    = imgData;
 top_int     = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
 bot_int     = prctile(imgData2,5,'all');
@@ -33,17 +48,12 @@ imgData2    = smoothdata(imgData2,3,'movmean',avg_win);                      %sm
 
 figure(1); clf                                          % clear the current figure
 image(uint8(mean(imgData2,3))); 
+colormap('bone')
 axis equal tight
 xticks([]); yticks([])
-%find the timepoints of the flash, to exclude
-med_pix = squeeze(median(median(imgData)));
-flash_idx = med_pix > median(med_pix) + 2*std(med_pix);
-figure(5); clf
-plot(med_pix,'linewidth',2)
-hold on
-plot([0,length(med_pix)],(median(med_pix) + std(med_pix))*[1,1],'linewidth',2)
-legend('Median Pixel Val','Inclusion Threshold')
 
+
+tic
 %% extract midline from mask
 [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
 min_axis        = min(range(x_mask),range(y_mask));
@@ -114,14 +124,17 @@ alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
 
 [x_tmp,y_tmp]   = pol2cart(alpha,dff_cluster');
 [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+amp             = mean(dff_cluster,1)';
+
 for i = 1:n_smooth
 mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
 rho    = smoothdata(rho,1,'gaussian',b_smooth);
+amp    = smoothdata(amp,1,'gaussian',b_smooth);
 end
 
 mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
 mu(mu > pi) = mu(mu > pi) - 2*pi;
-amp = mean(dff_cluster,1)';
+
 
 %% process fictrac params
 f_speed = ftData_DAQ.velFor{:};                       %store each speed
@@ -305,5 +318,6 @@ saveas(figure(6),[base_dir,'\locomotion.png'])
 saveas(figure(7),[base_dir,'\pva.png'])
 saveas(figure(9),[base_dir,'\velocities.png'])
 end
+toc
 end
 

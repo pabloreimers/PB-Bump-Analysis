@@ -81,7 +81,7 @@ dest_dir = 'C:\Users\preim\Documents\Wilson Lab\data\to analyze';
 tmp_idx = find(ft_idx);
 time_vec = nan(size(tmp_idx));
 
-for j = 8:length(tmp_idx)
+for j = 13:length(tmp_idx)
     tic
     fprintf('%.2f%%....',j/length(tmp_idx)*100)
     i = tmp_idx(j);
@@ -96,6 +96,10 @@ for j = 8:length(tmp_idx)
     folder_name = ls([trial_list{i},'\*registration*']);
     name = ls([trial_list{i},'\*registration*\*imagingData*']);
     copyfile([trial_list{i,1},'\',folder_name,'\',name(1,:)],tmp_dir)
+    name = ls([trial_list{i},'\*mask*']);
+    if ~isempty(name)
+    copyfile([trial_list{i,1},'\',name(1,:)],tmp_dir)
+    end
 
     time_vec(j) = toc;
     catch
@@ -147,10 +151,11 @@ epg_idx     = cellfun(@(x)(contains(x,'EPG')),files_list(:,1)); %create a handle
 lpsp_idx    = cellfun(@(x)(contains(x,'LPsP')),files_list(:,1));
 dark_idx    = cellfun(@(x)(contains(x,'dark')),files_list(:,1));
 
-T = nan(size(files_list,1),5);
+T = nan(size(files_list,1),9);
 
-for i = n-3
-    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5)] = single_analysis([local_dir,'\',files_list{i,1}], true);
+for i = 1:n
+    i/n
+    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8),T(i,9)] = single_analysis([local_dir,'\',files_list{i,1}], false);
 end
 
-T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag'});
+T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2'});

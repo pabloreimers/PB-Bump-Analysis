@@ -68,7 +68,7 @@ colormap(bone)                              %set to favorite colormap. I like bl
 colorbar
 
 if movie_flag
-for i = 4000:50000 %1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
+for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
     h.CData = imgData(:,:,i);
     pause(pause_time)
 end

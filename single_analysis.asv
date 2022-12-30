@@ -1,11 +1,11 @@
-function [vel_rho,vel_pval,pva_corr,pva_pval] = single_analysis(base_dir,images_flag)
+function [vel_rho,vel_pval,pva_corr,pva_pval,lag,f_r2,r_r2,j_r2,num_flash] = single_analysis(base_dir,images_flag)
 %% script params
 f0_pct              = 15;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 10;                                                   %set how many times to perform gaussian smoothing on fictrac
-max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
+max_lag             = 10;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
 avg_win             = 5;                                                    %when showing raw 2p data, set window averaging size
 vm_thresh           = 0;
@@ -21,6 +21,19 @@ load([base_dir,'\',name],'ftData_DAQ');
 name = ls([base_dir,'\*mask*']);
 load([base_dir,'\',name],'mask');
 
+% find the flashes as points outside mask
+imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
+imgData     = reshape(imgData,[],size(imgData,3)); %reshape imgData to be allpixels x frames
+background  = imgData(~reshape(mask,[],1),:); %extract points that are outside of the mask)
+med_pix     = median(background,1);
+
+figure(5); clf
+plot(med_pix,'linewidth',2)
+hold on
+plot([0,length(med_pix)],(median(med_pix) + std(med_pix))*[1,1],'linewidth',2)
+legend('Median Pixel Val','Inclusion Threshold')
+num_flash = sum(flash_idx);
+
 %process the data to make image figures
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
@@ -33,12 +46,14 @@ imgData2    = smoothdata(imgData2,3,'movmean',avg_win);                      %sm
 
 figure(1); clf                                          % clear the current figure
 image(uint8(mean(imgData2,3))); 
+colormap('bone')
 axis equal tight
 xticks([]); yticks([])
 %find the timepoints of the flash, to exclude
 med_pix = squeeze(median(median(imgData)));
-flash_idx = med_pix > median(med_pix) + 2*std(med_pix);
 
+
+tic
 %% extract midline from mask
 [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
 min_axis        = min(range(x_mask),range(y_mask));
@@ -109,14 +124,17 @@ alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
 
 [x_tmp,y_tmp]   = pol2cart(alpha,dff_cluster');
 [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+amp             = mean(dff_cluster,1)';
+
 for i = 1:n_smooth
 mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
 rho    = smoothdata(rho,1,'gaussian',b_smooth);
+amp    = smoothdata(amp,1,'gaussian',b_smooth);
 end
 
 mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
 mu(mu > pi) = mu(mu > pi) - 2*pi;
-amp = mean(dff_cluster,1)';
+
 
 %% process fictrac params
 f_speed = ftData_DAQ.velFor{:};                       %store each speed
@@ -208,8 +226,12 @@ y = ylim; text(xf(end),y(2),sprintf('r^2: %.2f\njoint r^2: %.2f',...
                                 r_gof.adjrsquare,m_gof.adjrsquare),...
                 'HorizontalAlignment','right','VerticalAlignment','top')
 
+f_r2 = f_gof.adjrsquare;
+r_r2 = r_gof.adjrsquare;
+j_r2 = m_gof.adjrsquare;
 %% plot fly heading and bump heading, from PVA
-lag = ceil(fmincon(@(x)(circ_corrcc(cue(1:end-ceil(x)),-mu((ceil(x)+1):end))),20,[],[],[],[],0));
+%lag = ceil(fmincon(@(x)(circ_corrcc(cue(1:end-ceil(x)),-mu((ceil(x)+1):end))),20,[],[],[],[],0));
+lag = 20;
 [pva_corr,pva_pval] = circ_corrcc(cue(1:end-ceil(lag)),-mu((ceil(lag)+1):end));
 
 figure(7); clf
@@ -242,21 +264,27 @@ xlabel('time (s)')
 %% plot scatter of fly velocity to bump velocity
 bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
 fly_vel  = ftData_DAQ.velYaw{:};
+bump_vel = bump_vel(lag+1:end);
+fly_vel  = fly_vel(1:end-lag);
+flash_lag= flash_idx(lag+1:end);
+
 for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
 end
 vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
 
 figure(9); clf
-scatter(bump_vel(vel_idx & ~flash_idx'),fly_vel(vel_idx & ~flash_idx'),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
+scatter(bump_vel(vel_idx & ~flash_lag'),fly_vel(vel_idx & ~flash_lag'),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
 xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
 hold on
-[vel_rho,vel_pval] = corr(bump_vel(vel_idx & ~flash_idx'),fly_vel(vel_idx & ~flash_idx'));
+[vel_rho,vel_pval] = corr(bump_vel(vel_idx & ~flash_lag'),fly_vel(vel_idx & ~flash_lag'));
 x = xlim;
 y = ylim;
 text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
+
+lag = lag*fr;
 
 %% show fluorescence over heading
 tmp_data = dff_cluster;
@@ -274,7 +302,7 @@ tmp( tmp > top_val) = top_val;
 tmp( tmp < bot_val) = bot_val;
 imagesc(xb,1:2*n_centroid,tmp); xticks([]); ylabel('cluster'); title('\DeltaF/(F0*sum(F_t))'); pos = get(gca,'Position'); colorbar; set(gca,'Position',pos); colormap(bone)
 h(3) = subplot(3,1,3); 
-tmp = -cue; tmp(abs(diff(tmp)) > pi) = nan; plot(xf,tmp);
+tmp = cue; tmp(abs(diff(tmp)) > pi) = nan; plot(xf,tmp);
 axis tight; xlabel('time(s)'); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'}); ylim([-pi,pi]); ylabel('heading')
 
 linkaxes(h,'x')
@@ -285,9 +313,11 @@ saveas(figure(1),[base_dir,'\mean_image.png'])
 saveas(figure(2),[base_dir,'\ROI.png'])
 saveas(figure(3),[base_dir,'\dff_calc.png'])
 saveas(figure(4),[base_dir,'\fluorescence.png'])
+saveas(figure(5),[base_dir,'\flash.png'])
 saveas(figure(6),[base_dir,'\locomotion.png'])
 saveas(figure(7),[base_dir,'\pva.png'])
 saveas(figure(9),[base_dir,'\velocities.png'])
 end
+toc
 end
 
