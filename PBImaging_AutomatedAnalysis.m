@@ -161,4 +161,10 @@ for i = 1:n
     [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8),T(i,9)] = single_analysis([local_dir,'\',files_list{i,1}], true);
 end
 
-T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2','num_flash'});
+
+T = array2table(T,'VariableNames',{'vel_rho','vel_pval','pva_corr','pva_pval','lag','f_r2','r_r2','j_r2', 'num_flash'});
+
+%% Label each trial by fly
+[~,~,fly_id] = unique(str2num([cell2mat(cellfun(@(x)x{1}(1:8),files_info,'UniformOutput',false)),...
+                                         cellfun(@(x)x{end},files_info),...
+                                         num2str(cellfun(@(x)contains(x{2},'LPsP'),files_info))]));
