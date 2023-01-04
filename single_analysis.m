@@ -1,6 +1,6 @@
-function [vel_rho,vel_pval,pva_corr,pva_pval,lag,f_r2,r_r2,j_r2,num_flash] = single_analysis(base_dir,images_flag)
+function [vel_rho,vel_pval,pva_corr,pva_pval,lag,f_r2,r_r2,j_r2,num_flash,cue,mu,rho] = single_analysis(base_dir,images_flag)
 %% script params
-f0_pct              = 15;                                                    %set the percentile that for the baseline fluorescence
+f0_pct              = 7;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
@@ -12,6 +12,8 @@ vm_thresh           = 0;
 var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;   
+med_thresh          = 0.05;
+pva_thresh          = 0;
 
 %% load the relevant files for analysis from the input dir
 name = ls([base_dir,'\*imagingData*']);
@@ -26,14 +28,18 @@ imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frame
 imgData     = reshape(imgData,[],size(imgData,3)); %reshape imgData to be allpixels x frames
 background  = imgData(~reshape(mask,[],1),:); %extract points that are outside of the mask)
 med_pix     = median(background,1);
-flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
+flash_idx   = med_pix > median(med_pix) + std(med_pix);
+flash_idx   = med_pix > med_thresh;
+flash_idx   = logical(smoothdata(flash_idx,'gaussian',20));
+
 
 figure(5); clf
 plot(med_pix,'linewidth',2)
 hold on
-plot([0,length(med_pix)],(median(med_pix) + 2*std(med_pix))*[1,1],'linewidth',2)
-%plot([0,length(med_pix)], 500*[1,1],'linewidth',2)
-legend('Median Pixel Val','Inclusion Threshold')
+%plot([0,length(med_pix)],(median(med_pix) + std(med_pix))*[1,1],'linewidth',2)
+plot([0,length(med_pix)], med_thresh*[1,1],'linewidth',2)
+legend('Median Pixel Val, dF/F','Inclusion Threshold')
 num_flash = sum(flash_idx);
 
 %process the data to make image figures
@@ -232,7 +238,10 @@ j_r2 = m_gof.adjrsquare;
 %% plot fly heading and bump heading, from PVA
 %lag = ceil(fmincon(@(x)(circ_corrcc(cue(1:end-ceil(x)),-mu((ceil(x)+1):end))),20,[],[],[],[],0));
 lag = 20;
-[pva_corr,pva_pval] = circ_corrcc(cue(1:end-ceil(lag)),-mu((ceil(lag)+1):end));
+pva_idx = rho > pva_thresh;
+cue_lag = cue(1:end-ceil(lag));
+mu_lag  = mu((ceil(lag)+1):end);
+[pva_corr,pva_pval] = circ_corrcc(cue_lag(pva_idx((ceil(lag)+1):end)),-mu_lag(pva_idx(ceil(lag)+1:end)));
 
 figure(7); clf
 subplot(3,1,1)
@@ -242,7 +251,7 @@ yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'}); ylim([-pi,pi])
 ylabel('Fly Heading (cue)')
 
 subplot(3,1,2)
-scatter(xf(~flash_idx),-mu(~flash_idx),[],rho(~flash_idx),'.')
+scatter(xf(~flash_idx & pva_idx'),-mu(~flash_idx & pva_idx'),[],rho(~flash_idx & pva_idx'),'.')
 colormap('bone')
 yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'}); ylim([-pi,pi])
 pos = get(gca,'Position');
@@ -253,7 +262,7 @@ ylabel('PVA')
 subplot(3,1,3)
 a = plot(xf,circ_dist(cue,-mu),'k','linewidth',2);
 a.YData(abs(diff(a.YData))>pi) = nan;
-a.YData(flash_idx) = nan;
+a.YData(flash_idx | ~pva_idx') = nan;
 ylabel('Offset')
 yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
@@ -267,6 +276,7 @@ fly_vel  = ftData_DAQ.velYaw{:};
 bump_vel = bump_vel(lag+1:end);
 fly_vel  = fly_vel(1:end-lag);
 flash_lag= flash_idx(lag+1:end);
+pva_lag  = pva_idx(lag+1:end);
 
 for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
@@ -274,10 +284,10 @@ end
 vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
 
 figure(9); clf
-scatter(bump_vel(vel_idx & ~flash_lag'),fly_vel(vel_idx & ~flash_lag'),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
+scatter(bump_vel(vel_idx & ~flash_lag' & pva_lag),fly_vel(vel_idx & ~flash_lag' & pva_lag),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
 xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
 hold on
-[vel_rho,vel_pval] = corr(bump_vel(vel_idx & ~flash_lag'),fly_vel(vel_idx & ~flash_lag'));
+[vel_rho,vel_pval] = corr(bump_vel(vel_idx & ~flash_lag' & pva_lag),fly_vel(vel_idx & ~flash_lag' & pva_lag));
 x = xlim;
 y = ylim;
 text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')

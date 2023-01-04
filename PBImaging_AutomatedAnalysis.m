@@ -89,6 +89,7 @@ for j = 25:length(tmp_idx)
     try
     tmp = regexp(trial_list{i},'\','split');
     tmp_dir = [dest_dir,'\',tmp{end}];
+    if ~isfolder(tmp_dir)
     mkdir(tmp_dir)
     
     name = ls([trial_list{i},'\*ficTracData_DAQ*']);
@@ -99,6 +100,7 @@ for j = 25:length(tmp_idx)
     name = ls([trial_list{i},'\*mask*']);
     if ~isempty(name)
     copyfile([trial_list{i,1},'\',name(1,:)],tmp_dir)
+    end
     end
 
     time_vec(j) = toc;
@@ -155,10 +157,11 @@ lpsp_idx    = cellfun(@(x)(contains(x,'LPsP')),files_list(:,1));
 dark_idx    = cellfun(@(x)(contains(x,'dark')),files_list(:,1));
 
 T = nan(size(files_list,1),9);
+D = {size(files_list,1),3};
 
 for i = 1:n
     i/n
-    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8),T(i,9)] = single_analysis([local_dir,'\',files_list{i,1}], true);
+    [T(i,1),T(i,2),T(i,3),T(i,4),T(i,5),T(i,6),T(i,7),T(i,8),T(i,9),D{i,1},D{i,2},D{i,3}] = single_analysis([local_dir,'\',files_list{i,1}], true);
 end
 
 
