@@ -2,7 +2,7 @@
 clear all
 close all
 mask_flag           = true;
-mask_overwrite      = false;
+mask_overwrite      = true;
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
@@ -19,13 +19,16 @@ vm_thresh           = 0;
 var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
-rho_thresh          = 5e-3;
+rho_thresh          = 1e-2;
 
 %% select folder of images
 base_dir = uigetdir(data_dir);
 trials   = dir(base_dir);
 trials(1:2) = [];
 trials   = {trials.name}';
+tmp = regexp( trials, '-\d+_', 'match', 'once' );
+[~,reindex] = sort(-cellfun(@(x)sscanf(x,'%d'),tmp));
+trials = trials(reindex);
 
 %% extract gains
 tmp   = cellfun(@(x)(regexp(x,'_','split')),trials,'UniformOutput',false);
@@ -79,188 +82,374 @@ for i = 1:length(trials)
     
     [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
     xf{i}  = mean(diff(ftData_DAQ.trialTime{:})) * [1:length(f_speed{i})]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
-    if isduration(xf)
-        xf{i} = seconds(xf);
+    if isduration(xf{i})
+        xf{i} = seconds(xf{i});
     end
-    [dff_tot{i},dff_peak{i},mu{i},rho{i}] = bump_calc(mask,squeeze(sum(regProduct,3)),n_centroid,f0_pct,n_smooth,b_smooth,xf);
+    [dff_tot{i},dff_peak{i},mu{i},rho{i}] = bump_calc(mask,squeeze(sum(regProduct,3)),n_centroid,f0_pct,n_smooth,b_smooth,xf{i});
     
 end
 
-%% show cue_gain vs mu_gain for each trial
-fr      = mean(diff(xf)); %find the frame rate of the data
-c       = [0,0.5,0; 0,0,0];
+%% verify cue gain
 
-figure(8); clf
-hold on
-for i = 1:length(trials)
-    
-    vel = smoothdata(r_vel{i},1,'gaussian',f_smooth);
-    idx = abs(vel) > vel_min;
-    
+gains_set = unique(gains);
 
-    tmp = [diff(unwrap(-cue{i}))/fr;0];
+re_cue    = {length(trials),length(gains_set)}; %store the cue position for each trial for each of the tested gains
 
-    cue_gain = vel(idx) \ tmp(idx);
+for i = 1:length(gains_set)
+    for j = 1:length(trials)
+         tmp = cumsum(r_vel{j} * gains_set(i) * mean(diff(xf{i})));
+         for k = 1:10
+             tmp = smoothdata(tmp,'gaussian',50);
+         end
+         re_cue{j,i} = tmp;
 
-    tmp = [diff(unwrap(mu{i}))/fr;0];
-    mu_gain  = vel(idx) \ tmp(idx);
-
-    subplot(1,2,1)
-    hold on
-    scatter(cue_gain,mu_gain,100,'filled','MarkerFaceColor',c(dark(i)+1,:))
-
-    subplot(length(trials),2,2*i)
-    hold on
-    a = plot(xf{i},-cue{i},'Color',c(dark(i)+1,:),'linewidth',2);
-    a.YData(abs(diff(a.YData))>pi) = nan;
-
-    tmp = unwrap(mu{i}) + median(circ_dist(-cue{i},mu{i}));
-    tmp   = mod(tmp,2*pi);                                %rewrap heading data, and put between -pi and pi.
-    tmp(tmp > pi) = tmp(tmp > pi) - 2*pi;
-
-    a = plot(xf{i},tmp,'Color', [1,.5,0],'linewidth',2);
-    a.YData(abs(diff(a.YData))>pi) = nan;
-    axis tight
-    yticks([-pi,-0,pi]); yticklabels({'-\pi','0','\pi'});ylim([-pi,pi]);ylabel(sprintf('gain = %.2f',gains(i)))
-end
-
-subplot(1,2,1)
-xlabel('cue gain')
-ylabel('mu gain')
-axis equal
-x = xlim;
-plot([x(1),x(2)],[x(1),x(2)],':k')
-%% plot distribution of rotational speed and gains
-figure(1); clf
-for i = 1:n
-
-    idx = r_speed{i} > vel_min;
-subplot(3,2,1)
-hold on
-swarmchart(gains(i)*ones(length(dff_peak{i}),1),r_speed{i},'filled','MarkerFaceAlpha',.2)
-ylabel('r speed')
-subplot(3,2,3)
-hold on
-swarmchart(gains(i)*ones(sum(idx),1),dff_peak{i}(idx),'filled','MarkerFaceAlpha',.2)
-ylabel('dff peak')
-subplot(3,2,5)
-hold on
-swarmchart(gains(i)*ones(sum(idx),1),dff_peak{i}(idx)./r_speed{i}(idx),'filled','MarkerFaceAlpha',.2)
-ylabel('dff peak / r speed')
-xlabel('gain')
-
-subplot(3,2,2)
-hold on
-swarmchart(gains(i)*ones(length(dff_peak{i}),1),r_speed{i},'filled','MarkerFaceAlpha',.2)
-ylabel('r speed')
-subplot(3,2,4)
-hold on
-swarmchart(gains(i)*ones(sum(idx),1),dff_tot{i}(idx),'filled','MarkerFaceAlpha',.2)
-ylabel('dff tot')
-subplot(3,2,6)
-hold on
-swarmchart(gains(i)*ones(sum(idx),1),dff_tot{i}(idx)./r_speed{i}(idx),'filled','MarkerFaceAlpha',.2)
-ylabel('dff tot / r speed')
-xlabel('gain')
-end
-subplot(3,2,1); plot(xlim,vel_min*[1,1],'k','linewidth',2)
-subplot(3,2,2); plot(xlim,vel_min*[1,1],'k','linewidth',2)
-%% bootstrap a bunch of timepoints and compare dff to rspeed ratio
-N       = 1e4;
-frames  = length(dff_peak{i});
-idx     = randi(frames,N,frames);
-p_peak  = nan(length(trials));
-p_tot   = nan(length(trials));
-p_speed = nan(length(trials));
-
-for i = 1:length(trials)
-    for j= 1:length(trials)
-        p_peak(i,j) = sum(mean(dff_peak{i}(idx)./r_speed{i}(idx),2) > mean(dff_peak{j}(idx)./r_speed{j}(idx),2))/N;
-        p_tot(i,j)  = sum(mean(dff_tot{i}(idx)./r_speed{i}(idx),2) > mean(dff_tot{j}(idx)./r_speed{j}(idx),2))/N;
-        p_speed(i,j) = sum(mean(r_speed{i}(idx),2) > mean(r_speed{j}(idx),2))/N;
     end
 end
 
-%%
-N = 1e2;
-m_peak = nan(N,length(trials));
-c_peak = nan(N,length(trials));
-m_tot  = nan(N,length(trials));
-c_tot  = nan(N,length(trials));
-
-for i = 1:length(trials)
-    tmp_idx = r_speed{i} > .2;
-    tmp_speed = r_speed{i}(tmp_idx);
-    tmp_peak  = dff_peak{i}(tmp_idx);
-    tmp_tot   = dff_tot{i}(tmp_idx);
-
-    tmp_idx = randi(length(tmp_speed),N,length(tmp_speed));
-
-    for j = 1:N
-        sprintf('i: %i, j: %i',i,j)
-        tmp = fitlm(tmp_speed(tmp_idx(j,:)),tmp_peak(tmp_idx(j,:)));
-    
-        m_peak(j,i) = tmp.Coefficients.Estimate(2);
-        c_peak(j,i) = tmp.Coefficients.Estimate(1);
-
-        tmp = fitlm(tmp_speed(tmp_idx(j,:)),tmp_tot(tmp_idx(j,:)));
-    
-        m_tot(j,i)  = tmp.Coefficients.Estimate(2);
-        c_tot(j,i)  = tmp.Coefficients.Estimate(1);
-    end
-end
-
-%% 
-c = [1, 0.5, 0; ...
-    0, 0.5, 1; ...
-    .75, 0, 0.75;...
-    .75, .75, 0; ...
-    0, .75, .75; ...
-    0, 0, 0];
-%c = jet(6)
-
-figure(4); clf
-for i = 1:length(gains)
-    subplot(1,2,1)
-    hold on
-    swarmchart(gains(i)*ones(size(m_tot(:,i))),m_tot(:,i),[],c(i,:),'filled')
-    title('Total vs Speed (slope)')
-    xlabel('gain')
-
-    subplot(1,2,2)
-    hold on
-    swarmchart(gains(i)*ones(size(m_peak(:,i))),m_peak(:,i),[],c(i,:),'filled')
-    title('Peak vs Speed (slope)')
-    xlabel('gain')
-end
-
-%% show p values in heatmap
-subplot(2,2,1)
-heatmap(p_speed)
-title('r speed')
-
-subplot(2,2,3)
-heatmap(p_peak)
-title('dff peak')
-
-subplot(2,2,4)
-heatmap(p_tot)
-title('dff tot')
-
-%% plot trajectories
+%% plotunwrapped cues over each other
 figure(2); clf
-for i = 1:length(trials)
-    subplot(length(trials),1,i);
-    a = plot(xf,cue{i});
-    a.YData(abs(diff(a.YData))>pi) = nan;
-    yticks([-pi,0,pi]);yticklabels({'-\pi','0','\pi'});
-    axis tight; ylim([-pi,pi])
-    text(max(xf),pi,sprintf('gain = %.1f',gains(i)),'HorizontalAlignment','right','VerticalAlignment','top')
-    ylabel(num2str(i))
+str = {size(gains_set)};
+for j = 1:length(trials)
+    subplot(length(trials),2,2*j - 1)
+    hold on
+    for i = 1:length(gains_set)
+        plot(xf{j},(unwrap(re_cue{j,i}) - re_cue{j,i}(1)) ,'linewidth',2)
+        str{i} = sprintf('gain = %.1f',gains_set(i));
+    end
+    plot(xf{j},unwrap(mu{j}) - mu{j}(1),'linewidth',2)
+    
+    pos = get(gca,'Position');
+    legend(str{:},'mu','location','northeast outside')
+    set(gca,'Position',pos)
+    axis tight
+    ylabel(sprintf('Accumulated\nRotation\n(radians)'))
+    ylabel('$\int\hat{\theta}$','Interpreter','latex')
+    if dark(j)
+        tmp = 'dark';
+    else
+        tmp = 'cue';
+    end
+    y = ylim;
+    text(0,max(y),sprintf('trained with gain = %.1f, %s',gains(j),tmp),'VerticalAlignment','top')
+    fontsize(gca,.25,'inches')
 end
+
+
+%% running error calculation with each gain
+% bin_time = 2; %set the bin time to be one second
+% lag      = 1/3;
+% errs = {size(re_cue)};
+% gain_inf = {size(re_cue)};
+% 
+% for j = 1:length(trials)
+%     fr = mean(diff(xf{j}));
+%     bin_size = floor(bin_time / fr);
+%     lag_frames = floor(lag / fr);
+% 
+%     for i = 1:length(gains_set)
+%         tot_err = 0;
+%         errs{j,i} = nan((length(re_cue{j,i})-bin_size-lag_frames),1);
+%         gain_inf{j,i} = nan((length(re_cue{j,i})-bin_size-lag_frames),1);
+%         for k = 1:(length(re_cue{j,i})-bin_size-lag_frames)
+%             fprintf('j:%i, i:%i, k:%.2f\n',j, i,k/(length(re_cue{j,i})-bin_size-lag_frames))
+%             mu_tmp  = unwrap(mu{j}((k:k+bin_size) + lag_frames));
+%             mu_tmp  = mu_tmp - mu_tmp(1);
+%             cue_tmp = unwrap(re_cue{j,i}(k:k+bin_size));
+%             cue_tmp = cue_tmp - cue_tmp(1);
+%             errs{j,i}(k) = sum(abs(mu_tmp - cue_tmp));% / sum(r_speed{j}((k:k+bin_size) + lag_frames));% / sum(abs(diff(cue_tmp))); %find the positional error in the current binned window. sum up all the error in the window. divide by the frame rate to keep this a consistent metric.
+%             gains_inf{j,i}(k) = ((mu{j}(k + lag_frames) - mu{j}(k+1+lag_frames))) * fr / r_vel{j}(k);
+%         end
+%         %errs{j,i} = ; %total error is all the summed error divided by however many windows were taken
+%     end
+% end
+
+%% find gain as a running metric
+bin_time = 10; %set the bin time to be one second
+lag_init = 1/3;
+gain_init= .7;
+gain_inf = cell(length(trials),1);
+lag_inf  = cell(length(trials),1);
+x0 = [0.7, lag_init, 0];
+lb = [0,    0, -5];
+ub = [2,    1,  5];
+
+for j = 1:length(trials)
+    fr = mean(diff(xf{j}));
+    bin_size = floor(bin_time / fr);
+    %lag_frames = floor(lag / fr);
+    num_bins = 3*floor(length(mu{j}) / bin_size);
+    gain_inf{j} = nan(num_bins-3,1);
+
+    for k = 1:(num_bins-3)
+        start_idx = (k-1)*(bin_size/3) + 1;
+        obj_fun = @(x)bump_error(x,mu{j}(start_idx:start_idx+bin_size),r_vel{j}(start_idx:start_idx+bin_size),fr);
+        x  = fmincon(obj_fun,x0,[],[],[],[],lb,ub);
+        gain_inf{j}(k) = x(1);
+        lag_inf{j}(k) = x(2);
+    end
+end
+%% plot inferred gains
+figure(2); subplot(2,2,2); cla
+yyaxis right
+ax = gca;
+ax.YAxis(2).Color = 'k';
+ax.YAxis(1).Color = 'none';
+hold on
+str = {};
+for i = 1:length(gain_inf)
+    if dark(i)
+        c = [0,0,0];
+    else
+        c = [0,.5,0];
+    end
+    swarmchart(i*ones(length(gain_inf{i})),gain_inf{i},'filled','XJitterWidth',.5,'MarkerFaceColor',c,'MarkerFaceAlpha',.5)
+    errorbar(i,mean(gain_inf{i}),std(gain_inf{i})/sqrt(length(gain_inf{i})),'.r')
+    str{i} = sprintf('Trial: %d (%.1f)',i,gains(i));
+end
+xticks([1:length(gain_inf)])
+xticklabels(str)
+ylabel('inferred gain')
+% 
+% idx = find(dark);
+% subplot(2,2,4); cla
+% c = [1,0.5,0; 0,0.5,1; .75, 0, .75];
+% yyaxis right
+
+% ax = gca;
+% ax.YAxis(2).Color = 'k';
+% ax.YAxis(1).Color = 'none';
+% ax.ColorOrder = c
+% x  = 0:.1:2;
+% y  = nan(length(x)-1,length(trials));
+% str = {};
+% for i = 1:length(trials)
+%     y(:,i) = histcounts(gain_inf{i},x)/length(gain_inf{i});
+%     str{i} = sprintf('Trial: %d, Trained: %.1f',i,gains(i));
+% end
+% 
+% bar(x(1:end-1),y(:,dark))
+% legend(str(dark))
+% xlabel('gain'); ylabel('proportion')
+
+%% find pvalues of histograms being different (paired ttest2)
+h = nan(length(trials));
+p = nan(length(trials));
+
+for i = 1:length(trials)
+    for j = 1:length(trials)
+        [h(i,j),p(i,j)] = ttest2(gain_inf{i},gain_inf{j},'Vartype','unequal');
+    end
+end
+
+bonf = (numel(p) - length(trials)) / 2;
+figure(2); subplot(2,2,4)
+heatmap(p * bonf)
+title('paired t-test p-values (bonferroni correction)')
+%% plot errors with traces
+% figure(2);
+% for j = 1:length(trials)
+%         subplot(length(trials),2,2*j); cla
+%         hold on
+%     for i = 1:length(gains_set)
+%         plot(errs{j,i},'linewidth',.5); %plot(medfilt1(gains_inf{j,i}),'linewidth',.5)
+%     end
+% end
+%         %heatmap(errs,'XData',gains_set)
+% subplot(length(trials),2,2)
+% title(sprintf('Rolling Positional Error\nbin = %.1f seconds',bin_time),'Fontsize',20)
+% subplot(length(trials),2,2*length(trials))
+% xlabel('gains','Fontsize',72*.5)
+% 
+% %% show cue_gain vs mu_gain for each trial
+% c       = [0,0.5,0; 0,0,0];
+% 
+% figure(8); clf
+% hold on
+% for i = 1:length(trials)
+%     fr      = mean(diff(xf{i})); %find the frame rate of the data
+%     vel = smoothdata(r_vel{i},1,'gaussian',f_smooth);
+%     idx = abs(vel) > vel_min;
+%     
+% 
+%     tmp = [diff(unwrap(-cue{i}))/fr;0];
+% 
+%     cue_gain = vel(idx) \ tmp(idx);
+% 
+%     tmp = [diff(unwrap(mu{i}))/fr;0];
+%     mu_gain  = vel(idx) \ tmp(idx);
+% 
+%     subplot(1,2,1)
+%     hold on
+%     scatter(gains(i),mu_gain,100,'filled','MarkerFaceColor',c(dark(i)+1,:))
+% 
+%     subplot(length(trials),2,2*i)
+%     hold on
+%     a = plot(xf{i},-cue{i},'Color',c(dark(i)+1,:),'linewidth',2);
+%     a.YData(abs(diff(a.YData))>pi) = nan;
+% 
+%     tmp = unwrap(mu{i}) + median(circ_dist(-cue{i},mu{i}));
+%     tmp   = mod(tmp,2*pi);                                %rewrap heading data, and put between -pi and pi.
+%     tmp(tmp > pi) = tmp(tmp > pi) - 2*pi;
+% 
+%     a = plot(xf{i},tmp,'Color', [1,.5,0],'linewidth',2);
+%     a.YData(abs(diff(a.YData))>pi) = nan;
+%     a.YData(rho{i}<rho_thresh) = nan;
+%     axis tight
+%     yticks([-pi,-0,pi]); yticklabels({'-\pi','0','\pi'});ylim([-pi,pi]);ylabel(sprintf('gain = %.2f',gains(i)))
+% end
+% 
+% subplot(1,2,1)
+% xlabel('cue gain')
+% ylabel('mu gain')
+% axis equal
+% x = xlim;
+% plot([x(1),x(2)],[x(1),x(2)],':k')
+% %% plot distribution of rotational speed and gains
+% figure(1); clf
+% for i = 1:n
+% 
+%     idx = r_speed{i} > vel_min;
+% subplot(3,2,1)
+% hold on
+% swarmchart(gains(i)*ones(length(dff_peak{i}),1),r_speed{i},'filled','MarkerFaceAlpha',.2)
+% ylabel('r speed')
+% subplot(3,2,3)
+% hold on
+% swarmchart(gains(i)*ones(sum(idx),1),dff_peak{i}(idx),'filled','MarkerFaceAlpha',.2)
+% ylabel('dff peak')
+% subplot(3,2,5)
+% hold on
+% swarmchart(gains(i)*ones(sum(idx),1),dff_peak{i}(idx)./r_speed{i}(idx),'filled','MarkerFaceAlpha',.2)
+% ylabel('dff peak / r speed')
+% xlabel('gain')
+% 
+% subplot(3,2,2)
+% hold on
+% swarmchart(gains(i)*ones(length(dff_peak{i}),1),r_speed{i},'filled','MarkerFaceAlpha',.2)
+% ylabel('r speed')
+% subplot(3,2,4)
+% hold on
+% swarmchart(gains(i)*ones(sum(idx),1),dff_tot{i}(idx),'filled','MarkerFaceAlpha',.2)
+% ylabel('dff tot')
+% subplot(3,2,6)
+% hold on
+% swarmchart(gains(i)*ones(sum(idx),1),dff_tot{i}(idx)./r_speed{i}(idx),'filled','MarkerFaceAlpha',.2)
+% ylabel('dff tot / r speed')
+% xlabel('gain')
+% end
+% subplot(3,2,1); plot(xlim,vel_min*[1,1],'k','linewidth',2)
+% subplot(3,2,2); plot(xlim,vel_min*[1,1],'k','linewidth',2)
+% %% bootstrap a bunch of timepoints and compare dff to rspeed ratio
+% N       = 1e4;
+% frames  = length(dff_peak{i});
+% idx     = randi(frames,N,frames);
+% p_peak  = nan(length(trials));
+% p_tot   = nan(length(trials));
+% p_speed = nan(length(trials));
+% 
+% for i = 1:length(trials)
+%     for j= 1:length(trials)
+%         p_peak(i,j) = sum(mean(dff_peak{i}(idx)./r_speed{i}(idx),2) > mean(dff_peak{j}(idx)./r_speed{j}(idx),2))/N;
+%         p_tot(i,j)  = sum(mean(dff_tot{i}(idx)./r_speed{i}(idx),2) > mean(dff_tot{j}(idx)./r_speed{j}(idx),2))/N;
+%         p_speed(i,j) = sum(mean(r_speed{i}(idx),2) > mean(r_speed{j}(idx),2))/N;
+%     end
+% end
+% 
+% %%
+% N = 1e2;
+% m_peak = nan(N,length(trials));
+% c_peak = nan(N,length(trials));
+% m_tot  = nan(N,length(trials));
+% c_tot  = nan(N,length(trials));
+% 
+% for i = 1:length(trials)
+%     tmp_idx = r_speed{i} > .2;
+%     tmp_speed = r_speed{i}(tmp_idx);
+%     tmp_peak  = dff_peak{i}(tmp_idx);
+%     tmp_tot   = dff_tot{i}(tmp_idx);
+% 
+%     tmp_idx = randi(length(tmp_speed),N,length(tmp_speed));
+% 
+%     for j = 1:N
+%         sprintf('i: %i, j: %i',i,j)
+%         tmp = fitlm(tmp_speed(tmp_idx(j,:)),tmp_peak(tmp_idx(j,:)));
+%     
+%         m_peak(j,i) = tmp.Coefficients.Estimate(2);
+%         c_peak(j,i) = tmp.Coefficients.Estimate(1);
+% 
+%         tmp = fitlm(tmp_speed(tmp_idx(j,:)),tmp_tot(tmp_idx(j,:)));
+%     
+%         m_tot(j,i)  = tmp.Coefficients.Estimate(2);
+%         c_tot(j,i)  = tmp.Coefficients.Estimate(1);
+%     end
+% end
+% 
+% %% 
+% c = [1, 0.5, 0; ...
+%     0, 0.5, 1; ...
+%     .75, 0, 0.75;...
+%     .75, .75, 0; ...
+%     0, .75, .75; ...
+%     0, 0, 0];
+% %c = jet(6)
+% 
+% figure(4); clf
+% for i = 1:length(gains)
+%     subplot(1,2,1)
+%     hold on
+%     swarmchart(gains(i)*ones(size(m_tot(:,i))),m_tot(:,i),[],c(i,:),'filled')
+%     title('Total vs Speed (slope)')
+%     xlabel('gain')
+% 
+%     subplot(1,2,2)
+%     hold on
+%     swarmchart(gains(i)*ones(size(m_peak(:,i))),m_peak(:,i),[],c(i,:),'filled')
+%     title('Peak vs Speed (slope)')
+%     xlabel('gain')
+% end
+% 
+% %% show p values in heatmap
+% subplot(2,2,1)
+% heatmap(p_speed)
+% title('r speed')
+% 
+% subplot(2,2,3)
+% heatmap(p_peak)
+% title('dff peak')
+% 
+% subplot(2,2,4)
+% heatmap(p_tot)
+% title('dff tot')
+% 
+% %% plot trajectories
+% figure(2); clf
+% for i = 1:length(trials)
+%     subplot(length(trials),1,i);
+%     a = plot(xf,cue{i});
+%     a.YData(abs(diff(a.YData))>pi) = nan;
+%     yticks([-pi,0,pi]);yticklabels({'-\pi','0','\pi'});
+%     axis tight; ylim([-pi,pi])
+%     text(max(xf),pi,sprintf('gain = %.1f',gains(i)),'HorizontalAlignment','right','VerticalAlignment','top')
+%     ylabel(num2str(i))
+% end
 
 
 %% functions
+function mse = bump_error(x,mu,r_vel,fr)
+    gain = x(1);
+    lag  = x(2);
+    offset=x(3);
+    lag_frames = max(floor(lag / fr),1);
+    cue = cumsum(r_vel * gain * fr);
+    for k = 1:10
+        cue = smoothdata(cue,'gaussian',50);
+    end
+    mu_tmp = unwrap(mu(lag_frames:end));
+    mu_tmp = mu_tmp - mu_tmp(1);
+    cue_tmp= cue(1:end-lag_frames+1) - cue(1);
+    mse = mean((mu_tmp - cue_tmp+offset).^2);     
+
+end
 function [f_speed,r_speed,intHD,cue,r_vel] = ft_calc(ftData_DAQ,n_smooth,f_smooth)
 
 f_speed = ftData_DAQ.velFor{:};                       %store each speed
@@ -291,8 +480,6 @@ r_vel  = ftData_DAQ.velYaw{:};
 %    r_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
 % end
 end
-
-
 
 function [amp_tot,amp_peak, mu, rho] = bump_calc(mask, imgData, n_centroid, f0_pct, n_smooth, b_smooth, xf)
 %extract midline from mask
