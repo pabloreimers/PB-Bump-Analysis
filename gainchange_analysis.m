@@ -2,7 +2,7 @@
 clear all
 close all
 mask_flag           = true;
-mask_overwrite      = true;
+mask_overwrite      = false;
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
