@@ -146,6 +146,8 @@ imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
 xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
 imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
+hold on
+scatter(ones(1,2*n_centroid),1:2*n_centroid,100,cmap,'filled','square')
 
 %% Estimate von mises parameters (both sides)
 % n_frames    = size(dff_cluster,2);
@@ -683,7 +685,29 @@ for i = t_span
     pause(.1)
 end
 end
-
+%% 
+tmp = unwrap(mu) - median(circ_dist(mu,-cue)); %- mu(1);
+tmp   = mod(tmp,2*pi);                                %rewrap heading data, and put between -pi and pi.
+tmp(tmp > pi) = tmp(tmp > pi) - 2*pi;
+figure(12); clf
+a = plot(tmp,'k','LineWidth',2);
+a.YData(abs(diff(a.YData)) > pi) = nan;
+hold on
+tmp = unwrap(cue); % - cue(1);
+tmp   = mod(tmp,2*pi);                                %rewrap heading data, and put between -pi and pi.
+tmp(tmp > pi) = tmp(tmp > pi) - 2*pi;
+a = plot(-tmp,'b','LineWidth',2);
+a.YData(abs(diff(a.YData)) > pi) = nan;
+axis tight
+ylabel('Azimuth (radians)')
+yticks([-pi,0,pi])
+ylim([-pi,pi])
+yticklabels({'-\pi','0','\pi'})
+a = gca;
+a.FontSize= 20;
+xticks([])
+xticklabels([])
+legend('PVA','Cue')
 
 % %% load fly movie and interpolate at framerate (time consuming)
 % [filename2,filepath2] = uigetfile(filepath,'Select fly movie');
