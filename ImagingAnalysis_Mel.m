@@ -190,7 +190,7 @@ scatter(ones(1,2*n_centroid),1:2*n_centroid,100,cmap,'filled','square')
 %% Estimate von mises (Mel Style)
 % n_frames    = size(dff_cluster,2);
 % alpha       = linspace(-pi,pi,n_centroid);          %create a vector map to represent each centroid as an angle, where the ends represent the same angle (0, 2pi)
-% adj_rs      = nan(n_frames,1);
+% rho      = nan(n_frames,1);
 % mu          = nan(n_frames,1);
 % amp         = nan(n_frames,1);
 % width       = nan(n_frames,1);
@@ -204,12 +204,22 @@ scatter(ones(1,2*n_centroid),1:2*n_centroid,100,cmap,'filled','square')
 % for i = 1:n_frames
 %     [f, gof] = fit([alpha,alpha]',zscore_cluster(:,i),ft,...
 %         'MaxIter',20000,'MaxFunEvals',20000);
-%     adj_rs(i) = gof.adjrsquare;
+%     rho(i) = gof.adjrsquare;
 %     mu(i)        = f.u;
 %     amp(i)       = f.a * ( exp(f.k) - exp(-f.k) );
 %     width(i)     = 2 * abs( acos( 1/f.k * log( 1/2 *( exp(f.k) + exp(-f.k) ))));
 %     fprintf('frame %i / %i\n',i,n_frame)
 % end
+% 
+% for i = 1:n_smooth
+% mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+% rho    = smoothdata(rho,1,'gaussian',b_smooth);
+% amp = smoothdata(amp,1,'gaussian',b_smooth); 
+% width  = smoothdata(width,1,'gaussian',b_smooth);
+% end
+% 
+% mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+% mu(mu > pi) = mu(mu > pi) - 2*pi;
 
 %% estimate von mises for joint left and right
 % n_frames    = size(dff_cluster,2);
@@ -308,23 +318,24 @@ tmp_data    = dff_cluster;
 alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
 
 [x_tmp,y_tmp]   = pol2cart(alpha,tmp_data');
-[mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
-for i = 1:n_smooth
-mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
-rho    = smoothdata(rho,1,'gaussian',b_smooth);
+[mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2)); %find mu and rho
+amp = mean(dff_cluster,1)'; %find the amp, which is the mean dff in the whole mask
+
+[~,i] = mink(abs(alpha-mu),2,2); %find indexes corresponding to bump position in each time point
+i2 = i' + size(dff_cluster,1)*[0:size(dff_cluster,2)-1]; %find the linear index into the peak of each column (time point) value. this was clever :)
+amp_mu = mean(dff_cluster(i2),1)'; %extract amplitude at mu position
+amp_peak = max(dff_cluster,[],1); %extract max amplitude at each time point
+
+for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
+mu          = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+rho         = smoothdata(rho,1,'gaussian',b_smooth);
+amp         = smoothdata(amp,1,'gaussian',b_smooth);
+amp_mu    = smoothdata(amp_mu,1,'gaussian',b_smooth); 
+amp_peak    = smoothdata(amp_peak,1,'gaussian',b_smooth);
 end
 
 mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
 mu(mu > pi) = mu(mu > pi) - 2*pi;
-amp = mean(dff_cluster,1)';
-[~,i] = mink(abs(alpha-mu),2,2); %find indexes corresponding to peak of each time point
-i2 = i' + size(dff_cluster,1)*[0:size(dff_cluster,2)-1]; %find the linear index into the peak of each column (time point) value. this was clever :)
-amp_peak = mean(dff_cluster(i2),1)'; %extract peak amplitude
-
-for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
-amp = smoothdata(amp,1,'gaussian',b_smooth); 
-amp_peak = smoothdata(amp_peak,1,'gaussian',b_smooth);
-end
 
 %% plot! movie
 % c1 = [1,0.5,0];                                                             %define the colors for the left and right bump
@@ -459,6 +470,7 @@ mu = mod(mu,2*pi);                                %rewrap heading data, and put 
 mu(mu > pi) = mu(mu > pi) - 2*pi;
 rho         = interp1(xb,rho,xf)';
 amp         = interp1(xb,amp,xf)';
+%width       = interp1(xb,width,xf);
 amp_peak         = interp1(xb,amp_peak,xf)';
 
 %% Plot bump params over fictrac data
@@ -629,6 +641,10 @@ axis tight; ylim([-pi,pi])
 xlabel('time (s)')
 
 %% plot scatter of fly velocity to bump velocity
+vel_rho = nan(1,100);
+for j = 1:100
+%lag = 20;
+lag = j;
 bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
 fly_vel  = ftData_DAQ.velYaw{:};
 bump_vel = bump_vel(lag+1:end);
@@ -643,12 +659,16 @@ figure(9); clf
 scatter(bump_vel(vel_idx),fly_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
 xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
 hold on
-[vel_rho,vel_pval] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
+%[vel_rho,vel_pval] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
+[vel_rho(j),~] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
 x = xlim;
 y = ylim;
-text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
+%text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
+end
+
+[~,i] = max(vel_rho);
 
 lag = lag*fr;
 
@@ -753,3 +773,97 @@ legend('PVA','Cue')
 %     h(4).YData(i) = amp_int(i);
 %     pause(pause_time)
 % end
+
+%% plot dff over time as a movie
+% dff_smooth = smoothdata(dff_cluster,1,'gaussian',n_centroid/2);
+% [y_out,x_out] = find(bwmorph(mask,'remove'));
+% [y_out,x_out] = graph_sort(y_out,x_out);
+% figure(13); clf
+% 
+% subplot(4,1,2:4)
+% h           = image(imgData(:,:,1));        %initialize an image object where we will update the color values in each frame 
+% hold on
+% scatter(centroids(:,2),centroids(:,1),[],cmap,'filled','MarkerFaceAlpha',.2)
+% plot(x_out,y_out,':w')
+% axis equal tight                            %make all pixels square, and keep axis tight for clean look
+% colormap(bone)                              %set to favorite colormap. I like black and white
+% xticks([])
+% yticks([])
+% 
+% subplot(4,1,1)
+% a = scatter(alpha,nan(2*n_centroid,1),[],cmap,'filled');
+% ylim([0,max(dff_smooth,[],'all')])
+% xlim([-pi,pi])
+% xticks([-pi,-0,pi])
+% xticklabels({'-\pi','0','\pi'})
+% xlabel('azimuth')
+% ylabel('\DeltaF/F')
+% 
+% for i = 1:size(dff_cluster,2)
+%     h.CData = imgData(:,:,i);
+% 
+%     a.YData = dff_cluster(:,i);
+%     drawnow
+%     pause(pause_time)
+% end
+
+%% plot bump amp as it relates to the gain (fly speed vs bump speed)
+lag = 10;
+bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
+fly_vel  = ftData_DAQ.velYaw{:};
+bump_vel = bump_vel(lag+1:end);
+fly_vel  = fly_vel(1:end-lag);
+tmp = amp_peak(lag+1:end);
+
+for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
+fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
+end
+vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
+
+figure(13); clf
+scatter(bump_vel(vel_idx) - fly_vel(vel_idx),tmp(vel_idx),[],abs(fly_vel(vel_idx)),'filled',"MarkerFaceAlpha",.1)
+scatter(fly_vel(vel_idx),bump_vel(vel_idx),[],tmp(vel_idx),'filled',"MarkerFaceAlpha",.1)
+xlabel('bump vel / fly vel')
+ylabel('peak \DeltaF/F')
+xlabel('fly vel'); ylabel('bump vel')
+
+
+figure(14); clf
+corr_vec = nan(1e3,1);
+win_vec = 1:5e2;
+for i = win_vec
+    win = i;
+    fly_disp  = abs(circ_dist(cue(1:end-win),cue(win+1:end)));
+    fly_disp  = fly_disp(lag+1:end);
+    bump_disp = abs(circ_dist(mu(1:end-win),mu(win+1:end)));
+    bump_disp = bump_disp(1:end-lag);
+    tmp = amp_peak;
+    tmp = tmp(win+1:end);
+    tmp = tmp(1:end-lag);
+    idx = fly_disp > 0.05;
+    a = corrcoef(bump_disp(idx)./fly_disp(idx),tmp(idx));
+    corr_vec(i) = a(2);
+end
+
+[~,i] = min(corr_vec);
+win = win_vec(i);
+fly_disp  = abs(circ_dist(cue(1:end-win),cue(win+1:end)));
+fly_disp  = fly_disp(lag+1:end);
+bump_disp = abs(circ_dist(mu(1:end-win),mu(win+1:end)));
+bump_disp = bump_disp(1:end-lag);
+
+%tmp = max(interp1(xb,smoothdata(dff_cluster,1,'gaussian',n_centroid/2)',xf)',[],1);
+tmp = amp_peak;
+tmp = tmp(win+1:end);
+tmp = tmp(1:end-lag);
+idx = fly_disp > 0.05;
+scatter(log(fly_disp(idx)./bump_disp(idx)),tmp(idx),[],'filled','MarkerFaceAlpha',.1)
+xlabel('$ln(\frac{\Delta_{bump}}{\Delta_{fly}})$','Interpreter','latex','Fontsize',50)
+ylabel('$max(\frac{\Delta F}{F0})$','Interpreter','latex','Fontsize',50)
+axes('Position',[.7 .7 .2 .2])
+box on
+plot([1:1000]*fr,corr_vec)
+hold on
+scatter(i*fr,corr_vec(i),'r','filled')
+ylabel('pearson correlation')
+xlabel('displacement window (s)')
