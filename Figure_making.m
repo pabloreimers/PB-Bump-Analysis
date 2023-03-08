@@ -69,8 +69,8 @@ text(x(2),y(1),sprintf('p-values from mean of %i bootstrap resamples > 0',N),'Ho
 
 %% Plot the correlation between bump and fly velocity and bootstrap (one point per fly)
 N = 1e4;
-tmp_idx     = epg_idx & include_idx;
-title_str   = 'EPG>GRAB(DA2m) Bump and Fly Velocity Correlation';
+tmp_idx     = lpsp_idx & include_idx;
+title_str   = 'LPsP>syt7f Bump and Fly Velocity Correlation';
 
 figure(3); clf; hold on
 [~,~,tmp_num]   = unique(fly_id(tmp_idx));
@@ -108,7 +108,26 @@ y = ylim;
 plot(x,[0,0],':k')
 text(x(2),y(1),sprintf('p-values from mean of %i bootstrap resamples > 0',N),'HorizontalAlignment','right','VerticalAlignment','bottom')
 
-
+figure(4); clf; hold on
+for i = unique(tmp_stats.tmp_num)'
+    a = plot([0,1],[nan,nan],'-k');
+    b = scatter([0,1],[nan,nan],[],[.5,.5,.5;0,.5,0],'filled','MarkerFaceAlpha',0.5);
+    if any(tmp_stats.tmp_num == i & tmp_stats.tmp_dark)
+    a.YData(1) = tmp_stats.mean_tmp_rhos(tmp_stats.tmp_num == i & tmp_stats.tmp_dark);
+    b.YData(1) = tmp_stats.mean_tmp_rhos(tmp_stats.tmp_num == i & tmp_stats.tmp_dark);
+    end
+    if any(tmp_stats.tmp_num == i & ~tmp_stats.tmp_dark)
+    a.YData(2) = tmp_stats.mean_tmp_rhos(tmp_stats.tmp_num == i & ~tmp_stats.tmp_dark); 
+    b.YData(2) = tmp_stats.mean_tmp_rhos(tmp_stats.tmp_num == i & ~tmp_stats.tmp_dark);
+    end
+end
+plot([-.5,1.5],[0,0],'k:')
+xticks([0,1])
+xticklabels({'Dark','Cue'})
+xlim([-.5,1.5])
+ylabel('Pearson Correlation Coefficient')
+text(1.5,0,sprintf('N = %i flies',i),'HorizontalAlignment','right','VerticalAlignment','bottom')
+title(title_str)
 %%
 figure(3)
 scatter(1:length(T.r_r2),T.vel_rho)
