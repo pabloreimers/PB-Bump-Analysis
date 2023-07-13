@@ -51,6 +51,8 @@ end
 %% Make compress in z, and scale between 0 and 256
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
+imgData     = movmean(imgData,3,3);
+
 
 imgData2 = imgData;
 top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
@@ -642,9 +644,9 @@ xlabel('time (s)')
 
 %% plot scatter of fly velocity to bump velocity
 vel_rho = nan(1,100);
-for j = 1:100
+%for j = 1:100
 %lag = 20;
-lag = j;
+lag = 1;
 bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
 fly_vel  = ftData_DAQ.velYaw{:};
 bump_vel = bump_vel(lag+1:end);
@@ -666,7 +668,7 @@ y = ylim;
 %text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
-end
+%end
 
 [~,i] = max(vel_rho);
 

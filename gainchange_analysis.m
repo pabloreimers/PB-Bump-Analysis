@@ -11,7 +11,7 @@ f0_pct              = 15;                                                    %se
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 5;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
-n_smooth            = 5;                                                   %set how many times to perform gaussian smoothing on fictrac
+n_smooth            = 1;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
 avg_win             = 5;                                                    %when showing raw 2p data, set window averaging size
@@ -51,7 +51,12 @@ for i = 1:length(trials)
        
     
     figure(1); clf                                          % clear the current figure
-    mask = roipoly(uint8(mean(imgData2,3))); 
+    tmp = mean(imgData,3);
+    tmp = 256*(tmp - min(tmp(:)))/(max(tmp(:) - min(tmp(:))));
+    image(tmp); colormap(bone); drawnow;
+    tmp = drawellipse('Center',[size(tmp,2)/2,size(tmp,1)/2],'SemiAxes',[size(tmp,2)/4,size(tmp,1)/4]);
+    input('') %move on once user presses enter, after adjusting the ellipse
+    mask = createMask(tmp);
     save([base_dir,'\',trials{i},'\mask.mat'],'mask')
     end
 end

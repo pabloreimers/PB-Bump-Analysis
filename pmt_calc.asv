@@ -1,0 +1,15 @@
+[filename,path] = uigetfile();
+
+%%
+t = Tiff([path,filename]);
+samps = read(t);
+samps = double(samps(:));
+
+sig = std(max(samps,0));
+mu  = mean(max(samps,0));
+
+figure
+histogram(samps,'EdgeColor','none'); set(gca,'YScale','log')
+ylabel('counts'); xlabel('pixel value')
+x = xlim
+y = y

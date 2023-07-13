@@ -7,7 +7,7 @@ data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %
 %data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
 f0_pct              = 7;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
-b_smooth            = 5;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
+b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 1;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
@@ -17,7 +17,7 @@ vm_thresh           = 0;
 var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
-rho_thresh          = 5e-3;
+rho_thresh          = 0;%5e-3;
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
@@ -48,12 +48,14 @@ end
 end
 
 %% Make compress in z, and scale between 0 and 256
+%regProduct = movmean(regProduct,2,4);
+
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
 
 imgData2 = imgData;
 top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
-bot_int = prctile(imgData2,5,'all');
+bot_int = prctile(imgData2,1,'all');
 imgData2 = max(min(imgData2,top_int),bot_int) - bot_int;
 imgData2 = 256*imgData2/max(imgData2,[],'all');
 imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
@@ -77,7 +79,7 @@ figure(1); clf                                          % clear the current figu
 tmp = mean(imgData,3);
 tmp = 256*(tmp - min(tmp(:)))/(max(tmp(:) - min(tmp(:))));
 image(tmp)
-tmp = drawellipse('Center',[size(tmp,2)/2,size(tmp,1)/2],'SemiAxes',[50,50]);
+tmp = drawellipse('Center',[size(tmp,2)/2,size(tmp,1)/2],'SemiAxes',[size(tmp,2)/4,size(tmp,1)/4]);
 input('') %move on once user presses enter, after adjusting the ellipse
 mask = createMask(tmp);
 %mask = roipoly(uint8(tmp));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
@@ -98,6 +100,10 @@ xq          = linspace(1,length(y_mid),2*(n_centroid) + 1)';                    
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
 centroids   = centroids(2:2:end-1,:);                                                 %take every other so that we dont start at the edges, and all are same size
 cmap        = make_colors(n_centroid); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
+
+if centroids(1,1) < centroids(end,1)
+    centroids = flipud(centroids);
+end
 
 figure(1); clf
 imagesc(max(imgData,[],3))                                      %plot the image again with max intensity over time to show the whole pb
@@ -121,6 +127,15 @@ scatter(centroids(:,2),centroids(:,1),[],cmap,'filled')         %show the centro
 axis equal tight
 
 %% Find the mean activity in each group over time
+tmp     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
+tmp     = reshape(tmp,[],size(tmp,3)); %reshape imgData to be allpixels x frames
+background  = tmp(~reshape(mask,[],1),:); %extract points that are outside of the mask)
+med_pix     = sum(background,1);
+med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
+flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+%flash_idx   = med_pix > 0.05;
+flash_idx   = logical(smoothdata(flash_idx,'gaussian',5));
+
 imgData_2d      = reshape(imgData,[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
 centroid_log    = false(n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
 for i = 1:n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
@@ -128,9 +143,14 @@ for i = 1:n_centroid                                                  %For each 
 end
 
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
+f_cluster(:,flash_idx) = nan;
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-zscore_cluster  = zscore(f_cluster,[],2);
+%dff_cluster = zscore(dff_cluster,[],2);
+zscore_cluster  = zscore(dff_cluster(:,~flash_idx),[],2);
+tmp = dff_cluster;
+tmp(:,~flash_idx) = zscore_cluster;
+zscore_cluster = tmp
 %dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
 figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
@@ -143,15 +163,29 @@ hold on
 scatter(ones(n_centroid,1),1:n_centroid,[],cmap,'filled')
 
 %% Find the mean activity in each group over time, 3 dimensional
+tmp     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
+tmp     = reshape(tmp,[],size(tmp,3)); %reshape imgData to be allpixels x frames
+background  = tmp(~reshape(mask,[],1),:); %extract points that are outside of the mask)
+med_pix     = sum(background,1);
+med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
+flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+%flash_idx   = med_pix > 0.05;
+flash_idx   = logical(smoothdata(flash_idx,'gaussian',5));
+
+
 n_planes = size(regProduct,3);
 %y_scaled = (centroids(:,1) - min(centroids(:,1)))/ (max(centroids(:,1)) - min(centroids(:,1)));
-p_scaled = linspace(1,0,n_planes);
-y_scaled = repmat(linspace(0,1,size(regProduct,1))',1,size(regProduct,2));
+filt_mu = linspace(max(centroids(:,1)),min(centroids(:,1)),n_planes);
+filt_sig= range(centroids(:,1));
+filt_x  = [1:size(regProduct,1)]';
+%p_scaled = linspace(1,0,n_planes);
+%y_scaled = repmat(linspace(0,1,size(regProduct,1))',1,size(regProduct,2));
 f_cluster = zeros(n_centroid,n_frame);
 
 for p = 1:n_planes
 %z_mult = abs(y_scaled - p_scaled(p));   %multiply teh values in each cluster by a multiplier which depends on the plane we are in. dorsal (bottom) is passed through at early planes, ventral passed through at late planes
-tmp = double(squeeze(regProduct(:,:,p,:))) .* (1-abs(y_scaled - p_scaled(p)));
+%tmp = double(squeeze(regProduct(:,:,p,:))) .* (1-abs(y_scaled - p_scaled(p)));
+tmp = double(squeeze(regProduct(:,:,p,:))) .* normpdf(filt_x,filt_mu(p),filt_sig);
 
 
 imgData_2d      = reshape(double(tmp),[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
@@ -164,7 +198,7 @@ tmp       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fl
 f_cluster = f_cluster + tmp;
 end
 
-
+f_cluster(:,flash_idx) = nan;
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
 zscore_cluster  = zscore(f_cluster,[],2);
@@ -395,7 +429,7 @@ linkaxes(h,'x')
 
 %% plot fly heading and bump heading, from PVA
 %lag = ceil(fmincon(@(x)(circ_corrcc(cue(1:end-ceil(x)),-mu((ceil(x)+1):end))),20,[],[],[],[],0));
-lag = 20;
+lag = 0;
 rho_idx = rho>rho_thresh;
 [pva_corr,pva_pval] = circ_corrcc(cue(1:end-ceil(lag)),-mu((ceil(lag)+1):end));
 
@@ -427,28 +461,36 @@ axis tight; ylim([-pi,pi])
 xlabel('time (s)')
 
 %% plot scatter of fly velocity to bump velocity
+
+lag = 15;
 bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
 fly_vel  = ftData_DAQ.velYaw{:};
 bump_vel = bump_vel(lag+1:end);
 fly_vel  = fly_vel(1:end-lag);
+rho_thresh = prctile(rho,10);
 
 for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 fly_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);
 end
-vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
+vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min & rho(lag+1:end) > rho_thresh; %ignore outlier bump speeds with arbitrary threshold
 
 figure(9); clf
-scatter(bump_vel(vel_idx),fly_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
-xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
+scatter(fly_vel(vel_idx),bump_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
+xlabel('Fly Vel (rad/s)'); ylabel('Bump Vel (rad/s)');
 hold on
 [vel_rho,vel_pval] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
 x = xlim;
 y = ylim;
-text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
+b = bump_vel(vel_idx) \ [ones(sum(vel_idx),1),fly_vel(vel_idx)]; %fit the slope of fly vel and bump vel with an arbitrary offset
+text(x(2),y(2),sprintf('$r = %.2f$\n$gain = %.2f$\n$lag = %.0f ms$',vel_rho,b(2),lag*fr*1000),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
+plot(fly_vel(vel_idx),fly_vel(vel_idx)*b(2) + b(1),'r')
+axis tight
+
 
 lag = lag*fr;
+
 
 %% plot bump gains
 fly_vel  = ftData_DAQ.velYaw{:};
@@ -541,7 +583,7 @@ y_pos = cumsum(f_vel.*sin(theta') + s_vel.*cos(theta'))*fr;
 
 figure(15)
 subplot(2,1,1)
-scatter(x_pos,y_pos,[],1:length(x_pos),'.')
+scatter(x_pos,y_pos,[],1:length(x_pos),'.'); axis equal
 xlabel('x pos (mm)'); ylabel('y pos (mm)')
 axis tight
 subplot(2,2,3)
@@ -552,7 +594,9 @@ scatter(xf,f_vel,[],1:length(f_vel),'.'); ylabel('forward vel (mm/s)'); xlabel('
 pause_time  = 0;                         %pause this many seconds between each frame
 
 figure(14); clf                              %clear the current figure
+set(gcf,'color','none')
 subplot(2,2,3)
+set(gca,'color','none','ycolor','w','xcolor','w')
 h           = image(imgData(:,:,1));        %initialize an image object where we will update the color values in each frame 
 axis equal tight                            %make all pixels square, and keep axis tight for clean look
 colormap(bone)                              %set to favorite colormap. I like black and white
@@ -560,36 +604,56 @@ hold on
 [y_out,x_out] = find(bwmorph(mask,'remove'));
 [y_out,x_out] = graph_sort(y_out,x_out);
 plot(x_out,y_out,'w:','linewidth',2)
+scatter(x_mask,y_mask,5,cmap(idx,:),'filled','MarkerFaceAlpha',.1);
 xticks([])
 yticks([])
 subplot(2,2,4)
-h2 = polarscatter(0,1,'m','filled');
+h2 = polarscatter(0,1,1e3,'m','filled');
 set(gca,'ThetaAxisUnits','radians','ThetaTick',(0:1/4:2)*pi)
 rlim([0,1]); rticks([])
 %ylim([min(fly_vel),max(fly_vel)])
-title('Fly Heading (rad/s)')
+title('Fly Heading (rad)','color','w')
+set(gca,'color','none','thetacolor','w')
+[~,tmp] = sort(idx,'ascend');
+% subplot(2,3,5)
+% h6 = scatter(x_mask,y_mask,5,cmap(idx,:),'filled');
+% set(gca,'color','none','YDir','Reverse')
 subplot(2,1,1)
 h3 = imagesc(xb,alpha,dff_cluster);
 h3.CData = nan(size(dff_cluster));
 hold on
-h4 = plot(xb,nan(1,length(xb)),'Color','w','Linewidth',2);
 h5 = plot(xb,nan(1,length(xb)),'Color',[.75,0,.75],'Linewidth',2);
+h4 = plot(xb,nan(1,length(xb)),'Color','w','Linewidth',2);
 cue_tmp = interp1(xf,cue,xb);
 mu_tmp = interp1(xf,mu,xb);
 vel_tmp = interp1(xf,fly_vel,xb);
+if isnan(mu(1))
+    mu(1) = 0;
+end
 cue_tmp = mod(unwrap(cue_tmp) - cue(1) - mu(1),2*pi);
 cue_tmp(cue_tmp>pi) = cue_tmp(cue_tmp>pi) - 2*pi;
-xlabel('time')
+xlabel('time (s)')
 ylabel('azimuth (rad)')
-legend('pva','heading')
+legend('heading','pva','color','none','textcolor','w')
 yticks([-pi,0,pi])
 yticklabels({'-\pi','0','\pi'})
+set(gca,'color','none','xcolor','w','ycolor','w')
+
+fontsize(gcf,20,'pixels')
+a_values = imgData_2d(reshape(mask,[],1),:);
+a_values = a_values - prctile(a_values(:),10);
+a_values = (a_values / prctile(a_values(:),99))*256;
 
 if movie_flag
+    %v = VideoWriter('sample.mp4');
+    %v.FrameRate = 60;
+    %open(v)
 for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
-    h.CData = imgData(:,:,i);
+    h.CData = imgData2(:,:,i);
     h2.ThetaData = -cue_tmp(i);
     h3.CData(:,i) = dff_cluster(:,i);
+    % h6.AlphaData = a_values(:,i);
+    % h6.MarkerFaceAlpha = 'flat';
     if i>1 && abs(mu_tmp(i) - mu_tmp(i-1)) < pi
         h4.YData(i) = mu_tmp(i);
     end
@@ -597,9 +661,18 @@ for i = 1:size(imgData,3)                   %loop through each frame and update 
         h5.YData(i) = -cue_tmp(i);
     end
     pause(pause_time)
+    %writeVideo(v,getframe(gcf))
 end
 end
 
+h3.CData = dff_cluster;
+h4.YData = mu_tmp;
+h4.YData(abs(diff(h4.YData)) > pi) = nan;
+h5.YData = -cue_tmp;
+h5.YData(abs(diff(h5.YData)) > pi) = nan;
+% if movie_flag
+%     close(v)
+% end
 %% functions
 function [y_warp,x_warp] = circ_warp(y,x) %create a function to warp coordinates so that the x and y axis are the same range
     x_b = min(x);
