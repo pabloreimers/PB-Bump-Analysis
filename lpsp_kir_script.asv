@@ -157,16 +157,16 @@ for i = find(group_idx == f)
 
     nexttile
     colormap(parula)
-    imagesc([1,length(full_data.mu{i})],[-pi,pi],full_data.dff_cluster{i})
+    imagesc([1,length(mu{i})],[-pi,pi],dff_cluster{i})
     hold on
-    a = plot(-full_data.cue{i},'m','Linewidth',2);
+    a = plot(-cue{i},'m','Linewidth',2);
     a.YData(abs(diff(a.YData))>pi) = nan;
-    a = plot(full_data.mu{i},'w');
+    a = plot(mu{i},'w');
     a.YData(abs(diff(a.YData))>pi) = nan;
-    a.YData(full_data.rho{i} < .2) = nan;
+    a.YData(rho{i} < .2) = nan;
     xticks([])
     xlabel(['vel corr: ',num2str(vel_corr(i,1))])
-    title(full_data.trial{i}(1:8))
+    title(trial{i}(1:8))
     ylabel(['trial num: ',num2str(i)])
 end
 end
@@ -327,11 +327,17 @@ lag = j;
 for i = 1:length(offset_var)
     mu_tmp = full_data.mu{i}(1+lag:end);
     rho_tmp = full_data.rho{i}(1+lag:end);
-    cue_tmp = -full_data.cue{i}(1:end-lag);    
-
-    tmp = ~isnan(mu_tmp) & (rho_tmp > rho_thresh) & [abs(diff(cue_tmp));0] > 0;
-    tmp = mod(smoothdata(unwrap(circ_dist(mu_tmp(tmp),cue_tmp(tmp))),1,'gaussian',f_smooth)+pi,2*pi) - pi;
-    offset_var(i,j) = circ_var(tmp(~isnan(tmp)));
+    cue_tmp = -full_data.cue{i}(1:end-lag);
+    t_tmp = full_data.xf{i}(1:end-lag)';
+    
+    var_tmp = nan(sum(t_tmp<t_tmp(end) - win_size),1);
+    for k = 1:length(var_tmp)
+        t = t_tmp(k);
+        tmp = ~isnan(mu_tmp) & (rho_tmp > rho_thresh) & [abs(diff(cue_tmp));0] > 0 & t_tmp > t & t_tmp < t+win_size;
+        tmp = smoothdata(circ_dist(mu_tmp(tmp),cue_tmp(tmp)),1,'gaussian',f_smooth);
+        var_tmp(k) = circ_var(tmp(~isnan(tmp)));
+    end
+    offset_var(i,j) = mean(var_tmp);
 end
 end
 

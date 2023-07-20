@@ -38,7 +38,7 @@ if mask_flag
 for i = 1:length(trials)
     if isempty(dir([base_dir,'\',trials{i},'\*mask*'])) || mask_overwrite
     tmp = dir([base_dir,'\',trials{i},'\registration*\*imagingData*']);
-    %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
+    tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
     load([tmp.folder,'\',tmp.name])
     imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
     imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
@@ -317,55 +317,55 @@ end
 lag
 end
 %% fit the gain in a non-instantaneous way
-reps = 2;
-win_size = 60; %in seconds for piecewise optimization
-win_res = 0.5; %in seconds
-params_cell = {n,1};
-fval_cell = {n,1};
-
-figure(11); clf
-a = scatter([1,2,3],[0,0,0],'filled');
-ylim([0,1])
-xticks([1,2,3]); xticklabels({'pieces','reps','trials'})
-ylabel('% done')
-title('Optimization Process')
-for i = 1:n
-params = nan(floor(max(xf{i})),2,reps);
-fval   = nan(floor(max(xf{i})),1,reps);
-for j = 1:reps
-fr      = mean(diff(xf{i})); %find the frame rate of the data
-
-for t = 1:(max(xf{i})-win_size-20*fr)
-idx = xf{i} > t & xf{i} < t+win_size;
-
-theta_tmp = cumsum(r_vel{i}(idx)*fr);
-
-% xq = [t:win_res:t+win_size]';
-% mu_tmp = interp1(xf{i}(idx),mu{i}(idx),xq,[],'extrap');
-% theta_tmp = interp1(xf{i}(idx),theta_tmp,xq,[],'extrap');
-% rho_tmp = interp1(xf{i}(idx),rho{i}(idx),xq,[],'extrap');
-mu_tmp = mu{i}(idx);
-rho_tmp = rho{i}(idx);
-    
-obj_fun = @(x)(loss_fun(x,theta_tmp,mu_tmp,rho_tmp));
-%x = [gain,bias,lag,offset]
-lb = [0, 0];
-ub = [2, 20];
-%x0 = [.7, 10];
-x0 = rand(1,2).*(ub-lb) + lb;
-opts = optimoptions('fmincon','FiniteDifferenceStepSize',[sqrt(eps),.2]);
-[params(t,:,j),fval(t,1,j)] = fmincon(obj_fun,x0,[],[],[],[],lb,ub,[],opts);
-a.YData(1) = t/max(xf{i});
-drawnow
-end
-params_cell{i} = params;
-fval_cell{i} = fval;
-a.YData(2) = j/reps;
-drawnow
-end
-a.YData(3) = i/n;s
-drawnow
-end
+% reps = 1;
+% win_size = 300; %in seconds for piecewise optimization
+% win_res = 0.5; %in seconds
+% params_cell = {n,1};
+% fval_cell = {n,1};
+% 
+% figure(11); clf
+% a = scatter([1,2,3],[0,0,0],'filled');
+% ylim([0,1])
+% xticks([1,2,3]); xticklabels({'pieces','reps','trials'})
+% ylabel('% done')
+% title('Optimization Process')
+% for i = 1:n
+% params = nan(floor(max(xf{i})),2,reps);
+% fval   = nan(floor(max(xf{i})),1,reps);
+% for j = 1:reps
+% fr      = mean(diff(xf{i})); %find the frame rate of the data
+% 
+% for t = 1:(max(xf{i})-win_size-20*fr)
+% idx = xf{i} > t & xf{i} < t+win_size;
+% 
+% theta_tmp = cumsum(r_vel{i}(idx)*fr);
+% 
+% % xq = [t:win_res:t+win_size]';
+% % mu_tmp = interp1(xf{i}(idx),mu{i}(idx),xq,[],'extrap');
+% % theta_tmp = interp1(xf{i}(idx),theta_tmp,xq,[],'extrap');
+% % rho_tmp = interp1(xf{i}(idx),rho{i}(idx),xq,[],'extrap');
+% mu_tmp = mu{i}(idx);
+% rho_tmp = rho{i}(idx);
+% 
+% obj_fun = @(x)(loss_fun(x,theta_tmp,mu_tmp,rho_tmp));
+% %x = [gain,bias,lag,offset]
+% lb = [0, 0];
+% ub = [2, 20];
+% %x0 = [.7, 10];
+% x0 = rand(1,2).*(ub-lb) + lb;
+% opts = optimoptions('fmincon','FiniteDifferenceStepSize',[sqrt(eps),.2]);
+% [params(t,:,j),fval(t,1,j)] = fmincon(obj_fun,x0,[],[],[],[],lb,ub,[],opts);
+% a.YData(1) = t/max(xf{i});
+% drawnow
+% end
+% params_cell{i} = params;
+% fval_cell{i} = fval;
+% a.YData(2) = j/reps;
+% drawnow
+% end
+% a.YData(3) = i/n;
+% drawnow
+% end
 
 
 
