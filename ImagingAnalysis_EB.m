@@ -42,7 +42,7 @@ end
 if movie_flag
 for f = 1:size(regProduct,4)
     for i = 1:size(regProduct,3)
-        h(i).CData = regProduct(:,:,i,f);
+        h(i).CData = mean(regProduct(:,:,i,f:f),4);
     end
     pause(pause_time)
 end
@@ -59,7 +59,7 @@ top_int = prctile(imgData2,99,'all');                                    %clip t
 bot_int = prctile(imgData2,1,'all');
 imgData2 = max(min(imgData2,top_int),bot_int) - bot_int;
 imgData2 = 256*imgData2/max(imgData2,[],'all');
-imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
+%imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
 
 %% Play the movie
 figure(1); clf                              %clear the current figure
@@ -612,7 +612,7 @@ hold on
 [y_out,x_out] = find(bwmorph(mask,'remove'));
 [y_out,x_out] = graph_sort(y_out,x_out);
 plot(x_out,y_out,'w:','linewidth',2)
-scatter(x_mask,y_mask,5,cmap(idx,:),'filled','MarkerFaceAlpha',.1);
+scatter(x_mask,y_mask,5,cmap(idx,:),'filled','MarkerFaceAlpha',.05);
 xticks([])
 yticks([])
 subplot(2,2,4)

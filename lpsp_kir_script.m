@@ -1,11 +1,12 @@
 %% set experiment params
 transfer_flag = false;
 local_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\analysis\'; %define the local directory to clear up
+local_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\lpsp_kir\analysis\';
 remote_dir           = '\\files.med.harvard.edu\Neurobio\wilsonlab\pablo\lpsp_kir\analysis'; %define the remote directory to make sure things are backed up to
 
 f0_pct              = 7;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
-b_smooth            = 4;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
+b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 1;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
@@ -74,6 +75,8 @@ r_speed = {};
 intHD   = {};
 cue     = {};
 r_vel   = {};
+x_pos   = {};
+y_pos   = {};
 xf      = {};
 cl_idx  = {};
 exp_idx = {};
@@ -117,7 +120,7 @@ for d = dates'
             trial{i} = t;
             cl_idx{i} = contains(t,'cl');
             exp_idx{i} = contains(t,'LPsP');
-            [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
+            [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i},x_pos{i},y_pos{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
             xf{i}  = mean(diff(ftData_DAQ.trialTime{:})) * [1:length(f_speed{i})]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
             if isduration(xf{i})
                 xf{i} = seconds(xf{i});
@@ -130,7 +133,7 @@ end
 
 %% store everything in a table for easy access
 full_data = table(dff_tot, dff_peak, dff_cluster, mu, rho, f_speed,r_speed,intHD,...
-    cue, r_vel, xf,cl_idx,exp_idx,fly_num,exp_date,trial);
+    cue, r_vel, x_pos, y_pos, xf,cl_idx,exp_idx,fly_num,exp_date,trial);
 
 %% show the raw traces for each group
 exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
@@ -165,11 +168,89 @@ for i = find(group_idx == f)
     a.YData(abs(diff(a.YData))>pi) = nan;
     a.YData(full_data.rho{i} < .2) = nan;
     xticks([])
-    xlabel(['vel corr: ',num2str(vel_corr(i,1))])
+    %xlabel(['vel corr: ',num2str(vel_corr(i,1))])
     title(full_data.trial{i}(1:8))
     ylabel(['trial num: ',num2str(i)])
 end
 end
+
+%% show the raw traces for each group
+exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
+cl_idx = cellfun(@(x)contains(x,'cl'),full_data.trial);
+group_idx = (cl_idx*2) + exp_idx + 1;
+group_names = {'Dark, empty','Dark, LPsP','CL, empty','CL, LPsP'};
+
+rows = 6;
+cols = 2;
+
+f2 = 0;
+for f = 1:length(unique(group_idx))
+counter = 13;
+for i = find(group_idx == f)
+    counter = counter+1;
+
+    if counter > 12
+        f2 = f2+1;
+        figure(f2); clf
+        set(gcf,'Name',group_names{f})
+        tiledlayout(rows,cols)
+        counter = 1;
+    end
+
+    nexttile
+    hold on
+    tmp = circ_dist(-full_data.cue{i},full_data.mu{i});
+    a = plot(tmp,'m','Linewidth',2);
+    a.YData(abs(diff(a.YData))>pi) = nan;
+    a.YData(full_data.rho{i} < rho_thresh) = nan;
+
+    a = plot(-full_data.cue{i},'k','Linewidth',.5);
+    a.YData(abs(diff(a.YData))>pi) = nan;
+    a = plot(full_data.mu{i},'b','Linewidth',.5);
+    a.YData(abs(diff(a.YData))>pi) = nan;
+    a.YData(full_data.rho{i} < 0) = nan;
+    xticks([])
+    xlabel(['offset var: ',num2str(circ_var(tmp(~isnan(tmp)&full_data.rho{i} > rho_thresh)))])
+    title(full_data.trial{i}(1:8))
+    ylabel(['trial num: ',num2str(i)])
+end
+end
+
+%% show the cartesian trajectory of eachfly by group
+exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
+cl_idx = cellfun(@(x)contains(x,'cl'),full_data.trial);
+group_idx = (cl_idx*2) + exp_idx + 1;
+group_names = {'Dark, empty','Dark, LPsP','CL, empty','CL, LPsP'};
+
+rows = 6;
+cols = 2;
+
+f2 = 0;
+for f = 1:length(unique(group_idx))
+counter = 13;
+for i = find(group_idx == f)
+    counter = counter+1;
+
+    if counter > 12
+        f2 = f2+1;
+        figure(f2); clf
+        set(gcf,'Name',group_names{f})
+        tiledlayout(rows,cols)
+        counter = 1;
+    end
+
+    nexttile
+    hold on
+    scatter(x_pos{i},y_pos{i},[],1:length(x_pos{i}),'.'); axis equal tight
+    xlabel('x pos (mm)'); ylabel('y pos (mm)')
+    xticks([])
+    %xlabel(['offset var: ',num2str(circ_var(tmp(~isnan(tmp)&full_data.rho{i} > rho_thresh)))])
+    title(full_data.trial{i}(1:8))
+    ylabel(['trial num: ',num2str(i)])
+end
+end
+
+
 
 %% show mean image for each group
 exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
@@ -335,15 +416,13 @@ for i = 1:length(offset_var)
 end
 end
 
-keep_idx = cellfun(@(x)(sum(x>.2)/length(x) > .1),full_data.rho);
+keep_idx = cellfun(@(x)(sum(x>.2)/length(x) > .1),full_data.rho) & cellfun(@(x)(sum(x>0)/length(x))>.6,full_data.f_speed);
 
-offset_var = min(offset_var,[],2).*ones(size(offset_var));
+%offset_var = min(offset_var,[],2).*ones(size(offset_var));
 
 [~,lag] = max(mean(offset_var(group_idx == 0 | group_idx == 2,:),1));
 [h1,p1] = ttest2(offset_var(group_idx==0 & keep_idx),offset_var(group_idx==1 & keep_idx),'Tail','left','Vartype','unequal'); %test that the correlation for empty is greater than for LPsP
 [h2,p2] = ttest2(offset_var(group_idx==2 & keep_idx),offset_var(group_idx==3 & keep_idx),'Tail','left','Vartype','unequal'); %test that the correlation for empty is greater than for LPsP
-
-
 
 figure(1); clf
 scatter(group_idx,offset_var(:,1),100,'filled','k','MarkerFaceAlpha',.5)
@@ -378,7 +457,7 @@ for i = 1:length(vel_corr)
 
     bump_vel = [diff(mu_tmp);0]./fr;
     
-    tmp = ~isnan(bump_vel) & (rho_tmp > rho_thresh) & abs(fly_vel) > vel_thresh & abs(bump_vel) < 10 & [abs(diff(cue{i}(1:end-lag)));0] > 0;
+    tmp = ~isnan(bump_vel) & (rho_tmp > rho_thresh) & abs(fly_vel) < vel_thresh & abs(fly_vel) > vel_min & abs(bump_vel) < 10 & [abs(diff(cue{i}(1:end-lag)));0] > 0;
     
     vel_corr(i,j) = corr(bump_vel(tmp),fly_vel(tmp));
 end
@@ -398,7 +477,7 @@ ylabel('optimal lag (ms)')
 xlabel('trial number')
 
 
-keep_idx = cellfun(@(x)(sum(x>.2)/length(x) > .1),rho);
+keep_idx = cellfun(@(x)(sum(x>rho_thresh)/length(x) > rho_thresh),rho);
 
 vel_corr = max(vel_corr,[],2).*ones(size(vel_corr));
 
@@ -534,7 +613,7 @@ amp_tot     = interp1(xb,amp_tot,xf)';
 amp_peak    = interp1(xb,amp_peak,xf)';
 end
 
-function [f_speed,r_speed,intHD,cue,r_vel] = ft_calc(ftData_DAQ,n_smooth,f_smooth)
+function [f_speed,r_speed,intHD,cue,r_vel,x_pos,y_pos] = ft_calc(ftData_DAQ,n_smooth,f_smooth)
 
 f_speed = ftData_DAQ.velFor{:};                       %store each speed
 r_speed = ftData_DAQ.velYaw{:};
@@ -560,6 +639,13 @@ intHD = mod(intHD,2*pi);                                %rewrap heading data, an
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
 cue   = mod(cue,2*pi);                                %rewrap heading data, and put between -pi and pi.
 cue(cue > pi) = cue(cue > pi) - 2*pi;
+
+f_vel = ftData_DAQ.velFor{:};
+s_vel = ftData_DAQ.velSide{:};
+theta = ftData_DAQ.cueAngle{:} / 180 * pi;
+
+x_pos = cumsum(f_vel.*cos(theta') + s_vel.*sin(theta'))/60;
+y_pos = cumsum(f_vel.*sin(theta') + s_vel.*cos(theta'))/60;
 
 
 % for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
