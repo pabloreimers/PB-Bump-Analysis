@@ -20,9 +20,9 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = .1;
-eb_flag             = true;
-pb_flag             = false;
-tmp_labels = {'CL = 0.7','Dark (0.7)','Ramp = 0.7 -> 0.3','Dark (0.3)','Ramp 0.3 -> 0.8','Dark (0.8)'};
+eb_flag             = false;
+pb_flag             = true;
+tmp_labels = {'CL = 0.7','Dark (0.7)','Ramp = 0.7 -> 0.45','Ramp = 0.45 -> 0.3','Dark (0.3)','Ramp 0.3 -> 0.8','Dark (0.8)'};
 
 %% select folder of images
 base_dir = uigetdir(data_dir);
@@ -38,7 +38,7 @@ if mask_flag
 for i = 1:length(trials)
     if isempty(dir([base_dir,'\',trials{i},'\*mask*'])) || mask_overwrite
     tmp = dir([base_dir,'\',trials{i},'\registration*\*imagingData*']);
-    tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
+    %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
     load([tmp.folder,'\',tmp.name])
     if size(regProduct,1) > size(regProduct, 2)
         regProduct  = permute(regProduct, [2 1 3 4]);
@@ -96,7 +96,7 @@ for i = 1:length(trials)
     disp(i)
 
     tmp = dir([base_dir,'\',trials{i},'\registration*\*imagingData*']);
-    tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
+    %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
     load([tmp.folder,'\',tmp.name])
     tmp = dir([base_dir,'\',trials{i},'\*ficTracData_DAQ*']);
     load([tmp.folder,'\',tmp.name])
@@ -153,12 +153,12 @@ end
 linkaxes(get(gcf,'Children'))
 
 %% plot the dff and heading trace of each trial
-figure(10); clf; %set(gcf,'color','none')
+figure(10); clf; set(gcf,'color','none')
 %tmp_labels = {'0.5','(0.5)','0.5 -> 1','(1)','1 -> 0.5','(0.5)'};
 for i = 1:n
     subplot(n,1,i);
     yyaxis left
-    %set(gca,'xcolor','w','ycolor','w','color','none')
+    set(gca,'xcolor','w','ycolor','w','color','none')
 
     if eb_flag
         alpha = linspace(-pi,pi,size(dff_cluster{i},1));
@@ -193,7 +193,7 @@ for i = 1:n
     
     ylabel('\DeltaF/F','Rotation',0)
     axis tight
-    colormap(parula)
+    colormap(bone)
     yyaxis right
     set(gca,'ycolor','[.75,0,.75]','color','none')
     ylabel(sprintf('heading\n%s',tmp_labels{i}),'Rotation',0)

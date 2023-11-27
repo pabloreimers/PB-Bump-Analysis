@@ -437,6 +437,8 @@ intHD   = ftData_DAQ.intHD{:};
 cue     = ftData_DAQ.cuePos{:}';
 c_speed = [diff(unwrap(cue/192*2*pi));0]*60;
 
+c_speed = abs(c_speed);
+r_speed = abs(r_speed);
 f_speed = f_speed;                                      %turn each velocity into a speed
 intHD   = unwrap(intHD);                                %unwrap heading to perform circular smoothing. keeps radians continuous, so that smoothing 0 and 2pi doesnt go to 1pi
 cue     = unwrap(cue / 192 * 2*pi - pi);
@@ -449,8 +451,7 @@ intHD   = smoothdata(intHD,  1,'gaussian',f_smooth);
 cue     = smoothdata(cue,    1,'gaussian',f_smooth);
 end
 
-r_speed = abs(r_speed);
-c_speed = abs(c_speed);
+
 
 intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;

@@ -5,7 +5,7 @@ movie_flag          = false;                                                %set
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
 %data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
-f0_pct              = 7;                                                    %set the percentile that for the baseline fluorescence
+f0_pct              = 5;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
@@ -18,6 +18,7 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = 0;%5e-3;
+z_flag = true;
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
@@ -51,7 +52,7 @@ end
 %regProduct = movmean(regProduct,2,4);
 
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
-imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
+imgData     = 256*(imgData - prctile(imgData(:),1))/(prctile(imgData(:),99) - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
 
 imgData2 = imgData;
 top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
@@ -82,6 +83,8 @@ image(tmp)
 tmp = drawellipse('Center',[size(tmp,2)/2,size(tmp,1)/2],'SemiAxes',[size(tmp,2)/4,size(tmp,1)/4]);
 input('') %move on once user presses enter, after adjusting the ellipse
 mask = createMask(tmp);
+tmp.SemiAxes = tmp.SemiAxes / 3;
+mask = logical(mask - createMask(tmp));
 %mask = roipoly(uint8(tmp));               %this create a black and white mask (logical) of the PB, drawn on a maxZ projection of the image
 figure(2)
 imagesc(subplot(2,1,1),mask); colormap(bone); xticks([]); yticks([])
@@ -150,7 +153,7 @@ dff_cluster     = (f_cluster - f0) ./ f0;                               %find th
 zscore_cluster  = zscore(dff_cluster(:,~flash_idx),[],2);
 tmp = dff_cluster;
 tmp(:,~flash_idx) = zscore_cluster;
-zscore_cluster = tmp
+zscore_cluster = tmp;
 %dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
 figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
@@ -162,56 +165,62 @@ xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 hold on
 scatter(ones(n_centroid,1),1:n_centroid,[],cmap,'filled')
 
-%% Find the mean activity in each group over time, 3 dimensional
-tmp     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
-tmp     = reshape(tmp,[],size(tmp,3)); %reshape imgData to be allpixels x frames
-background  = tmp(~reshape(mask,[],1),:); %extract points that are outside of the mask)
-med_pix     = sum(background,1);
-med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
-flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
-%flash_idx   = med_pix > 0.05;
-flash_idx   = logical(smoothdata(flash_idx,'gaussian',5));
-
-
-n_planes = size(regProduct,3);
-%y_scaled = (centroids(:,1) - min(centroids(:,1)))/ (max(centroids(:,1)) - min(centroids(:,1)));
-filt_mu = linspace(max(centroids(:,1)),min(centroids(:,1)),n_planes);
-filt_sig= range(centroids(:,1));
-filt_x  = [1:size(regProduct,1)]';
-%p_scaled = linspace(1,0,n_planes);
-%y_scaled = repmat(linspace(0,1,size(regProduct,1))',1,size(regProduct,2));
-f_cluster = zeros(n_centroid,n_frame);
-
-for p = 1:n_planes
-%z_mult = abs(y_scaled - p_scaled(p));   %multiply teh values in each cluster by a multiplier which depends on the plane we are in. dorsal (bottom) is passed through at early planes, ventral passed through at late planes
-%tmp = double(squeeze(regProduct(:,:,p,:))) .* (1-abs(y_scaled - p_scaled(p)));
-tmp = double(squeeze(regProduct(:,:,p,:))) .* normpdf(filt_x,filt_mu(p),filt_sig);
-
-
-imgData_2d      = reshape(double(tmp),[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
-centroid_log    = false(n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
-for i = 1:n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
-    centroid_log(i, sub2ind(size(imgData),y_mask(idx==i),x_mask(idx ==i))) = true;
-end
-
-tmp       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
-f_cluster = f_cluster + tmp;
-end
-
-f_cluster(:,flash_idx) = nan;
-f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
-dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-zscore_cluster  = zscore(f_cluster,[],2);
-%dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
-figure(3); clf
-imagesc(subplot(2,2,1),centroid_log); colormap('bone')
-xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
-imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
-xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
-imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
-xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
-hold on
-scatter(ones(n_centroid,1),1:n_centroid,[],cmap,'filled')
+% %% Find the mean activity in each group over time, 3 dimensional
+% tmp     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
+% tmp     = reshape(tmp,[],size(tmp,3)); %reshape imgData to be allpixels x frames
+% background  = tmp(~reshape(mask,[],1),:); %extract points that are outside of the mask)
+% med_pix     = sum(background,1);
+% med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
+% flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+% %flash_idx   = med_pix > 0.05;
+% flash_idx   = logical(smoothdata(flash_idx,'gaussian',5));
+% 
+% 
+% n_planes = size(regProduct,3);
+% %y_scaled = (centroids(:,1) - min(centroids(:,1)))/ (max(centroids(:,1)) - min(centroids(:,1)));
+% filt_mu = linspace(max(centroids(:,1)),min(centroids(:,1)),n_planes);
+% filt_sig= range(centroids(:,1));
+% filt_x  = [1:size(regProduct,1)]';
+% %p_scaled = linspace(1,0,n_planes);
+% %y_scaled = repmat(linspace(0,1,size(regProduct,1))',1,size(regProduct,2));
+% f_cluster = zeros(n_centroid,n_frame);
+% 
+% for p = 1:n_planes
+% %z_mult = abs(y_scaled - p_scaled(p));   %multiply teh values in each cluster by a multiplier which depends on the plane we are in. dorsal (bottom) is passed through at early planes, ventral passed through at late planes
+% %tmp = double(squeeze(regProduct(:,:,p,:))) .* (1-abs(y_scaled - p_scaled(p)));
+% tmp = double(squeeze(regProduct(:,:,p,:))) .* normpdf(filt_x,filt_mu(p),filt_sig);
+% 
+% 
+% imgData_2d      = reshape(double(tmp),[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
+% centroid_log    = false(n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
+% for i = 1:n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
+%     centroid_log(i, sub2ind(size(imgData),y_mask(idx==i),x_mask(idx ==i))) = true;
+% end
+% 
+% tmp       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
+% f_cluster = f_cluster + tmp;
+% end
+% 
+% f_cluster(:,flash_idx) = nan;
+% f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
+% dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
+% zscore_cluster  = zscore(dff_cluster(:,~flash_idx),[],2);
+% tmp = dff_cluster;
+% tmp(:,~flash_idx) = zscore_cluster;
+% zscore_cluster = tmp;
+% if z_flag
+% dff_cluster = zscore_cluster;
+% end
+% %dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
+% figure(3); clf
+% imagesc(subplot(2,2,1),centroid_log); colormap('bone')
+% xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
+% imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
+% xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
+% imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
+% xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
+% hold on
+% scatter(ones(n_centroid,1),1:n_centroid,[],cmap,'filled')
 
 %% Estimate von mises (Mel Style)
 % n_frames    = size(dff_cluster,2);
@@ -239,7 +248,7 @@ scatter(ones(n_centroid,1),1:n_centroid,[],cmap,'filled')
 
 %% Find bump as PVA
 tmp_data    = dff_cluster;
-alpha       = linspace(-pi,pi,n_centroid);
+alpha       = linspace(-pi,pi-(2*pi/n_centroid),n_centroid);
 
 [x_tmp,y_tmp]   = pol2cart(alpha,tmp_data');
 [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
@@ -461,8 +470,7 @@ axis tight; ylim([-pi,pi])
 xlabel('time (s)')
 
 %% plot scatter of fly velocity to bump velocity
-
-lag = 15;
+lag = 10;
 bump_vel = [diff(unwrap(mu));0] / fr; %divide by the frame rate (seconds per frame). since the mu is in units of radians, this should give rad per seconds
 fly_vel  = ftData_DAQ.velYaw{:};
 bump_vel = bump_vel(lag+1:end);
@@ -649,7 +657,7 @@ if movie_flag
     %v.FrameRate = 60;
     %open(v)
 for i = 1:size(imgData,3)                   %loop through each frame and update the ColorData with the values for the current frame
-    h.CData = imgData2(:,:,i);
+    h.CData = imgData(:,:,i);
     h2.ThetaData = -cue_tmp(i);
     h3.CData(:,i) = dff_cluster(:,i);
     % h6.AlphaData = a_values(:,i);
