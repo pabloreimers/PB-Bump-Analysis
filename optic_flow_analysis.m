@@ -88,7 +88,7 @@ tiledlayout(rows,cols)
     date_dir = dir(base_dir);
     date_dir(1:2) = [];
 
-for i = 5:n
+for i = 1:n
     
     if ~isempty(dir([all_trials(i).folder,'\',all_trials(i).name])) && (~isempty(dir([all_trials(i).folder,'\','*mask*'])))
     
@@ -170,7 +170,11 @@ meta = ...
     {'20231204-7_LPsP_syt7f'}, 22,'m';...
     {'20231204-8_LPsP_syt7f'}, 22,'m';...
     {'20231206-1_LPsP_syt7f'}, 23,'m';...
-    {'20231206-2_LPsP_syt7f'}, 23,'m'};
+    {'20231206-2_LPsP_syt7f'}, 23,'m';...
+    {'20231215-1_LPsP_syt7f'}, 24,'g';...
+    {'20231215-2_LPsP_syt7f'}, 24,'g';...
+    {'20231215-3_LPsP_syt7f'}, 25,'g';...
+    {'20231215-4_LPsP_syt7f'}, 26,'g'};%;...;
 
 fly_num = cell2mat(meta(:,2));
 fly_food= cellfun(@(x)(strcmp(x,'m')),meta(:,3));
@@ -327,26 +331,37 @@ for i = 1:length(os_vec)
 end
 
 figure(13); clf
-plot(fs_vec,squeeze(mean(dff_mat,1,'omitnan'))')
+plot(fs_vec,squeeze(mean(dff_mat(fly_food,:,:),1,'omitnan'))')
 colororder(cool(size(dff_mat,3)))
 xlabel('fly speed'); ylabel('dff')
 legend(num2str(os_vec))
+
+figure(14); clf
+for i = 1:n
+    subplot(7,7,i);
+    plot(squeeze(dff_mat(i,:,:)))
+    colororder(cool(size(dff_mat,3)))
+end
+linkaxes(get(gcf,'Children'),'x')
 %% plot dff averaged over all flies aligned to optic flow
 n = size(data,1);
 delay_vec = nan(n,1);
 df_aligned = nan(n,size(data.c_speed{1},1));
 cs_aligned = nan(n,size(data.c_speed{1},1));
+si_aligned = false(n,size(data.c_speed{1},1));
 
 for i = 1:n
     delay_vec(i) = finddelay(data.c_speed{1},data.c_speed{i});
+    still_idx = abs(data.r_speed{i}) < .1;
 
     if delay_vec(i) > 0
        cs_aligned(i,1:end-delay_vec(i)+1) = data.c_speed{i}(delay_vec(i):end);
        df_aligned(i,1:end-delay_vec(i)+1) = data.dff_tot{i}(delay_vec(i):end);
-    
+       si_aligned(i,1:end-delay_vec(i)+1) = still_idx(delay_vec(i):end);
     else
        cs_aligned(i,-delay_vec(i)+1:end) = data.c_speed{i}(1:end-delay_vec(i):end);
        df_aligned(i,-delay_vec(i)+1:end) = data.dff_tot{i}(1:end-delay_vec(i):end);
+       si_aligned(i,-delay_vec(i)+1:end) = still_idx(1:end-delay_vec(i):end);
     end
 
 end
@@ -382,6 +397,55 @@ subplot(4,2,[4,6,8]); hold on
 x = data.xf{1};
 y = mean(df_aligned(~fly_food,:),1);
 s = std(df_aligned(~fly_food,:),1)./sqrt(sum(~isnan(df_aligned(fly_food,:)),1));
+idx = ~isnan(x.*y.*s);
+x = x(idx);
+y = y(idx);
+s = s(idx);
+c = data.c_speed{1}(idx)' > 0;
+
+patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
+patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+plot(x,y,'w')
+
+xlabel('time (s)')
+
+linkaxes(get(gcf,'Children'),'x')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(gcf,'color','none')
+
+figure(13); clf
+df_aligned(~si_aligned) = nan;
+
+subplot(4,2,1); hold on; title('Molasses Food','color','w')
+plot(data.xf{1},mean(cs_aligned(fly_food,:),1)','color',[0,.5,1])
+ylabel('OL Speed')
+
+subplot(4,2,[3,5,7]); hold on
+x = data.xf{1};
+y = mean(df_aligned(fly_food,:),1,'omitnan');
+s = std(df_aligned(fly_food,:),1,'omitnan')./sqrt(sum(~isnan(df_aligned(fly_food,:)),1,'omitnan'));
+idx = ~isnan(x.*y.*s);
+x = x(idx);
+y = y(idx);
+s = s(idx);
+c = data.c_speed{1}(idx)' > 0;
+
+patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
+patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+plot(x,y,'w')
+
+ylabel('mean dff')
+xlabel('time (s)')
+
+
+subplot(4,2,2); hold on; title('German Food','color','w')
+plot(data.xf{1},mean(cs_aligned(~fly_food,:),1)','color',[0,.5,1])
+
+subplot(4,2,[4,6,8]); hold on
+x = data.xf{1};
+y = mean(df_aligned(~fly_food,:),1,'omitnan');
+s = std(df_aligned(~fly_food,:),1,'omitnan')./sqrt(sum(~isnan(df_aligned(fly_food,:)),1,'omitnan'));
 idx = ~isnan(x.*y.*s);
 x = x(idx);
 y = y(idx);

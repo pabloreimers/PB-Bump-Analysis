@@ -24,6 +24,7 @@ z_flag = true;
 load([filepath,'\',filename])
 
 %% plot the movie of all planes separately
+regProduct = imgData;
 n_plane = size(regProduct,3);
 n_frame = size(regProduct,4);
 row     = ceil(sqrt(n_plane));

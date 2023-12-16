@@ -20,9 +20,9 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = .1;
-eb_flag             = false;
-pb_flag             = true;
-tmp_labels = {'CL = 0.7','Dark (0.7)','Ramp = 0.7 -> 0.45','Ramp = 0.45 -> 0.3','Dark (0.3)','Ramp 0.3 -> 0.8','Dark (0.8)'};
+eb_flag             = true;
+pb_flag             = false;
+tmp_labels = {'CL = 0.7','Dark (0.7)','Ramp = 0.7 -> 0.3','Dark (0.3)','Ramp 0.3 -> 0.8','Dark (0.8)'};
 
 %% select folder of images
 base_dir = uigetdir(data_dir);
@@ -73,18 +73,18 @@ end
 end
     
 %% store the fictrac, total amplitude, and peak amplitude for each trial
-n       = length(trials);
-dff_tot = {n,1}; %preallocate dff cell
-dff_peak= {n,1};
-dff_cluster = {n,1};
-mu      = {n,1};
-rho     = {n,1};
-f_speed = {n,1};
-r_speed = {n,1};
-intHD   = {n,1};
-cue     = {n,1};
-r_vel   = {n,1};
-xf      = {n,1};
+% n       = length(trials);
+% dff_tot = {n,1}; %preallocate dff cell
+% dff_peak= {n,1};
+% dff_cluster = {n,1};
+% mu      = {n,1};
+% rho     = {n,1};
+% f_speed = {n,1};
+% r_speed = {n,1};
+% intHD   = {n,1};
+% cue     = {n,1};
+% r_vel   = {n,1};
+% xf      = {n,1};
 
 
 figure(2); clf
@@ -92,11 +92,11 @@ rows = floor(sqrt(n));
 cols = ceil(n/rows);
 tiledlayout(rows,cols)
 
-for i = 1:length(trials)
+for i = 7:length(trials)
     disp(i)
 
     tmp = dir([base_dir,'\',trials{i},'\registration*\*imagingData*']);
-    %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
+   %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
     load([tmp.folder,'\',tmp.name])
     tmp = dir([base_dir,'\',trials{i},'\*ficTracData_DAQ*']);
     load([tmp.folder,'\',tmp.name])
@@ -120,7 +120,7 @@ for i = 1:length(trials)
     imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
     tmp = mean(imgData,3);
     tmp = 256*(tmp - min(tmp(:)))/(max(tmp(:) - min(tmp(:))));
-    image(tmp); colormap('bone'); axis equal tight; title(tmp_labels{i},'color','w')
+    image(tmp); colormap('bone'); axis equal tight; %title(tmp_labels{i},'color','w')
     set(gca,'color','none')
 end
 set(gcf,'color','none')
@@ -153,12 +153,12 @@ end
 linkaxes(get(gcf,'Children'))
 
 %% plot the dff and heading trace of each trial
-figure(10); clf; set(gcf,'color','none')
+figure(10); clf; %set(gcf,'color','none')
 %tmp_labels = {'0.5','(0.5)','0.5 -> 1','(1)','1 -> 0.5','(0.5)'};
 for i = 1:n
     subplot(n,1,i);
     yyaxis left
-    set(gca,'xcolor','w','ycolor','w','color','none')
+    %set(gca,'xcolor','w','ycolor','w','color','none')
 
     if eb_flag
         alpha = linspace(-pi,pi,size(dff_cluster{i},1));
@@ -193,248 +193,266 @@ for i = 1:n
     
     ylabel('\DeltaF/F','Rotation',0)
     axis tight
-    colormap(bone)
+    colormap(parula)
     yyaxis right
     set(gca,'ycolor','[.75,0,.75]','color','none')
-    ylabel(sprintf('heading\n%s',tmp_labels{i}),'Rotation',0)
+%    ylabel(sprintf('heading\n%s',tmp_labels{i}),'Rotation',0)
     yticks([])
 end
 xlabel('time (s)')
 fontsize(gcf,20,'pixels')
 
-%% evaluate DA peak as gain reporter
-lag = 450; %in ms
-lag = round((lag/1000)/fr);
-%tmp_labels = {'Closed Loop','Dark','Closed Loop','Dark'};
-figure(20); clf
-for i = 1:n
-    r_speed_lag     = r_speed{i}(1:end-lag);
-    dff_peak_lag    = dff_peak{i}(lag+1:end);
-    mu_lag          = mu{i}(lag+1:end);
-    rho_lag         = rho{i}(lag+1:end);
-
-
-    subplot(n,1,i)
-    hold on
-    yyaxis left
-    plot(xf{i}(1:end-lag),dff_peak_lag,'Linewidth',2,'Color',[1,.5,0])
-    set(gca,'ycolor',[1,.5,0])
-    ylabel('peak dF/F')
-    yyaxis right
-    plot(xf{i}(1:end-lag),r_speed_lag,'LineWidth',2,'Color',[0.1,0.7,1])
-    ylabel('r speed')
-    set(gca,'color','none','ycolor',[0.1,.7,1],'xcolor','w')
-    text(max(xlim),max(ylim),tmp_labels{i},'HorizontalAlignment',   'right','VerticalAlignment','top','color','white')
-end
-
-fontsize(gcf,20,'pixels')
-set(gcf,'color','none')
-
-
-figure(21); clf
-for i = 1:n
-    r_speed_lag     = r_speed{i}(1:end-lag);
-    dff_peak_lag    = dff_peak{i}(lag+1:end);
-    mu_lag          = mu{i}(lag+1:end);
-    rho_lag         = rho{i}(lag+1:end);
-
-    subplot(3,2,i)
-    idx = r_speed_lag > 1e-1 & rho_lag > prctile(rho_lag,10);
-    tmp = [abs(diff(unwrap(mu_lag)));0]./fr;
-    tmp(tmp > prctile(tmp,80)) = prctile(tmp,80);
-    scatter(r_speed_lag(idx),dff_peak_lag(idx),10,tmp(idx),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
-    colormap(cool)
-    ylabel('dFF peak')
-    xlabel('r speed')
-    title(tmp_labels{i},'color','w')
-    pos = get(gca,'Position');
-    a = colorbar('color','w');
-    ylabel(a,'bump speed')
-    %set(gca,'Position',pos)
-    set(gca,'color','none','ycolor','w','xcolor','w')
-    set(gcf,'color','none')
-end
-fontsize(gcf,20,'pixels')
-
-c = cool(2);
-
-figure(22); clf
-for i = 1:n
-    subplot(3,2,i); cla
-    hold on
-    scatter(nan,nan,10,c(1,:),'filled','MarkerEdgeColor','none')
-    scatter(nan,nan,10,c(2,:),'filled','MarkerEdgeColor','none')
-    legend('slow','fast','textcolor','w','color','none','autoupdate','off')
-
-    r_speed_lag     = r_speed{i}(1:end-lag);
-    dff_peak_lag    = dff_peak{i}(lag+1:end);
-    mu_lag          = mu{i}(lag+1:end);
-    rho_lag         = rho{i}(lag+1:end);
-
-    tmp = [abs(diff(unwrap(mu_lag)));0]./fr;
-    tot_idx = r_speed_lag > 1e-1 & rho_lag > prctile(rho_lag,10);
-    slow_idx = tmp < prctile(tmp,40);
-    idx = tot_idx & slow_idx;
-
-
-    scatter(r_speed_lag(idx),dff_peak_lag(idx),10,c(1,:),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
-    idx = tot_idx & ~slow_idx;
-    scatter(r_speed_lag(idx),dff_peak_lag(idx),10,c(2,:),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
-    ylabel('dFF peak')
-    xlabel('r speed')
-    title(tmp_labels{i},'color','w')
-    %set(gca,'Position',pos)
-    set(gca,'color','none','ycolor','w','xcolor','w')
-    set(gcf,'color','none')
-end
-
-fontsize(gcf,20,'pixels')
-
-%% fit model for dFF from rspeed and bump speed
-lag = 0; %in ms
-lag = round((lag/1000)/fr);
-
-figure(24); clf; set(gcf,'color','none')
-r_mat = nan(n,3,40);
-
-for lag = 1:40
-for i = 1:n
-    r_speed_lag     = r_speed{i}(1:end-lag);
-    dff_peak_lag    = dff_peak{i}(lag+1:end);
-    mu_lag          = mu{i}(lag+1:end);
-    rho_lag         = rho{i}(lag+1:end);
-    mu_speed_lag    = [abs(diff(unwrap(mu_lag)));0]./fr;
-    
-    tot_idx = r_speed_lag > 0 & rho_lag > prctile(rho_lag,20) & ~isnan(mu_speed_lag) & mu_speed_lag < 6;
-    
-    [f,gof] = fit(r_speed_lag(tot_idx),dff_peak_lag(tot_idx),'poly1');
-    r_mat(i,1,lag) = gof.adjrsquare;
-
-    subplot(n,2,(2*i) - 1)
-    scatter(r_speed_lag(tot_idx),dff_peak_lag(tot_idx),10,[0.75,0,0.75],'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
-    set(gca,'color','none','xcolor','w','ycolor','w'); xlabel('r speed'); ylabel('dff peak')
-
-    [f,gof] = fit([r_speed_lag(tot_idx),mu_speed_lag(tot_idx)],dff_peak_lag(tot_idx),'poly11');
-    r_mat(i,2,lag) = gof.adjrsquare;
-    subplot(n,2,(2*i))
-    scatter3(r_speed_lag(tot_idx),mu_speed_lag(tot_idx),dff_peak_lag(tot_idx),10,[0.75,0,0.75],'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
-    set(gca,'color','none','xcolor','w','ycolor','w','zcolor','w'); xlabel('r speed'); ylabel('bump speed'); zlabel('dff_peak')
-
-    r_mat(i,3,lag) = corr(r_speed_lag(tot_idx),mu_speed_lag(tot_idx));
-end
-lag
-end
-%% fit the gain in a non-instantaneous way
-reps = 1;
-win_size = 120; %in seconds for piecewise optimization
-win_res = 0.5; %in seconds
-params_cell = {n,1};
-fval_cell = {n,1};
-
-lb = [0, 0];
-ub = [2, 20];
-x0 = [.7, 10;
-      .3, 10];
-%x0 = rand(1,2).*(ub-lb) + lb;
-
 figure(11); clf
-a = scatter([1,2,3],[0,0,0],'filled');
-ylim([0,1])
-xticks([1,2,3]); xticklabels({'pieces','reps','trials'})
-ylabel('% done')
-title('Optimization Process')
 for i = 1:n
-params = nan(floor(max(xf{i})),2,reps);
-fval   = nan(floor(max(xf{i})),1,reps);
-for j = 1:reps
-fr      = mean(diff(xf{i})); %find the frame rate of the data
+    subplot(n,6,(i-1)*6+[1:5]);
+    tmp = circ_dist(mu{i},-cue{i});
+    tmp(rho{i}<rho_thresh) = nan;
+    a = plot(xf{i},tmp);
+    a.YData(abs(diff(a.YData))>pi) = nan;
+    axis tight
 
-for t = 1:(max(xf{i})-win_size-20*fr)
-idx = xf{i} > t & xf{i} < t+win_size;
+    [counts,edges] = histcounts(tmp,'binwidth',.1);
+    subplot(n,6,i*6)
+    barh(edges(1:end-1),counts,'EdgeColor','none')
+    text(max(counts),min(edges),sprintf('Offset Var: %.2f',circ_var(tmp(~isnan(tmp)))),'VerticalAlignment','bottom','HorizontalAlignment','right')
 
-theta_tmp = cumsum(r_vel{i}(idx)*fr);
 
-% xq = [t:win_res:t+win_size]';
-% mu_tmp = interp1(xf{i}(idx),mu{i}(idx),xq,[],'extrap');
-% theta_tmp = interp1(xf{i}(idx),theta_tmp,xq,[],'extrap');
-% rho_tmp = interp1(xf{i}(idx),rho{i}(idx),xq,[],'extrap');
-mu_tmp = mu{i}(idx);
-rho_tmp = rho{i}(idx);
-
-obj_fun = @(x)(loss_fun(x,theta_tmp,mu_tmp,rho_tmp));
-%x = [gain,bias,lag,offset]
-opts = optimoptions('fmincon','FiniteDifferenceStepSize',[sqrt(eps),.2]);
-[params(t,:,j),fval(t,1,j)] = fmincon(obj_fun,x0(j,:),[],[],[],[],lb,ub,[],opts);
-a.YData(1) = t/max(xf{i});
-drawnow
-end
-params_cell{i} = params;
-fval_cell{i} = fval;
-a.YData(2) = j/reps;
-drawnow
-end
-a.YData(3) = i/n;
-drawnow
 end
 
-%% plot the fit values
-figure(12); clf
-rows = n;
-cols = 2;
-
-for i = 1:n
-    [~,idx] = sort(fval_cell{i},1,'ascend');
-    %subplot(n,cols,2*i - 1)
-    subplot(2,1,1); hold on
-    scatter(reshape(idx,1,[]), reshape(params_cell{i}(:,1,:),1,[]),'filled')
-    xticks([])
-    
-    %subplot(n,cols,2*i)
-    subplot(2,1,2); hold on
-    scatter(reshape(idx,1,[]),reshape(params_cell{i}(:,2,:),1,[])*fr*1000,'filled')
-    xticks([])
-end
-subplot(2,1,1)
-legend(tmp_labels)
-%title(subplot(rows,cols,1),'Sorted Fit Gain')
-%title(subplot(rows,cols,2),'Sorted Fit Lag')
-
-fontsize(gcf,20,'pixels')
-shg
-
-%% show the best fits
-figure(13); clf
-for i = 1:n
-%[~,idx] = sort(fval_cell{i},'ascend');
-%x = squeeze(params_cell{i}(idx(1),:));
-fr = 1/60;
-x = [.7,0];
-lag = ceil(x(2));
-
-subplot(n,1,i)
-hold on
-a = plot(xf{i}(1:end-lag),mu{i}(1:end-lag),'linewidth',2,'Color',0*[1,1,1]);
-a.YData(abs(diff(a.YData)) > pi) = nan;
-tmp = rho{i}(1:end-lag);
-a.YData(tmp < rho_thresh) = nan;
-
-theta_hat = theta_calc(x,r_vel{i}*fr);
-b = plot(xf{i}(1:end-lag),theta_hat(lag+1:end),'linewidth',2,'Color',[.75,0,.75]);
-b.YData(abs(diff(b.YData)) > pi) = nan;
-
-axis tight
-ylim([-pi,pi]); yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
-
-ylabel(tmp_labels{i},'Rotation',0)
-text(max(xlim),min(ylim),sprintf('g: %.2f\nlag: %.2f (ms)',x.*[1,fr*1000]),'HorizontalAlignment','left','VerticalAlignment','bottom')
-end
-
-xlabel('time (s)')
-subplot(n,1,1)
-pos =get(gca,'Position');
-legend('$(\int{(\dot{\theta})*g})$','$\hat{\theta}$','Interpreter','latex','Location','northoutside')
-set(gca,'Position',pos)
-fontsize(gcf,20,'pixels')
+%% Other figures (finding gain and such)
+% %% evaluate DA peak as gain reporter
+% lag = 450; %in ms
+% lag = round((lag/1000)/fr);
+% %tmp_labels = {'Closed Loop','Dark','Closed Loop','Dark'};
+% figure(20); clf
+% for i = 1:n
+%     r_speed_lag     = r_speed{i}(1:end-lag);
+%     dff_peak_lag    = dff_peak{i}(lag+1:end);
+%     mu_lag          = mu{i}(lag+1:end);
+%     rho_lag         = rho{i}(lag+1:end);
+% 
+% 
+%     subplot(n,1,i)
+%     hold on
+%     yyaxis left
+%     plot(xf{i}(1:end-lag),dff_peak_lag,'Linewidth',2,'Color',[1,.5,0])
+%     set(gca,'ycolor',[1,.5,0])
+%     ylabel('peak dF/F')
+%     yyaxis right
+%     plot(xf{i}(1:end-lag),r_speed_lag,'LineWidth',2,'Color',[0.1,0.7,1])
+%     ylabel('r speed')
+%     set(gca,'color','none','ycolor',[0.1,.7,1],'xcolor','w')
+%     text(max(xlim),max(ylim),tmp_labels{i},'HorizontalAlignment',   'right','VerticalAlignment','top','color','white')
+% end
+% 
+% fontsize(gcf,20,'pixels')
+% set(gcf,'color','none')
+% 
+% 
+% figure(21); clf
+% for i = 1:n
+%     r_speed_lag     = r_speed{i}(1:end-lag);
+%     dff_peak_lag    = dff_peak{i}(lag+1:end);
+%     mu_lag          = mu{i}(lag+1:end);
+%     rho_lag         = rho{i}(lag+1:end);
+% 
+%     subplot(3,2,i)
+%     idx = r_speed_lag > 1e-1 & rho_lag > prctile(rho_lag,10);
+%     tmp = [abs(diff(unwrap(mu_lag)));0]./fr;
+%     tmp(tmp > prctile(tmp,80)) = prctile(tmp,80);
+%     scatter(r_speed_lag(idx),dff_peak_lag(idx),10,tmp(idx),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
+%     colormap(cool)
+%     ylabel('dFF peak')
+%     xlabel('r speed')
+%     title(tmp_labels{i},'color','w')
+%     pos = get(gca,'Position');
+%     a = colorbar('color','w');
+%     ylabel(a,'bump speed')
+%     %set(gca,'Position',pos)
+%     set(gca,'color','none','ycolor','w','xcolor','w')
+%     set(gcf,'color','none')
+% end
+% fontsize(gcf,20,'pixels')
+% 
+% c = cool(2);
+% 
+% figure(22); clf
+% for i = 1:n
+%     subplot(3,2,i); cla
+%     hold on
+%     scatter(nan,nan,10,c(1,:),'filled','MarkerEdgeColor','none')
+%     scatter(nan,nan,10,c(2,:),'filled','MarkerEdgeColor','none')
+%     legend('slow','fast','textcolor','w','color','none','autoupdate','off')
+% 
+%     r_speed_lag     = r_speed{i}(1:end-lag);
+%     dff_peak_lag    = dff_peak{i}(lag+1:end);
+%     mu_lag          = mu{i}(lag+1:end);
+%     rho_lag         = rho{i}(lag+1:end);
+% 
+%     tmp = [abs(diff(unwrap(mu_lag)));0]./fr;
+%     tot_idx = r_speed_lag > 1e-1 & rho_lag > prctile(rho_lag,10);
+%     slow_idx = tmp < prctile(tmp,40);
+%     idx = tot_idx & slow_idx;
+% 
+% 
+%     scatter(r_speed_lag(idx),dff_peak_lag(idx),10,c(1,:),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
+%     idx = tot_idx & ~slow_idx;
+%     scatter(r_speed_lag(idx),dff_peak_lag(idx),10,c(2,:),'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
+%     ylabel('dFF peak')
+%     xlabel('r speed')
+%     title(tmp_labels{i},'color','w')
+%     %set(gca,'Position',pos)
+%     set(gca,'color','none','ycolor','w','xcolor','w')
+%     set(gcf,'color','none')
+% end
+% 
+% fontsize(gcf,20,'pixels')
+% 
+% %% fit model for dFF from rspeed and bump speed
+% lag = 0; %in ms
+% lag = round((lag/1000)/fr);
+% 
+% figure(24); clf; set(gcf,'color','none')
+% r_mat = nan(n,3,40);
+% 
+% for lag = 1:40
+% for i = 1:n
+%     r_speed_lag     = r_speed{i}(1:end-lag);
+%     dff_peak_lag    = dff_peak{i}(lag+1:end);
+%     mu_lag          = mu{i}(lag+1:end);
+%     rho_lag         = rho{i}(lag+1:end);
+%     mu_speed_lag    = [abs(diff(unwrap(mu_lag)));0]./fr;
+% 
+%     tot_idx = r_speed_lag > 0 & rho_lag > prctile(rho_lag,20) & ~isnan(mu_speed_lag) & mu_speed_lag < 6;
+% 
+%     [f,gof] = fit(r_speed_lag(tot_idx),dff_peak_lag(tot_idx),'poly1');
+%     r_mat(i,1,lag) = gof.adjrsquare;
+% 
+%     subplot(n,2,(2*i) - 1)
+%     scatter(r_speed_lag(tot_idx),dff_peak_lag(tot_idx),10,[0.75,0,0.75],'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
+%     set(gca,'color','none','xcolor','w','ycolor','w'); xlabel('r speed'); ylabel('dff peak')
+% 
+%     [f,gof] = fit([r_speed_lag(tot_idx),mu_speed_lag(tot_idx)],dff_peak_lag(tot_idx),'poly11');
+%     r_mat(i,2,lag) = gof.adjrsquare;
+%     subplot(n,2,(2*i))
+%     scatter3(r_speed_lag(tot_idx),mu_speed_lag(tot_idx),dff_peak_lag(tot_idx),10,[0.75,0,0.75],'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.3)
+%     set(gca,'color','none','xcolor','w','ycolor','w','zcolor','w'); xlabel('r speed'); ylabel('bump speed'); zlabel('dff_peak')
+% 
+%     r_mat(i,3,lag) = corr(r_speed_lag(tot_idx),mu_speed_lag(tot_idx));
+% end
+% lag
+% end
+% %% fit the gain in a non-instantaneous way
+% reps = 1;
+% win_size = 120; %in seconds for piecewise optimization
+% win_res = 0.5; %in seconds
+% params_cell = {n,1};
+% fval_cell = {n,1};
+% 
+% lb = [0, 0];
+% ub = [2, 20];
+% x0 = [.7, 10;
+%       .3, 10];
+% %x0 = rand(1,2).*(ub-lb) + lb;
+% 
+% figure(11); clf
+% a = scatter([1,2,3],[0,0,0],'filled');
+% ylim([0,1])
+% xticks([1,2,3]); xticklabels({'pieces','reps','trials'})
+% ylabel('% done')
+% title('Optimization Process')
+% for i = 1:n
+% params = nan(floor(max(xf{i})),2,reps);
+% fval   = nan(floor(max(xf{i})),1,reps);
+% for j = 1:reps
+% fr      = mean(diff(xf{i})); %find the frame rate of the data
+% 
+% for t = 1:(max(xf{i})-win_size-20*fr)
+% idx = xf{i} > t & xf{i} < t+win_size;
+% 
+% theta_tmp = cumsum(r_vel{i}(idx)*fr);
+% 
+% % xq = [t:win_res:t+win_size]';
+% % mu_tmp = interp1(xf{i}(idx),mu{i}(idx),xq,[],'extrap');
+% % theta_tmp = interp1(xf{i}(idx),theta_tmp,xq,[],'extrap');
+% % rho_tmp = interp1(xf{i}(idx),rho{i}(idx),xq,[],'extrap');
+% mu_tmp = mu{i}(idx);
+% rho_tmp = rho{i}(idx);
+% 
+% obj_fun = @(x)(loss_fun(x,theta_tmp,mu_tmp,rho_tmp));
+% %x = [gain,bias,lag,offset]
+% opts = optimoptions('fmincon','FiniteDifferenceStepSize',[sqrt(eps),.2]);
+% [params(t,:,j),fval(t,1,j)] = fmincon(obj_fun,x0(j,:),[],[],[],[],lb,ub,[],opts);
+% a.YData(1) = t/max(xf{i});
+% drawnow
+% end
+% params_cell{i} = params;
+% fval_cell{i} = fval;
+% a.YData(2) = j/reps;
+% drawnow
+% end
+% a.YData(3) = i/n;
+% drawnow
+% end
+% 
+% %% plot the fit values
+% figure(12); clf
+% rows = n;
+% cols = 2;
+% 
+% for i = 1:n
+%     [~,idx] = sort(fval_cell{i},1,'ascend');
+%     %subplot(n,cols,2*i - 1)
+%     subplot(2,1,1); hold on
+%     scatter(reshape(idx,1,[]), reshape(params_cell{i}(:,1,:),1,[]),'filled')
+%     xticks([])
+% 
+%     %subplot(n,cols,2*i)
+%     subplot(2,1,2); hold on
+%     scatter(reshape(idx,1,[]),reshape(params_cell{i}(:,2,:),1,[])*fr*1000,'filled')
+%     xticks([])
+% end
+% subplot(2,1,1)
+% legend(tmp_labels)
+% %title(subplot(rows,cols,1),'Sorted Fit Gain')
+% %title(subplot(rows,cols,2),'Sorted Fit Lag')
+% 
+% fontsize(gcf,20,'pixels')
+% shg
+% 
+% %% show the best fits
+% figure(13); clf
+% for i = 1:n
+% %[~,idx] = sort(fval_cell{i},'ascend');
+% %x = squeeze(params_cell{i}(idx(1),:));
+% fr = 1/60;
+% x = [.7,0];
+% lag = ceil(x(2));
+% 
+% subplot(n,1,i)
+% hold on
+% a = plot(xf{i}(1:end-lag),mu{i}(1:end-lag),'linewidth',2,'Color',0*[1,1,1]);
+% a.YData(abs(diff(a.YData)) > pi) = nan;
+% tmp = rho{i}(1:end-lag);
+% a.YData(tmp < rho_thresh) = nan;
+% 
+% theta_hat = theta_calc(x,r_vel{i}*fr);
+% b = plot(xf{i}(1:end-lag),theta_hat(lag+1:end),'linewidth',2,'Color',[.75,0,.75]);
+% b.YData(abs(diff(b.YData)) > pi) = nan;
+% 
+% axis tight
+% ylim([-pi,pi]); yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
+% 
+% ylabel(tmp_labels{i},'Rotation',0)
+% text(max(xlim),min(ylim),sprintf('g: %.2f\nlag: %.2f (ms)',x.*[1,fr*1000]),'HorizontalAlignment','left','VerticalAlignment','bottom')
+% end
+% 
+% xlabel('time (s)')
+% subplot(n,1,1)
+% pos =get(gca,'Position');
+% legend('$(\int{(\dot{\theta})*g})$','$\hat{\theta}$','Interpreter','latex','Location','northoutside')
+% set(gca,'Position',pos)
+% fontsize(gcf,20,'pixels')
 
 
 
@@ -589,6 +607,7 @@ amp_peak    = interp1(xb,amp_peak,xf)';
 end
 
 function [amp_tot,amp_peak, mu, rho,dff_cluster] = bump_calc_pb(mask, regProduct, n_centroid, f0_pct, n_smooth, b_smooth, xf)
+regProduct = smoothdata(regProduct,4,'movmean',5);
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = reshape(imgData,[],size(imgData,3)); %reshape imgData to be allpixels x frames
 tmp = bwmorph(mask,'thicken',20);
