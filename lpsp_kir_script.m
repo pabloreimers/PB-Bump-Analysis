@@ -5,8 +5,8 @@ remote_dir           = '\\files.med.harvard.edu\Neurobio\wilsonlab\pablo\lpsp_ki
 
 f0_pct              = 5;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
-b_smooth            = 10;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
-f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
+b_smooth            = .5*10*5;                                              %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter. gaussian sigma is 1/5 the window length, so this is sigma*fr*5, in seconds
+f_smooth            = .5*60*5;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
 n_smooth            = 1;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
@@ -81,6 +81,8 @@ exp_idx = {};
 fly_num = {};
 exp_date= {};
 trial   = {};
+x_pos   = {};
+y_pos   = {};
 
 i = 0;
 
@@ -105,7 +107,7 @@ for d = dates'
             tmp = ls([tmp_dir,'mask*']);
             load([tmp_dir,tmp])
             tmp = ls([tmp_dir,'imagingData*']);
-            load([tmp_dir,tmp])
+            %load([tmp_dir,tmp])
             tmp = ls([tmp_dir,'*ficTracData*']);
             load([tmp_dir,tmp])
             catch
@@ -118,12 +120,12 @@ for d = dates'
             trial{i} = t;
             cl_idx{i} = contains(t,'cl');
             exp_idx{i} = contains(t,'LPsP');
-            [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
+            [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i},x_pos{i},y_pos{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
             xf{i}  = mean(diff(ftData_DAQ.trialTime{:})) * [1:length(f_speed{i})]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
             if isduration(xf{i})
                 xf{i} = seconds(xf{i});
             end
-            [dff_tot{i},dff_peak{i},mu{i},rho{i},dff_cluster{i},f_cluster{i}] = bump_calc_eb(mask,regProduct,n_centroid,f0_pct,n_smooth,b_smooth,xf{i});
+           % [dff_tot{i},dff_peak{i},mu{i},rho{i},dff_cluster{i},f_cluster{i}] = bump_calc_eb(mask,regProduct,n_centroid,f0_pct,n_smooth,b_smooth,xf{i});
             fprintf('\n')
         end
     end
@@ -361,6 +363,7 @@ lag_vec  = 0:lag_size*fr*1000:max_lag;
 offset_var = nan(size(exp_idx,2),length(lag_vec));
 circ_corr  = nan(size(exp_idx,2),length(lag_vec));
 unwrap_corr  = nan(size(exp_idx,2),length(lag_vec));
+path_var  = nan(size(exp_idx,2),length(lag_vec));
 win_size = 60; %in seconds
 
 
@@ -376,6 +379,7 @@ for i = 1:length(offset_var)
     ov = nan(ceil(x_tmp(end)-win_size),1);
     cc = nan(ceil(x_tmp(end)-win_size),1);
     uc = nan(ceil(x_tmp(end)-win_size),1);
+    pv = nan(ceil(x_tmp(end)-win_size),1);
     
 
     for k = 1:ceil(x_tmp(end))-win_size
@@ -397,11 +401,14 @@ for i = 1:length(offset_var)
 
         cc(k) = circ_corrcc(tmp1,tmp2);
         ov(k) = circ_var(circ_dist(tmp1,tmp2));
+        pv(k) = circ_var(tmp2);
         fprintf("j: %.2f i: %.2f k: %.2f\n",j/length(lag_vec),i/length(offset_var),k/ceil(x_tmp(end)))
     end
     offset_var(i,j) = mean(ov,'omitnan');
     circ_corr(i,j) = mean(cc,'omitnan');
     unwrap_corr(i,j) = mean(uc,'omitnan');
+    path_var(i,j) = mean(pv,'omitnan');
+
 end
 end
 
@@ -430,7 +437,7 @@ p1 = sum(mean(o_empty(idx_empty),1) - mean(o_lpsp(idx_lpsp),1) < 0)/ N;
 g_empty = offset_var(group_idx==3 & keep_idx,lag_idx(3));
 g_lpsp  = offset_var(group_idx==4 & keep_idx,lag_idx(4));
 idx_empty = randi(length(g_empty),length(g_empty),N);
-idx_lpsp  = randi(length(o_lpsp),length(o_lpsp),N);
+idx_lpsp  = randi(length(g_lpsp),length(g_lpsp),N);
 p2 = sum(mean(g_empty(idx_empty),1) - mean(g_lpsp(idx_lpsp),1) < 0)/ N;
 
 figure(1); clf
@@ -664,7 +671,11 @@ c = [  1,  .25,  0;...
        0,  .25,  1;...
        1, .75,.75;...
      .5, .5, 1];
-
+if dark_flag
+    scatter_color = 'w';
+else
+    scatter_color = 'k';
+end
 fr = mean(diff(full_data.xf{1}));
 vel_corr = nan(size(exp_idx,2),20);
 vel_slope = nan(size(exp_idx,2),20);
@@ -678,12 +689,13 @@ for i = 1:length(vel_corr)
     rho_tmp = full_data.rho{i}(lag:end);
     fly_vel = full_data.r_vel{i}(1:end-lag+1);
 
-    bump_vel = [diff(mu_tmp);0]./fr;
+    bump_vel = [diff(unwrap(mu_tmp));0]./fr;
     
-    tmp = ~isnan(bump_vel) & (rho_tmp > rho_thresh) & abs(fly_vel) > vel_min & abs(bump_vel) < 10 & [abs(diff(full_data.cue{i}(1:end-lag+1)));0] > 0;
+    %tmp = ~isnan(bump_vel) & (rho_tmp > rho_thresh) & abs(fly_vel) > vel_min & abs(bump_vel) < 10 & [abs(diff(full_data.cue{i}(1:end-lag+1)));0] > 1e-10;
+    tmp = ~isnan(bump_vel) & (rho_tmp > rho_thresh) & abs(bump_vel) < 10 & [abs(diff(full_data.cue{i}(1:end-lag+1)));0] > 1e-10;
     
     vel_corr(i,j) = corr(bump_vel(tmp),fly_vel(tmp));
-    b = [zeros(sum(tmp),1),fly_vel(tmp)] \ bump_vel(tmp);
+    b = [ones(sum(tmp),1),fly_vel(tmp)] \ bump_vel(tmp);
     vel_slope(i,j) = b(2);
     vel_bias(i,j) = b(1);
 end
@@ -691,7 +703,7 @@ end
 
 figure(14); clf
 
-keep_idx = cellfun(@(x)(sum(x>rho_thresh)/length(x) > 0.4),full_data.rho);
+keep_idx = cellfun(@(x)(sum(x>rho_thresh)/length(x) > 0.4),full_data.rho);% cellfun(@(x)((sum(abs(diff(x))==0))/length(x) <.2),full_data.cue);
 
 lag_idx = nan(4,1);
 [~,lag_idx(1)] = max(mean(vel_corr(group_idx == 1 & keep_idx,:),1));
@@ -783,6 +795,107 @@ if dark_flag
     legend(group_labels,'Autoupdate','off','Location','Northeast','textcolor','w', 'edgecolor','w')
 end
 
+%% Find the positional gain
+lb = -5;
+ub = 5;
+x0 = 0.7;
+win_size = 30;
+
+g = cell(length(full_data.mu),1);
+vr= cell(length(full_data.mu),1);
+fval = cell(length(full_data.mu),1);
+pos_gain = @(g,r)(cumsum(r)*g/60);
+
+for i = 1:length(g)
+    xf = full_data.xf{i};
+    tmp_g = nan(round(max(xf)),1);
+    tmp_vr= nan(round(max(xf)),1);
+    tmp_f = nan(round(max(xf)),1);
+    figure(2); clf; hold on; xlabel(['fly ', num2str(i)])
+
+    for t = 0:round(max(xf)-win_size-1)
+        idx = xf > t & xf < t+win_size;
+        idx2= xf > t+.160 & xf < t+win_size+.160;
+        tmp_vr(t+1) = range(unwrap(full_data.cue{i}(idx)));
+        
+        if sum(isnan(full_data.mu{i}(idx2))) > sum(idx)/4
+            continue
+        end
+
+        obj_fun = @(x)(var( pos_gain(x,full_data.r_vel{i}(idx)) - unwrap(full_data.mu{i}(idx2)) , 'omitnan'));
+        opts = optimoptions('fmincon','FiniteDifferenceStepSize',[sqrt(eps)]);
+        [tmp_g(t+1),tmp_f(t+1)] = fmincon(obj_fun,x0,[],[],[],[],lb,ub,[],opts);
+        
+        if tmp_g(t+1) < .1 & tmp_f(t+1) < .1
+            a=1;
+        end
+        % figure(1); clf
+        % plot(xf(idx),pos_gain(tmp_g(i),full_data.r_vel{i}(idx)))
+        % hold on
+        % plot(xf(idx),unwrap(full_data.mu{i}(idx)))
+        % xlabel(tmp_g(i))
+        % shg
+        % 
+        % figure(2);  scatter(tmp_g(i),tmp_f(i),'filled','k','MarkerFaceAlpha',.1)
+        % pause(.1)
+        fprintf('trial: %i time: %.2f',i,t/round(max(xf)))
+    end
+    g{i} = tmp_g;
+    vr{i} = tmp_vr;
+    fval{i} = tmp_f;
+end
+
+%% plot the results
+exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
+cl_idx = cellfun(@(x)contains(x,'cl'),full_data.trial);
+group_idx = (cl_idx*2) + exp_idx + 1;
+group_labels = {'Dark, empty','Dark, LPsP','CL, empty','CL, LPsP'};
+c = [  1,  .25,  0;...
+       0,  .25,  1;...
+       1, .75,.75;...
+     .5, .5, 1];
+
+
+figure(3); clf; hold on
+tmp_order = [1,3,2,4];
+for i = 1:4
+    subplot(2,2,tmp_order(i)); title(group_labels{i}); xlabel('fit gain'); ylabel('Probability'); hold on
+    colororder(jet(sum(group_idx==i)))
+    for j = find(group_idx==i)
+        idx = vr{j} > pi;
+        tmp_f = fval{j}(idx);
+        tmp_g = g{j}(idx);
+
+        [~,idx] = sort(tmp_f,'ascend');
+        idx = tmp_f < .4;
+        %plot(tmp_g(idx),'Color',[c(i,:),.1])
+        histogram(tmp_g(idx),'binwidth',.1,'Normalization','probability','FaceAlpha',.1);
+    end
+end
+linkaxes(get(gcf,'Children'))
+xlim([-.8,1.2])
+fontsize(gcf,20,'pixels')
+
+figure(4); clf; hold on
+for i = 1:4
+    tmp1 = cell2mat(g(group_idx==i));
+    tmp2 = cell2mat(fval(group_idx==i));
+    tmp3 = cell2mat(vr(group_idx==i));
+    subplot(2,2,i)
+    histogram(tmp1(tmp2<.5 & tmp3 > pi),'binwidth',.1,'Normalization','probability')
+    %histogram(tmp2,'binwidth',.05,'Normalization','probability')
+    title(group_labels{i})
+end
+linkaxes(get(gcf,'Children'))
+
+figure(5); clf;
+edges = -5:.1:5;
+for i = 1:4
+    subplot(2,2,i)
+    colororder(hsv(sum(group_idx==i)))
+    bar(edges(2:end),cell2mat(cellfun(@(x,y,z)(histcounts(x(y<.5 & z > pi),'binedges',edges)),g(group_idx==i),fval(group_idx==i),vr(group_idx==i),'UniformOutput',false))','stacked');
+end
+linkaxes(get(gcf,'Children'))
 %% show the polar histograms of fly and bump heading
 exp_idx = cellfun(@(x)contains(x,'LPsP'),full_data.trial);
 cl_idx = cellfun(@(x)contains(x,'cl'),full_data.trial);
@@ -890,6 +1003,15 @@ if dark_flag
     end
 end
 
+%% find hotspots with squared error
+keep_idx = cellfun(@(x)((sum(abs(diff(x))==0))/length(x) <.2),full_data.cue);
+mse = cellfun(@(x,y)(mean((sort(x)-sort(y)).^2,'omitnan')),full_data.cue,full_data.mu);
+cse = cellfun(@(x)(mean((sort(x) - linspace(-pi,pi,length(x))').^2,'omitnan')),full_data.cue);
+bse = cellfun(@(x)(mean((sort(x) - linspace(-pi,pi,length(x))').^2,'omitnan')),full_data.mu);
+
+clf
+scatter(group_idx(keep_idx),cse(keep_idx))
+
 %% find hotspots in fluoresnce, not just bump
 summed_f = cellfun(@(x)(sum(x./prctile(x,f0_pct,2),2,'omitnan')),full_data.f_cluster,'uniformoutput',false);
 H = cellfun(@(x)(entropy(zscore(x))),summed_f);
@@ -906,6 +1028,17 @@ idx_empty = randi(length(h_empty),length(h_empty),N);
 idx_lpsp  = randi(length(h_lpsp),length(h_lpsp),N);
 
 p = sum(mean(h_empty(idx_empty),1) - mean(h_lpsp(idx_lpsp),1) > 0)/ N
+
+%% Plot each fly in cartesian coordinates
+figure(20)
+for i = 1:length(full_data.x_pos)
+    subplot(2,2,group_idx(i)); hold on
+    plot(full_data.x_pos{i},full_data.y_pos{i})
+end
+
+
+
+
 %% Functions
 function x_white = whiten(x,dim)
     if nargin < 2
@@ -1000,18 +1133,19 @@ dff_cluster = zscore_cluster;
 % dff_cluster = tmp;
 alpha       = linspace(-pi,pi,n_centroid);
 
-for i = 1:n_smooth
-    dff_cluster = smoothdata(dff_cluster,2,'gaussian',b_smooth);
-end
+% for i = 1:n_smooth
+%     dff_cluster = smoothdata(dff_cluster,2,'gaussian',b_smooth);
+% end
 
-tmp = smoothdata(repmat(dff_cluster,3,1),1,'gaussian',3);
-tmp = tmp(n_centroid+1:end-n_centroid,:);
+% tmp = smoothdata(repmat(dff_cluster,3,1),1,'gaussian',3);
+% tmp = tmp(n_centroid+1:end-n_centroid,:);
+tmp = dff_cluster;
 [x_tmp,y_tmp]   = pol2cart(alpha,tmp');
 [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
-for i = 1:n_smooth
-mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
-rho    = smoothdata(rho,1,'gaussian',b_smooth);
-end
+% for i = 1:n_smooth
+% mu     = smoothdata(unwrap(mu),1,'gaussian',b_smooth); %smooth all bump parameters. this was done before in a cell array called for plotting. just do it do the actual variables now for ease of calling
+% rho    = smoothdata(rho,1,'gaussian',b_smooth);
+% end
 
 mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
 mu(mu > pi) = mu(mu > pi) - 2*pi;
@@ -1036,7 +1170,7 @@ amp_tot     = interp1(xb,amp_tot,xf)';
 amp_peak    = interp1(xb,amp_peak,xf)';
 end
 
-function [f_speed,r_speed,intHD,cue,r_vel] = ft_calc(ftData_DAQ,n_smooth,f_smooth)
+function [f_speed,r_speed,intHD,cue,r_vel,x_pos,y_pos] = ft_calc(ftData_DAQ,n_smooth,f_smooth)
 
 f_speed = ftData_DAQ.velFor{:};                       %store each speed
 r_speed = ftData_DAQ.velYaw{:};
@@ -1063,6 +1197,12 @@ intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
 cue   = mod(cue,2*pi);                                %rewrap heading data, and put between -pi and pi.
 cue(cue > pi) = cue(cue > pi) - 2*pi;
 
+f_vel = ftData_DAQ.velFor{:};
+s_vel = ftData_DAQ.velSide{:};
+theta = ftData_DAQ.cueAngle{:} / 180 * pi;
+
+x_pos = cumsum(f_vel.*cos(theta') + s_vel.*sin(theta'))/60;
+y_pos = cumsum(f_vel.*sin(theta') + s_vel.*cos(theta'))/60;
 
 % for i = 1:n_smooth                                      %smooth fictrac data n times, since fictrac is super noisy.
 %    r_vel = smoothdata(fly_vel,1,'gaussian',f_smooth);

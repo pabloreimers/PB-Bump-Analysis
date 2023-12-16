@@ -5,7 +5,7 @@ movie_flag          = false;                                                %set
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
 %data_dir            = 'C:\Users\preim\Documents\Wilson Lab\data\2p data\';
-f0_pct              = 15;                                                    %set the percentile that for the baseline fluorescence
+f0_pct              = 5;                                                    %set the percentile that for the baseline fluorescence
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 5;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
@@ -436,9 +436,8 @@ r_speed = ftData_DAQ.velYaw{:};
 intHD   = ftData_DAQ.intHD{:};
 cue     = ftData_DAQ.cuePos{:}';
 c_speed = [diff(unwrap(cue/192*2*pi));0]*60;
+c_speed(abs(c_speed)>2) = 0;
 
-c_speed = abs(c_speed);
-r_speed = abs(r_speed);
 f_speed = f_speed;                                      %turn each velocity into a speed
 intHD   = unwrap(intHD);                                %unwrap heading to perform circular smoothing. keeps radians continuous, so that smoothing 0 and 2pi doesnt go to 1pi
 cue     = unwrap(cue / 192 * 2*pi - pi);
@@ -451,7 +450,9 @@ intHD   = smoothdata(intHD,  1,'gaussian',f_smooth);
 cue     = smoothdata(cue,    1,'gaussian',f_smooth);
 end
 
-
+r_speed = abs(r_speed);
+c_speed = abs(c_speed);
+c_speed = smoothdata(c_speed,'movmedian',1e3);
 
 intHD = mod(intHD,2*pi);                                %rewrap heading data, and put between -pi and pi.
 intHD(intHD > pi) = intHD(intHD > pi) - 2*pi;
@@ -563,9 +564,9 @@ y = ylim; text(xf(end),y(2),sprintf('r^2: %.2f\n',...
                 'HorizontalAlignment','right','VerticalAlignment','top')
 
 subplot(2,1,2)
-plot(xf,r_speed_lag,'k'); ylabel('Rotational Speed (rad/s)')
-hold on; plot(xf,c_speed,'b')
-yyaxis right; plot(xf, amp,'Color',c1); ylabel('Average \DeltaF/F'); ax = gca; ax.YAxis(2).Color = c1;
+plot(xf,r_speed_lag,'k','linewidth',2); ylabel('Rotational Speed (rad/s)')
+hold on; plot(xf,c_speed,'b','linewidth',2)
+yyaxis right; plot(xf, amp,'Color',c1,'linewidth',2); ylabel('Average \DeltaF/F'); ax = gca; ax.YAxis(2).Color = c1;
 xlabel('time (s)')
 axis tight
 % y = ylim; text(xb(end),y(2),sprintf('r^2: %.2f\n2p lag: %.1fs\njoint r^2:%.2f',...
@@ -651,6 +652,7 @@ xlabel('time (s)')
 
 %% plot scatter of fly velocity to bump velocity
 vel_rho = nan(1,100);
+j=1;
 %for j = 1:100
 %lag = 20;
 lag = 1;
@@ -665,16 +667,18 @@ end
 vel_idx = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min; %ignore outlier bump speeds with arbitrary threshold
 
 figure(9); clf
-scatter(bump_vel(vel_idx),fly_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
-xlabel('Bump Vel (rad/s)'); ylabel('Fly Rot Vel (rad/s)');
+scatter(fly_vel(vel_idx),bump_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
+xlabel('Fly Vel (rad/s)'); ylabel('Bump Vel (rad/s)');
 hold on
-%[vel_rho,vel_pval] = corr(bump_vel(vel_idx),fly_veldff_tot(vel_idx));
-[vel_rho(j),~] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
+[vel_rho,vel_pval] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
+b = bump_vel(vel_idx) \ [ones(sum(vel_idx),1),fly_vel(vel_idx)]; %fit the slope of fly vel and bump vel with an arbitrary offset
+%[vel_rho(j),~] = corr(bump_vel(vel_idx),fly_vel(vel_idx));
 x = xlim;
 y = ylim;
-%text(x(2),y(2),sprintf('$r = %.2f$\n$p < 10^{%i}$',vel_rho,ceil(log10(vel_pval))),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
+text(x(2),y(2),sprintf('$r = %.2f$\n$b = %.2f$',vel_rho,b(2)),'Interpreter','latex','HorizontalAlignment','right','VerticalAlignment','top')
 plot([0,0],y,'k:')
 plot(x,[0,0],':k')
+plot(x,x*b(2)+b(1),'r')
 %end
 
 [~,i] = max(vel_rho);
@@ -876,3 +880,32 @@ hold on
 scatter(i*fr,corr_vec(i),'r','filled')
 ylabel('pearson correlation')
 xlabel('displacement window (s)')
+
+%% show dff and fly heading together
+figure(15); clf
+subplot(3,1,1); hold on
+imagesc(xf,alpha+[zeros(1,20),2*pi*ones(1,20)],dff_cluster); axis tight
+a = plot(xf,-cue,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(xf,-cue+2*pi,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+
+%% see open loop component
+still_idx = r_speed < 1e-1;
+figure(4); clf
+subplot(2,2,1)
+scatter(c_speed(still_idx),amp(still_idx),'filled','MarkerFaceAlpha',.2)
+xlabel('OL speed'); ylabel('dF/F')
+text(max(c_speed(still_idx)),min(amp(still_idx)),'while fly is stopped','VerticalAlignment','bottom','HorizontalAlignment','right')
+
+subplot(2,2,2)
+scatter(r_speed,amp,[],c_speed,'filled','markerfacealpha',.1)
+xlabel('fly speed'); ylabel('dF/F')
+tmp = colorbar;
+ylabel(tmp,'OL speed')
+
+
+tmp1 = round(c_speed*10)+1;
+tmp3 = accumarray(tmp1(still_idx),amp(still_idx),[],@mean,nan); %,[size(tmp1),size(tmp2)],@mean);
+tmp3(isnan) = [];
+subplot(2,2,3)
+plot((unique(tmp1(still_idx))-1)/10,tmp3)
+ylabel('mean dF/F'); xlabel('OL speed')
