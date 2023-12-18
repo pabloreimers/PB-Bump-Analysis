@@ -546,6 +546,53 @@ set(gcf,'color','none')
 fontsize(gcf,20,'pixels')
 
 
+%% zoom in on transitions
+n = size(data,1);
+win_size = 60*4;
+df_cell = cell(n,1);
+fs_cell = cell(n,1);
+cs_cell = cell(n,1);
+
+for i = find(~fly_food)'
+    up_idx = smoothdata(diff([data.c_speed{i};0]),1,'movmean',[win_size,0])>0;
+    up_idx = diff([up_idx;0])>0;
+    trans_num = sum(up_idx);
+    up_idx = smoothdata(up_idx,1,'movmean',win_size)>0;
+
+    df_cell{i} = reshape(data.dff_tot{i}(up_idx),[],trans_num)';
+    cs_cell{i} = reshape(data.c_speed{i}(up_idx),[],trans_num)';
+    fs_cell{i} = reshape(data.r_speed{i}(up_idx),[],trans_num)';
+
+end
+
+figure(5); clf
+x = [1:1:size(df_cell{i},2)]/60;
+subplot(2,1,1); hold on
+title('german','color','w')
+tmp = cell2mat(df_cell);
+tmp(cell2mat(fs_cell)<.1) = nan;
+plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
+h = ylim;
+patch([x,fliplr(x)],[(h(2)-h(1))*(mean(cell2mat(cs_cell),1)>0),zeros(size(x))]+h(1),'b','facealpha',.5,'edgecolor','none')
+plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
+ylim(h)
+ylabel('mean dff')
+
+
+subplot(2,1,2); hold on
+plot(x,mean(cell2mat(fs_cell),1),'w','linewidth',2)
+h = ylim;
+patch([x,fliplr(x)],[(h(2)-h(1))*(mean(cell2mat(cs_cell),1)>0),zeros(size(x))]+h(1),'b','facealpha',.5,'edgecolor','none')
+plot(x,mean(cell2mat(fs_cell),1),'w','linewidth',2)
+ylim(h)
+ylabel('mean fly speed')
+xlabel('time (s)')
+
+linkaxes(get(gcf,'Children'),'x')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(gcf,'color','none')
+fontsize(gcf,20,'pixels')
 %% functions
 
 function [amp_tot,amp_peak, mu, rho,dff_cluster] = bump_calc_pb(mask, regProduct, n_centroid, f0_pct, n_smooth, b_smooth, xf)
