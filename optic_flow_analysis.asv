@@ -172,7 +172,12 @@ meta = ...
     {'20231206-1_LPsP_syt7f'}, 23,'m';...
     {'20231206-2_LPsP_syt7f'}, 23,'m';...
     {'20231215-1_LPsP_syt7f'}, 24,'g';...
-    {'20231215-2_LPsP_syt7f'}, 24,'g';...;
+    {'20231215-2_LPsP_syt7f'}, 24,'g';...
+    {'20231215-3_LPsP_syt7f'}, 25,'g';...
+    {'20231215-4_LPsP_syt7f'}, 26,'g';...
+    {'20231216-1_LPsP_syt7f'}, 27,'g';...
+    {'20231216-2_LPsP_syt7f'}, 28,'g';...
+    };%;...;
 
 fly_num = cell2mat(meta(:,2));
 fly_food= cellfun(@(x)(strcmp(x,'m')),meta(:,3));
@@ -314,37 +319,50 @@ leg.Position(1:2) = [0.5,0.5] - 0.5*leg.Position(3:4);
 set(gca,'Position',pos)
 
 %% bin data by optic flow speed, and plot dff vs fly speed
-fs_vec = 0:.1:max(cellfun(@max,data.r_speed)); %create a vector of fly rspeeds that we can interpolate everything on to for easy averaging
-os_vec = unique(data.c_speed{1});
+all_df = vertcat(data.dff_tot{~fly_food});
+all_fs = vertcat(data.r_speed{~fly_food});
+all_cs = vertcat(data.c_speed{~fly_food});
 
-dff_mat = nan(n,length(fs_vec),length(os_vec));
+os_vec = round(0:.1:1,1);
+f_cell = cell(size(os_vec));
+ind_fits = cell(size(os_vec));
 
+
+figure(1); clf; hold on
+colororder(cool(length(os_vec)))
 for i = 1:length(os_vec)
-    dff_mat(:,:,i) = cell2mat(cellfun(@(dff,os,fs) ...
-                   (interp1(fs(os==os_vec(i)),dff(os==os_vec(i)),fs_vec)),...
-                   data.dff_tot,data.c_speed,data.r_speed,'UniformOutput',  false));
-    % dff_mat(:,:,i) = cell2mat(cellfun(@(dff,os,fs) ...
-    %            (accumarray(@mean,round(fs(os==os_vec(i)),1)*10+1,dff(os==os_vec(i)))),...
-    %            data.dff_tot,data.c_speed,data.r_speed,'UniformOutput',  false));
+    f_cell{i} = fit(all_fs(all_cs==os_vec(i)),all_df(all_cs==os_vec(i)),'poly3');
+    ind_fits{i}  = cellfun(@(x,y,z)...
+                         (fit(x(z==os_vec(i)),y(z==os_vec(i)),'poly3')), ...
+                         data.r_speed,data.dff_tot,data.c_speed, ...
+                         'UniformOutput',false);
+    plot(0:.1:3,feval(f_cell{i},0:.1:3),'linewidth',2)
+end
+ylabel('fit dF/F')
+xlabel('fly speed (rad/s)')
+title('german','color','w')
+
+fontsize(gcf,20,'pixels')
+set(gcf,'color','none')
+set(get(gcf,'Children'),'color','none','YColor','w','XColor','w')
+legend(num2str(os_vec'),'Location','Southeastoutside','textcolor','w','edgecolor','w')
+
+figure(2); clf
+n = size(data,1);
+rows = floor(sqrt(n));
+cols = ceil(n/rows);
+tiledlayout(rows,cols)
+for i = 1: n
+        subplot(rows,cols,i)
+        cellfun(@(x)(plot(0:.1:3,feval(x{i},0:.1:3),'linewidth',2)),ind_fits)
+    end
 end
 
-figure(13); clf
-plot(fs_vec,squeeze(mean(dff_mat(fly_food,:,:),1,'omitnan'))')
-colororder(cool(size(dff_mat,3)))
-xlabel('fly speed'); ylabel('dff')
-legend(num2str(os_vec))
-
-figure(14); clf
-for i = 1:n
-    subplot(7,7,i);
-    plot(squeeze(dff_mat(i,:,:)))
-    colororder(cool(size(dff_mat,3)))
-end
-linkaxes(get(gcf,'Children'),'x')
 %% plot dff averaged over all flies aligned to optic flow
 n = size(data,1);
 delay_vec = nan(n,1);
 df_aligned = nan(n,size(data.c_speed{1},1));
+fs_aligned = nan(n,size(data.c_speed{1},1));
 cs_aligned = nan(n,size(data.c_speed{1},1));
 si_aligned = false(n,size(data.c_speed{1},1));
 
@@ -354,11 +372,13 @@ for i = 1:n
 
     if delay_vec(i) > 0
        cs_aligned(i,1:end-delay_vec(i)+1) = data.c_speed{i}(delay_vec(i):end);
+       fs_aligned(i,1:end-delay_vec(i)+1) = data.r_speed{i}(delay_vec(i):end);
        df_aligned(i,1:end-delay_vec(i)+1) = data.dff_tot{i}(delay_vec(i):end);
        si_aligned(i,1:end-delay_vec(i)+1) = still_idx(delay_vec(i):end);
     else
        cs_aligned(i,-delay_vec(i)+1:end) = data.c_speed{i}(1:end-delay_vec(i):end);
        df_aligned(i,-delay_vec(i)+1:end) = data.dff_tot{i}(1:end-delay_vec(i):end);
+       fs_aligned(i,-delay_vec(i)+1:end) = data.r_speed{i}(1:end-delay_vec(i):end);
        si_aligned(i,-delay_vec(i)+1:end) = still_idx(1:end-delay_vec(i):end);
     end
 
@@ -381,7 +401,8 @@ s = s(idx);
 c = data.c_speed{1}(idx)' > 0;
 
 patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
-patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
 plot(x,y,'w')
 
 ylabel('mean dff')
@@ -402,7 +423,8 @@ s = s(idx);
 c = data.c_speed{1}(idx)' > 0;
 
 patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
-patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
 plot(x,y,'w')
 
 xlabel('time (s)')
@@ -411,6 +433,7 @@ linkaxes(get(gcf,'Children'),'x')
 set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
 set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
 set(gcf,'color','none')
+fontsize(gcf,20,'pixels')
 
 figure(13); clf
 df_aligned(~si_aligned) = nan;
@@ -430,10 +453,12 @@ s = s(idx);
 c = data.c_speed{1}(idx)' > 0;
 
 patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
-patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
 plot(x,y,'w')
+ylim(h);
 
-ylabel('mean dff')
+ylabel({'mean dff','(while stopped)'})
 xlabel('time (s)')
 
 
@@ -451,8 +476,10 @@ s = s(idx);
 c = data.c_speed{1}(idx)' > 0;
 
 patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
-patch([x,fliplr(x)],[c,zeros(size(c))],[0,.5,1],'FaceAlpha',.5)
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
 plot(x,y,'w')
+ylim(h);
 
 xlabel('time (s)')
 
@@ -460,6 +487,61 @@ linkaxes(get(gcf,'Children'),'x')
 set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
 set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
 set(gcf,'color','none')
+fontsize(gcf,20,'pixels')
+
+figure(14); clf
+
+subplot(4,2,1); hold on; title('Molasses Food','color','w')
+plot(data.xf{1},mean(cs_aligned(fly_food,:),1)','color',[0,.5,1])
+ylabel('fly speed (rad/s)')
+
+subplot(4,2,[3,5,7]); hold on
+x = data.xf{1};
+y = mean(fs_aligned(fly_food,:),1);
+s = std(fs_aligned(fly_food,:),1)./sqrt(sum(~isnan(fs_aligned(fly_food,:)),1));
+idx = ~isnan(x.*y.*s);
+x = x(idx);
+y = y(idx);
+s = s(idx);
+c = data.c_speed{1}(idx)' > 0;
+
+patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
+plot(x,y,'w')
+ylim(h);
+
+ylabel('fly speed (rad/s)')
+xlabel('time (s)')
+
+
+subplot(4,2,2); hold on; title('German Food','color','w')
+plot(data.xf{1},mean(cs_aligned(~fly_food,:),1)','color',[0,.5,1])
+
+subplot(4,2,[4,6,8]); hold on
+x = data.xf{1};
+y = mean(fs_aligned(~fly_food,:),1);
+s = std(fs_aligned(~fly_food,:),1)./sqrt(sum(~isnan(fs_aligned(fly_food,:)),1));
+idx = ~isnan(x.*y.*s);
+x = x(idx);
+y = y(idx);
+s = s(idx);
+c = data.c_speed{1}(idx)' > 0;
+
+patch([x,fliplr(x)],[y+s,fliplr(y-s)],.5*[1,1,1])
+h = ylim;
+patch([x,fliplr(x)],(h(2)-h(1))*[c,zeros(size(c))]+h(1),[0,.5,1],'FaceAlpha',.5)
+plot(x,y,'w')
+ylim(h);
+
+xlabel('time (s)')
+
+linkaxes(get(gcf,'Children'),'x')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(get(gcf,'Children'),'color','none','ycolor','w','xcolor','w')
+set(gcf,'color','none')
+fontsize(gcf,20,'pixels')
+
 
 %% functions
 
