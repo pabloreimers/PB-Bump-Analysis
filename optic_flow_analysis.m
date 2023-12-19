@@ -177,6 +177,8 @@ meta = ...
     {'20231215-4_LPsP_syt7f'}, 26,'g';...
     {'20231216-1_LPsP_syt7f'}, 27,'g';...
     {'20231216-2_LPsP_syt7f'}, 28,'g';...
+    {'20231218-1_LPsP_syt7f'}, 29,'g';...
+    {'20231218-2_LPsP_syt7f'}, 30,'g';...
     };%;...;
 
 fly_num = cell2mat(meta(:,2));
@@ -274,7 +276,7 @@ dff_flow = cellfun(@(x,y,z) mean(x(y>0 & z<0.1)),...
 
 figure(10); clf
 subplot(2,2,1); hold on
-plot([dff_still(fly_food),dff_flow(fly_food)]','-ow','linewidth',2)
+%plot([dff_still(fly_food),dff_flow(fly_food)]','-ow','linewidth',2)
 plot([dff_still(~fly_food),dff_flow(~fly_food)]','-om','linewidth',2)
 xlim([.5,2.5])
 ylabel('mean dF/F'); xticks([1,2]); xticklabels({'still','flow'})
@@ -291,7 +293,7 @@ y = ylim; ylim([min(-.1,y(1)),y(2)])
 title('all trials','color','w')
 
 subplot(2,2,3); hold on
-plot([accumarray(fly_num(fly_food),dff_still(fly_food),[],@mean,nan),accumarray(fly_num(fly_food),dff_flow(fly_food),[],@mean,nan)]','-ow','linewidth',2)
+%plot([accumarray(fly_num(fly_food),dff_still(fly_food),[],@mean,nan),accumarray(fly_num(fly_food),dff_flow(fly_food),[],@mean,nan)]','-ow','linewidth',2)
 plot([accumarray(fly_num(~fly_food),dff_still(~fly_food),[],@mean,nan),accumarray(fly_num(~fly_food),dff_flow(~fly_food),[],@mean,nan)]','-om','linewidth',2)
 xlim([.5,2.5])
 ylabel('mean dF/F'); xticks([1,2]); xticklabels({'still','flow'})
@@ -549,6 +551,7 @@ fontsize(gcf,20,'pixels')
 %% zoom in on transitions
 n = size(data,1);
 win_size = 60*4;
+speed_thresh = inf;
 df_cell = cell(n,1);
 fs_cell = cell(n,1);
 cs_cell = cell(n,1);
@@ -570,22 +573,39 @@ x = [1:1:size(df_cell{i},2)]/60;
 subplot(2,1,1); hold on
 title('german','color','w')
 tmp = cell2mat(df_cell);
-tmp(cell2mat(fs_cell)<.1) = nan;
+tmp(cell2mat(fs_cell)>speed_thresh) = nan;
+y = mean(tmp,1,'omitnan');
+s = std(tmp,1,'omitnan');
+n = sum(~isnan(tmp),1);
+
 plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
+patch([x,fliplr(x)],[y+s/sqrt(n),fliplr(y-s/sqrt(n))],.5*[1,1,1],'facealpha',.5,'edgecolor','none')
+
 h = ylim;
 patch([x,fliplr(x)],[(h(2)-h(1))*(mean(cell2mat(cs_cell),1)>0),zeros(size(x))]+h(1),'b','facealpha',.5,'edgecolor','none')
+patch([x,fliplr(x)],[y+s/sqrt(n),fliplr(y-s/sqrt(n))],.5*[1,1,1],'facealpha',.5,'edgecolor','none')
 plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
 ylim(h)
 ylabel('mean dff')
 
 
 subplot(2,1,2); hold on
-plot(x,mean(cell2mat(fs_cell),1),'w','linewidth',2)
+tmp = cell2mat(fs_cell);
+tmp(cell2mat(fs_cell)>speed_thresh) = nan;
+y = mean(tmp,1,'omitnan');
+s = std(tmp,1,'omitnan');
+n = sum(~isnan(tmp),1);
+
+plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
+patch([x,fliplr(x)],[y+s/sqrt(n),fliplr(y-s/sqrt(n))],.5*[1,1,1],'facealpha',.5,'edgecolor','none')
+
 h = ylim;
 patch([x,fliplr(x)],[(h(2)-h(1))*(mean(cell2mat(cs_cell),1)>0),zeros(size(x))]+h(1),'b','facealpha',.5,'edgecolor','none')
-plot(x,mean(cell2mat(fs_cell),1),'w','linewidth',2)
+patch([x,fliplr(x)],[y+s/sqrt(n),fliplr(y-s/sqrt(n))],.5*[1,1,1],'facealpha',.5,'edgecolor','none')
+
+plot(x,mean(tmp,1,'omitnan'),'w','linewidth',2)
 ylim(h)
-ylabel('mean fly speed')
+ylabel('fly speed (rad/s)')
 xlabel('time (s)')
 
 linkaxes(get(gcf,'Children'),'x')

@@ -125,7 +125,7 @@ for d = dates'
             if isduration(xf{i})
                 xf{i} = seconds(xf{i});
             end
-           % [dff_tot{i},dff_peak{i},mu{i},rho{i},dff_cluster{i},f_cluster{i}] = bump_calc_eb(mask,regProduct,n_centroid,f0_pct,n_smooth,b_smooth,xf{i});
+            [dff_tot{i},dff_peak{i},mu{i},rho{i},dff_cluster{i},f_cluster{i}] = bump_calc_eb(mask,regProduct,n_centroid,f0_pct,n_smooth,b_smooth,xf{i});
             fprintf('\n')
         end
     end
