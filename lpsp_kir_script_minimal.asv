@@ -51,41 +51,18 @@ end
 vel_thresh = .2;
 bump_thresh = 10;
 rho_thresh = .2;
-lag = 7;
 
 figure(1); clf
 for i = 1:length(all_data)
     xf = all_data(i).ft.xf;
     xb = linspace(min(xf),max(xf),size(all_data(i).im.mu,1));
-    fr = mean(diff(xf));
 
-    fly_vel  = all_data(i).ft.r_speed;
-    bump_vel = gradient(interp1(xb,unwrap(all_data(i).im.mu),xf))/fr;
+    fly_vel  = all_data(i).ft.f_speed;
+    bump_vel = gradient(interp1(xb,all_data(i).im.mu,xf));
     rho      = interp1(xb,all_data(i).im.rho,xf);
 
-    fly_vel  = fly_vel(1:end-lag);
-    bump_vel = bump_vel(lag+1:end);
-    rho      = rho(lag+1:end);
-
-    idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
-    subplot(9,9,i); hold on
-    scatter(fly_vel(idx),bump_vel(idx),'filled','markerfacealpha',.1)
-    y = ylim; x = xlim;
-    plot(x,[0,0],':k'); 
-    plot([0,0],y,':k');
-    x = xlim;
-    y = ylim;
-    b = [ones(sum(idx),1),fly_vel(idx)]\bump_vel(idx); %fit the slope of fly vel and bump vel with an arbitrary offset
-    r = corr(fly_vel(idx),bump_vel(idx));
-    plot([0,0],y,'k:')
-    plot(x,[0,0],':k')
-    plot(x,x*b(2) + b(1),'r')
-    axis tight equal
-    
-    text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom')
-    xlabel('fly vel (rad/s)'); ylabel('bump vel (rad/s)')
-
-end
+    idx = fly_vel > vel_thresh & bump_vel < bump_thresh & rho > rho_thresh;
+    subpl(9)
 
 %% Functions
 
