@@ -62,7 +62,9 @@ for i = 1:length(all_data)
         mask = logical(mask - createMask(tmp));
 
         save([all_data(i).folder,'\denoised_mask.mat'],'mask')
-
+    else
+        load([all_data(i).folder,'\denoised_mask.mat'])
+        load([all_data(i).folder,'\',all_data(i).name]) %load in the denoised regProduct
     end
 
     if calc_flag
@@ -95,7 +97,9 @@ for i = 1:length(all_data)
     end
 end
 
-
+%% save data
+data = table(dff_cluster,dff_tot,dff_peak,exp_date,exp_idx,f_cluster,f_speed,fly_num,mu,rho,r_speed,intHD,cue,r_vel,xf, cl_idx, trial,x_pos,y_pos);
+save(['lpsp_kir_data_denoise_',num2str(yyyymmdd(datetime("today")))],'data')
 %% Functions
 function x_white = whiten(x,dim)
     if nargin < 2

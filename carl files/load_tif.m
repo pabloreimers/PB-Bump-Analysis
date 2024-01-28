@@ -19,14 +19,7 @@ tr = Tiff(pth_raw_tif);
 
 for t = 1:size_t_read_from
     for z = 1:size_z_read_from
-        tr.setDirectory(double(z + 8*(t-1)))
-         imgData(:,:,z,t) = tr.read();
+        tr.setDirectory(double(z + size_z_read_from*(t-1)))
+        imgData(:,:,z,t) = tr.read();
     end
 end
-
-
-%%
-stackraw = cx_read_tif_tzyx(pth_raw_tif, ...
-    out_datatype, size_read_to, ...
-    size_z_read_from_raw, size_t_read_from, ...
-    inds_z_read_from, inds_t_read_from);

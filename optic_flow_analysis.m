@@ -64,7 +64,7 @@ end
 
 %% store the fictrac, total amplitude, and peak amplitude for each trial
 all_trials = dir([base_dir,'\**\*imagingData*']);
-n       = length(all_trials);
+ n       = length(all_trials);
 dff_tot = cell(n,1); %preallocate dff cell
 dff_peak= cell(n,1);
 dff_cluster = cell(n,1);
@@ -77,8 +77,6 @@ cue     = cell(n,1);
 r_vel   = cell(n,1);
 c_speed = cell(n,1);
 xf      = cell(n,1);
-trial_names = cell(n,1);
-
 
 figure(2); clf
 rows = floor(sqrt(n));
@@ -116,7 +114,7 @@ for i = 1:n
     imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
     tmp = mean(imgData,3);
     tmp = 256*(tmp - min(tmp(:)))/(max(tmp(:) - min(tmp(:))));
-    image(tmp); colormap('bone'); axis equal tight; title(trial_names{i},'color','w')
+    %image(tmp); colormap('bone'); axis equal tight; title(trial_names{i},'color','w')
     set(gca,'color','none')
     end
 end
@@ -268,15 +266,17 @@ end
 
 %for each fly, find the dff while it is still for with and without optic
 %flow
+speed_thresh = .1; %what rotational value is considered the threshold between still and turning
+speed_win = 3*60; %how long does the fly have to be below that threshold (preceding) for the point to be included in the dataset
 
-dff_still = cellfun(@(x,y,z) mean(x(y==0 & z<0.1)),...
+dff_still = cellfun(@(x,y,z) mean(x(y==0 & smoothdata(z<speed_thresh,1,'movmean',[speed_win,0])==1)),...
                     data.dff_tot,data.c_speed,data.r_speed);
-dff_flow = cellfun(@(x,y,z) mean(x(y>0 & z<0.1)),...
+dff_flow = cellfun(@(x,y,z) mean(x(y>0 & smoothdata(z<speed_thresh,1,'movmean',[speed_win,0])==1)),...
                     data.dff_tot,data.c_speed,data.r_speed);
 
 figure(10); clf
 subplot(2,2,1); hold on
-%plot([dff_still(fly_food),dff_flow(fly_food)]','-ow','linewidth',2)
+plot([dff_still(fly_food),dff_flow(fly_food)]','-ow','linewidth',2)
 plot([dff_still(~fly_food),dff_flow(~fly_food)]','-om','linewidth',2)
 xlim([.5,2.5])
 ylabel('mean dF/F'); xticks([1,2]); xticklabels({'still','flow'})
@@ -293,7 +293,7 @@ y = ylim; ylim([min(-.1,y(1)),y(2)])
 title('all trials','color','w')
 
 subplot(2,2,3); hold on
-%plot([accumarray(fly_num(fly_food),dff_still(fly_food),[],@mean,nan),accumarray(fly_num(fly_food),dff_flow(fly_food),[],@mean,nan)]','-ow','linewidth',2)
+plot([accumarray(fly_num(fly_food),dff_still(fly_food),[],@mean,nan),accumarray(fly_num(fly_food),dff_flow(fly_food),[],@mean,nan)]','-ow','linewidth',2)
 plot([accumarray(fly_num(~fly_food),dff_still(~fly_food),[],@mean,nan),accumarray(fly_num(~fly_food),dff_flow(~fly_food),[],@mean,nan)]','-om','linewidth',2)
 xlim([.5,2.5])
 ylabel('mean dF/F'); xticks([1,2]); xticklabels({'still','flow'})
@@ -319,6 +319,26 @@ pos = get(gca,'Position');
 leg = legend('molasses','german','textcolor','w','edgecolor','w');
 leg.Position(1:2) = [0.5,0.5] - 0.5*leg.Position(3:4);
 set(gca,'Position',pos)
+
+%% compare the oveerall activity of flies in the two groups
+
+f_dist = cellfun(@(x)(mean(abs(x))),data.f_speed);
+r_dist = cellfun(@(x)(mean(abs(x))),data.r_speed);
+
+figure(1); clf
+subplot(1,2,1)
+scatter(1-fly_food,f_dist,'w','linewidth',2)
+xticks([0,1]); xticklabels({'molasses','german'}); xlim([-.5,1.5])
+ylabel('mean forward speed (mm/s)')
+set(gca,'xcolor','w','ycolor','w','color','none')
+
+subplot(1,2,2)
+scatter(1-fly_food,r_dist,'w','linewidth',2)
+xticks([0,1]); xticklabels({'molasses','german'});  xlim([-.5,1.5])
+ylabel('mean rotational speed (rad/s)')
+set(gca,'xcolor','w','ycolor','w','color','none')
+
+fontsize(gcf,20,'pixels')
 
 %% bin data by optic flow speed, and plot dff vs fly speed
 all_df = vertcat(data.dff_tot{fly_food});
@@ -374,6 +394,7 @@ si_aligned = false(n,size(data.c_speed{1},1));
 for i = 1:n
     delay_vec(i) = finddelay(data.c_speed{1},data.c_speed{i});
     still_idx = abs(data.r_speed{i}) < .1;
+    still_idx = smoothdata(data.r_speed{i}<speed_thresh,1,'movmean',[speed_win,0])==1;
 
     if delay_vec(i) > 0
        cs_aligned(i,1:end-delay_vec(i)+1) = data.c_speed{i}(delay_vec(i):end);
@@ -551,12 +572,13 @@ fontsize(gcf,20,'pixels')
 %% zoom in on transitions
 n = size(data,1);
 win_size = 60*4;
-speed_thresh = inf;
+speed_thresh = .1;
+speed_win = 1*60;
 df_cell = cell(n,1);
 fs_cell = cell(n,1);
 cs_cell = cell(n,1);
 
-for i = find(~fly_food)'
+for i = find(fly_food)'
     up_idx = smoothdata(diff([data.c_speed{i};0]),1,'movmean',[win_size,0])>0;
     up_idx = diff([up_idx;0])>0;
     trans_num = sum(up_idx);
@@ -571,9 +593,9 @@ end
 figure(5); clf
 x = [1:1:size(df_cell{i},2)]/60;
 subplot(2,1,1); hold on
-title('german','color','w')
+title('molasses','color','w')
 tmp = cell2mat(df_cell);
-tmp(cell2mat(fs_cell)>speed_thresh) = nan;
+tmp(smoothdata(cell2mat(fs_cell)>speed_thresh,2,'movmean',[speed_win,0])>0) = nan;
 y = mean(tmp,1,'omitnan');
 s = std(tmp,1,'omitnan');
 n = sum(~isnan(tmp),1);

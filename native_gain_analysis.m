@@ -20,8 +20,8 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = .1;
-eb_flag             = true;
-pb_flag             = false;
+eb_flag             = false;
+pb_flag             = true;
 tmp_labels = {'CL = 0.7','Dark (0.7)','Ramp = 0.7 -> 0.3','Dark (0.3)','Ramp 0.3 -> 0.8','Dark (0.8)'};
 
 %% select folder of images
@@ -49,11 +49,16 @@ for i = 1:length(trials)
     imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
     imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
     imgData2    = imgData;
-    top_int     = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
+    top_int     = prctile(imgData2,98,'all');                                    %clip the extremes and renormalize for viewing
     bot_int     = prctile(imgData2,5,'all');
     imgData2    = max(min(imgData2,top_int),bot_int) - bot_int;
     imgData2    = 256*imgData2/max(imgData2,[],'all');
        
+    figure(10); clf %show all the planes just to add some visual context to the mask
+    for j = 1:size(regProduct,3)
+        subplot(6,2,j)
+        imagesc(mean(regProduct(:,:,j,:),4))
+    end
     
     figure(1); clf                                          % clear the current figure
     tmp = mean(imgData,3);
@@ -613,7 +618,8 @@ tmp = bwmorph(mask,'thicken',20);
 background  = imgData(~reshape(tmp,[],1),:); %extract points that are outside of the mask)
 med_pix     = sum(background,1);
 med_pix     = (med_pix - prctile(med_pix,10)) / prctile(med_pix,10);
-flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+%flash_idx   = med_pix > median(med_pix) + 2*std(med_pix);
+flash_idx   = med_pix > inf;
 flash_idx   = logical(smoothdata(flash_idx,'gaussian',5));
 
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
@@ -658,7 +664,6 @@ tmp = dff_cluster;
 tmp(:,~flash_idx) = zscore_cluster;
 zscore_cluster = tmp;
 dff_cluster = zscore_cluster;
-
 
 alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
 
