@@ -53,6 +53,10 @@ bump_thresh = 10;
 rho_thresh = .2;
 lag = 7;
 
+cc       = nan(length(all_data),1);
+gains    = nan(length(all_data),1);
+lpsp_idx = false(length(all_data),1);
+
 figure(1); clf
 for i = 1:length(all_data)
     xf = all_data(i).ft.xf;
@@ -80,12 +84,33 @@ for i = 1:length(all_data)
     plot([0,0],y,'k:')
     plot(x,[0,0],':k')
     plot(x,x*b(2) + b(1),'r')
-    axis tight equal
-    
+    axis tight equal    
     text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom')
     xlabel('fly vel (rad/s)'); ylabel('bump vel (rad/s)')
 
+        cc(i) = r;
+    gains(i) = b(2);
+    lpsp_idx(i) = contains(all_data(i).meta,'_lpsp_','IgnoreCase',true);
+    tmp = strsplit(all_data(i).meta,'\');
+    if lpsp_idx(i)
+        title(strcat(tmp(5),tmp(6)),'Color','r')
+    else
+        title(strcat(tmp(5),tmp(6)),'Color','k')
+    end
+
 end
+
+%% test significance (bootstrap to ask about a mean difference, we don't know how variances compare)
+N = 1e4; %number of bootstrap reps
+
+
+cc_lpsp = cc(lpsp_idx);
+cc_empty= cc(~lpsp_idx);
+
+i_lpsp = randi(length(cc_lpsp),N);
+i_empty = randi(length(cc_empty),N);
+
+p = sum(mean(cc_lpsp(i_lpsp),1) - mean(cc_empty(i_empty),1) > 0) / N
 
 %% Functions
 
