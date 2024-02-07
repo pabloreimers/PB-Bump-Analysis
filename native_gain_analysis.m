@@ -56,7 +56,7 @@ for i = 1:length(trials)
        
     figure(10); clf %show all the planes just to add some visual context to the mask
     for j = 1:size(regProduct,3)
-        subplot(6,2,j)
+        subplot(ceil(size(regProduct,3)/2),2,j)
         imagesc(mean(regProduct(:,:,j,:),4))
     end
     

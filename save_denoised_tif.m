@@ -1,4 +1,4 @@
-all_files = dir('Z:/pablo/lpsp_kir/analysis/**/*dcdn*.tif');
+all_files = dir('Z:/pablo/stacks/**/*dcdn*.tif');
 
 for i = 1:length(all_files)
     if isempty(dir([all_files(i).folder,'\registration_001\denoised_regProduct.mat']))
