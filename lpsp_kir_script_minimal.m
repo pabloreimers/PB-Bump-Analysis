@@ -81,7 +81,7 @@ t = cell(size(unique(ind)));
 for i = unique(ind)'
 figure(i); clf
 cols = ceil(sqrt(sum(ind==i)));
-rows = ceil(sum(ind==1)/cols);
+rows = ceil(sum(ind==i)/cols);
 t{i} = tiledlayout(rows,cols);
 end
     
@@ -189,6 +189,16 @@ ylabel({'Gain', '(fly vs bump vel)'})
 set(gca,'color','none','ycolor','w','xcolor','w')
 set(gcf,'color','none','InvertHardcopy','off')
 %% test significance (bootstrap to ask about a mean difference, we don't know how variances compare)
+N = 1e4;
+
+%do for corr coeff
+lpsp_cl  = mean(resample_pablo(N,cc(~dark_idx & lpsp_idx)),1);
+empty_cl = mean(resample_pablo(N,cc(~dark_idx & ~lpsp_idx)),1);
+p_cl     = sum( lpsp_cl - empty_cl > 0) / N;
+
+lpsp_dark  = mean(resample_pablo(N,cc(dark_idx & lpsp_idx)),1);
+empty_dark = mean(resample_pablo(N,cc(dark_idx & ~lpsp_idx)),1);
+p_dark     = sum( lpsp_dark - empty_dark > 0) / N;
 
 figure(5);subplot(2,2,3);cla
 a = swarmchart(ones(N,4) .* [1:4],[...
@@ -199,14 +209,6 @@ a = swarmchart(ones(N,4) .* [1:4],[...
      'w.','CData',[1,1,1]);%[0 0.4470 0.7410]);
 set(gca,'color','none','ycolor','w','xcolor','w')
 
-lpsp_cl  = mean(resample_pablo(N,cc(~dark_idx & lpsp_idx)),1);
-empty_cl = mean(resample_pablo(N,cc(~dark_idx & ~lpsp_idx)),1);
-p_cl     = sum( lpsp_cl - empty_cl > 0) / N;
-
-lpsp_dark  = mean(resample_pablo(N,cc(dark_idx & lpsp_idx)),1);
-empty_dark = mean(resample_pablo(N,cc(dark_idx & ~lpsp_idx)),1);
-p_dark     = sum( lpsp_dark - empty_dark > 0) / N;
-
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Correlation Coefficient (R)', 'Resampled Means'})
 hold on
@@ -214,6 +216,16 @@ y = ylim;
 plot([1,2],[y(2),y(2)],'w'); text(1.5,y(2),sprintf('p = %.3f',p_cl),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
 plot([3,4],[y(2),y(2)],'w'); text(3.5,y(2),sprintf('p = %.3f',p_dark),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
 set(gca,'color','none','ycolor','w','xcolor','w')
+
+
+%repeat for gains
+lpsp_cl  = mean(resample_pablo(N,gains(~dark_idx & lpsp_idx)),1);
+empty_cl = mean(resample_pablo(N,gains(~dark_idx & ~lpsp_idx)),1);
+p_cl     = sum( lpsp_cl - empty_cl > 0) / N;
+
+lpsp_dark  = mean(resample_pablo(N,gains(dark_idx & lpsp_idx)),1);
+empty_dark = mean(resample_pablo(N,gains(dark_idx & ~lpsp_idx)),1);
+p_dark     = sum( lpsp_dark - empty_dark > 0) / N;
 
 figure(5);subplot(2,2,4); cla; hold on
 a = swarmchart(ones(N,4) .* [1:4],[...
@@ -223,13 +235,7 @@ a = swarmchart(ones(N,4) .* [1:4],[...
      lpsp_dark'], ...
      '.','CData',[1,1,1]);%[0 0.4470 0.7410]);
 
-lpsp_cl  = mean(resample_pablo(N,gains(~dark_idx & lpsp_idx)),1);
-empty_cl = mean(resample_pablo(N,gains(~dark_idx & ~lpsp_idx)),1);
-p_cl     = sum( lpsp_cl - empty_cl > 0) / N;
 
-lpsp_dark  = mean(resample_pablo(N,gains(dark_idx & lpsp_idx)),1);
-empty_dark = mean(resample_pablo(N,gains(dark_idx & ~lpsp_idx)),1);
-p_dark     = sum( lpsp_dark - empty_dark > 0) / N;
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Gain', 'Resampled Means'})
 hold on
