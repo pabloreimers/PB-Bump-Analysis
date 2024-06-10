@@ -40,6 +40,7 @@ for i = 1:length(trials)
     tmp = dir([base_dir,'\',trials{i},'\registration*\*imagingData*']);
     %tmp = dir([base_dir,'\',trials{i},'\*imagingData*']);
     load([tmp.folder,'\',tmp.name])
+    regProduct = img{1};
     if size(regProduct,1) > size(regProduct, 2)
         regProduct  = permute(regProduct, [2 1 3 4]);
         save([tmp.folder,'\',tmp.name],"regProduct",'-v7.3')
@@ -63,7 +64,7 @@ for i = 1:length(trials)
     figure(1); clf                                          % clear the current figure
     tmp = mean(imgData,3);
     tmp = 256*(tmp - min(tmp(:)))/(max(tmp(:) - min(tmp(:))));
-    image(tmp); colormap(bone); drawnow;
+    imagesc(tmp); colormap(bone); drawnow;
     if eb_flag
         tmp = drawellipse('Center',[size(tmp,2)/2,size(tmp,1)/2],'SemiAxes',[size(tmp,2)/4,size(tmp,1)/4]);
         input('') %move on once user presses enter, after adjusting the ellipse
@@ -107,7 +108,7 @@ for i = 1:length(trials)
     load([tmp.folder,'\',tmp.name])
     tmp = dir([base_dir,'\',trials{i},'\*mask*']);
     load([tmp.folder,'\',tmp.name])
-    
+    regProduct = img{1};
     [f_speed{i},r_speed{i},intHD{i},cue{i},r_vel{i}] = ft_calc(ftData_DAQ,n_smooth,f_smooth);
     xf{i}  = mean(diff(ftData_DAQ.trialTime{:})) * [1:length(f_speed{i})]; %create a time vector for the fictrac data. have to remake because of the error frames                             %create vectors with timestamps for each trace
     if isduration(xf{i})
@@ -131,7 +132,9 @@ end
 set(gcf,'color','none')
 
 %% find the correlation between fly vel and bump vel in each trial
+rho_thresh = .15;
 lag = 10;
+figure(8); clf
 figure(9); clf
 rows = floor(sqrt(n));
 cols = ceil(n/rows);
@@ -141,6 +144,7 @@ for i = 1:n
     bump_vel = bump_vel(lag+1:end);
     fly_vel  = r_vel{i}(1:end-lag);
     vel_idx  = abs(fly_vel) < vel_thresh & abs(bump_vel) < vel_thresh & abs(fly_vel) > vel_min & rho{i}(lag+1:end) > rho_thresh; %ignore outlier bump speeds with arbitrary threshold
+    figure(9)
     subplot(rows,cols,i)
     scatter(fly_vel(vel_idx),bump_vel(vel_idx),5,'filled','MarkerEdgeColor','none','MarkerFaceAlpha',.1)
     xlabel('Fly Vel (rad/s)'); ylabel('Bump Vel (rad/s)');
@@ -154,8 +158,17 @@ for i = 1:n
     plot(x,[0,0],':k')
     plot(fly_vel(vel_idx),fly_vel(vel_idx)*b(2) + b(1),'r')
     axis tight
+
+    figure(8)
+    subplot(n,1,i)
+    tmp1 = bump_vel; tmp1(~vel_idx) = nan;
+    tmp2 = fly_vel; tmp2(~vel_idx) = nan;
+    a = scatter(xf{i}(1:end-lag),smoothdata(tmp1./tmp2,1,'movmean',200,'omitnan'),'.');
+    axis tight
+    ylim([0,1.5]); hold on; plot([xf{i}(1),xf{i}(end)],[.8,.8],':k')
+    
 end
-linkaxes(get(gcf,'Children'))
+%linkaxes(get(figure(10),'Children'))
 
 %% plot the dff and heading trace of each trial
 figure(10); clf; %set(gcf,'color','none')

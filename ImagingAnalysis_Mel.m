@@ -9,6 +9,7 @@ f0_pct              = 5;                                                    %set
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 5;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
+mov_smooth          = 5;
 n_smooth            = 5;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
@@ -51,7 +52,7 @@ end
 %% Make compress in z, and scale between 0 and 256
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
-imgData     = movmean(imgData,3,3);
+imgData     = movmean(imgData,mov_smooth,3);
 
 
 imgData2 = imgData;
