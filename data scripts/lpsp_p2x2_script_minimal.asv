@@ -184,7 +184,7 @@ for i = 700:length(all_data(n).ft.xb)
 end
 
 %% set up channels for movie (timeconsuming)
-fly_num = 55;
+fly_num = 53;
 
 ch1 = squeeze(mean(img{1},3));
 ch2 = squeeze(mean(img{2},3));
@@ -209,7 +209,7 @@ ch2 = interp1(all_data(fly_num).ft.xb,ch2,all_data(fly_num).ft.xf);
 ch1 = permute(ch1,[2,3,1]);
 ch2 = permute(ch2,[2,3,1]);
 
-%vid = read(vidObj);
+vid = read(vidObj);
 ft_vid_sum = squeeze(sum(vid,[1,2,3]));
 start_idx = find(ft_vid_sum > mean(ft_vid_sum),1,'first');
 end_idx = find(ft_vid_sum > mean(ft_vid_sum),1,'last');
@@ -251,7 +251,11 @@ h5 = subplot(2,2,4);
 a6 = polarscatter(all_data(fly_num).ft.cue(1),1,200,'filled','m'); 
 set(gca,'RLim',[0,1],'Color','none','ThetaColor','w','ThetaAxisUnits','Radians');
 
-for i = 1:length(all_data(1).ft.xf)
+writerObj = VideoWriter('example_p2x2.avi');
+writerObj.FrameRate = 60;
+open(writerObj);
+
+for i = 1:length(all_data(fly_num).ft.xf)
 a1.CData = cat(3,ch2(:,:,i),ch1(:,:,i),zeros(100,256));
 a2.CData = vid(:,:,:,i);
 a3.CData  = 256*(ch1(:,:,i));
@@ -260,7 +264,10 @@ a4.CData  = 256*(ch2(:,:,i));
 a6.ThetaData = -all_data(fly_num).ft.cue(i);
 pause(pause_time)
 drawnow
+writeVideo(writerObj,getframe(gcf));
+fprintf('%.2f\n',i/length(all_data(fly_num).ft.xf))
 end
+close(writerObj);
 
 %% show population effects
 win_start = -10;
@@ -336,6 +343,35 @@ if dark_mode
     end
 end
 
+end
+
+%% look at LTD on non-atp sweeps
+
+d_sweeps = {};
+m_sweeps = {};
+f_sweeps = {};
+r_sweeps = {};
+a_sweeps = {};
+l_sweeps = {};
+
+counter = 1;
+for i = 1:length(all_data)
+    [~,loc] = findpeaks(smoothdata(diff(unwrap(all_data(i).ft.cue)),1,'movmedian',500),'MinPeakDistance',1000,'MinPeakHeight',.015);
+    tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
+    tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
+
+    for k = loc'
+        [~,j] = min(abs(all_data(i).ft.xf(k) - all_data(i).ft.xb));
+        d_sweeps{counter} = all_data(i).im.d(:,j+tmp_win);
+        m_sweeps{counter} = all_data(i).im.mu(j+tmp_win);
+        c_sweeps{counter} = all_data(i).ft.cue(k+tmp_win2);
+        f_sweeps{counter} = all_data(i).ft.f_speed(k+tmp_win2);
+        r_sweeps{counter} = all_data(i).ft.r_speed(k+tmp_win2);
+        a_sweeps{counter} = all_data(i).atp.d(:,j+tmp_win);
+        l_sweeps{counter} = all_data(i).im.f(:,j+tmp_win);
+        
+        counter = counter+1;
+    end
 end
 
 %% population average
@@ -455,8 +491,13 @@ end
 
 %% assess changes to dff aftr pulse
 dark_mode = true;
-cB = [linspace(1,0,256)',linspace(1,0,256)',ones(256,1)];
-cR = cB(:,[3,1,2]);
+% cB = [linspace(1,0,256)',linspace(1,0,256)',ones(256,1)];
+% cR = cB(:,[3,1,2]);
+cG = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
+cR = cG(:,[2,1,3]);
+
+group_idx = right_idx + dark_idx*2;
+group_labels = {'left cl','right cl','left dark','right dark'};
 
 figure(11); clf; hold on
 for j = unique(group_idx)
@@ -476,7 +517,7 @@ counter = counter+1;
 end
 
 
-im1 = mat2rgb(mean(tmpD,3),cB);
+im1 = mat2rgb(mean(tmpD,3),cG);
 im2 = mat2rgb(mean(tmpA,3),cR);
 
 image((im1+im2)/2)
@@ -500,6 +541,79 @@ if dark_mode
         ax(i).Title.Color = 'w';
     end
 end
+%% assess changes to dff aftr pulse in the sweeps
+dark_mode = true;
+% cB = [linspace(1,0,256)',linspace(1,0,256)',ones(256,1)];
+% cR = cB(:,[3,1,2]);
+cG = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
+cR = cG(:,[2,1,3]);
+
+group_idx = right_idx + dark_idx*2;
+group_labels = {'left cl','right cl','left dark','right dark'};
+
+figure(12); clf; hold on
+tmpL = nan([size(l_sweeps{1}),length(l_sweeps)]);
+tmpL = nan([size(d_sweeps{1}),length(d_sweeps)]);
+tmpA = nan([size(a_sweeps{1}),length(a_sweeps)]);
+pulse_idx = false(length(d_sweeps),1);
+
+counter = 1;
+for i = 1:length(f_sweeps)
+    if any(a_sweeps{i}>1,'all')
+        [~,k] = max(sum(a_sweeps{i},2));
+        pulse_idx(i) = true;
+    end
+tmp1 = circshift(d_sweeps{i},-k+ceil(.5*length(all_data(1).im.alpha)),1);
+tmp2 = circshift(a_sweeps{i},-k+ceil(.5*length(all_data(1).im.alpha)),1);
+tmp3 = circshift(l_sweeps{i},-k+ceil(.5*length(all_data(1).im.alpha)),1);
+
+
+tmpD(:,:,counter) = tmp1;
+tmpA(:,:,counter) = tmp2;
+tmpL(:,:,counter) = tmp3;
+
+counter = counter+1;
+end
+
+
+% im1 = mat2rgb(mean(tmpL,3),cG);
+% im2 = mat2rgb(mean(tmpA,3),cR);
+% 
+% image((im1+im2)/2)
+
+image(t,[],cat(3,.5*mean(tmpA(:,:,~pulse_idx),3)./max(mean(tmpA(:,:,~pulse_idx),3),[],'all'),...
+                     mean(tmpD(:,:,~pulse_idx),3)./max(mean(tmpD(:,:,~pulse_idx),3),[],'all'),...
+                     zeros(size(mean(tmpL,3)))))
+text(max(xlim),max(ylim),'ATP','Color','r','HorizontalAlignment','right','VerticalAlignment','bottom')
+text(max(xlim),max(ylim)-2,'Raw F','Color','g','HorizontalAlignment','right','VerticalAlignment','bottom')
+ylabel('aligned glomeruli')
+xlabel('time (s)')
+title(group_labels{j+1})
+axis tight
+
+fontsize(gcf,20,'pixels')
+
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    set(ax,'Color','none','ycolor','w','xcolor','w')
+    for i = 1:length(ax)
+        ax(i).Title.Color = 'w';
+    end
+end
+
+%% compare max fluorescence per glomerulus before and after pulse
+max_first = nan(length(all_data(i).im.alpha),length(all_data));
+max_last  = nan(length(all_data(i).im.alpha),length(all_data));
+atp_check  = nan(length(all_data(i).im.alpha),length(all_data));
+
+for i = 1:length(all_data)
+    [~,k] = max(sum(all_data(i).atp.d,2));
+    max_first(:,i) = circshift(max(all_data(i).im.d(:,1:end/2),[],2),-k+ceil(.5*length(all_data(i).im.alpha)));
+    max_last(:,i) = circshift(max(all_data(i).im.d(:,end/2:end),[],2),-k);
+    atp_check(:,i) = circshift(max(all_data(i).atp.d,[],2),-k);
+end
+
 
 %% make movie of pulses
 pause_time = 1e-1;
