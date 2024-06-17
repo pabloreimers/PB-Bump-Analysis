@@ -43,28 +43,30 @@ im_win = {3,5};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
 for i = 1:length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
+    %load([all_files(i).folder,'\',all_files(i).name])
+    %load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    load([tmp2.folder,'\',tmp2.name])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     load([tmp2.folder,'\',tmp2.name])
 
     %regProduct = img{1};
 
-    all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
-    all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
-    all_data(i).meta = all_files(i).folder;
+    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    %all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
+    %all_data(i).meta = all_files(i).folder;
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     end
 
-    all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
+    %all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
 
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
@@ -465,14 +467,14 @@ figure(10); clf
 for i = unique(group_idx)
     subplot(2,2,i+1)
     hold on
-    plot(t2,cell2mat(r_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
-    plot_sem(gca,t2,cell2mat(r_pulses(group_idx==i))')
+    plot(t2,cell2mat(f_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
+    plot_sem(gca,t2,cell2mat(f_pulses(group_idx==i))')
     axis tight
     title(group_labels(i+1))
     plot([0,0],ylim,':','Color',[0,0,0]+dark_mode)
-    ylabel('rad/s'); ylim([-pi,pi])
+    ylabel('mm/s'); ylim([-3,10])
 end
-sgtitle('R Speed')
+sgtitle('F Speed')
 fontsize(gcf,20,'pixels')
 
 ax = get(gcf,'Children');
@@ -1070,9 +1072,10 @@ linkaxes(get(gcf,'Children'),'y')
 
 %% Functions
 
-function s = process_ft(ftData_DAQ, ft_win, ft_type)
+function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
 
-    f_speed = ftData_DAQ.velFor{:};                       %store each speed
+    f_speed = ftData_dat.velFor{:};                       %store each speed
+    f_speed = interp1(ftData_dat.trialTime{1},f_speed,seconds(ftData_DAQ.trialTime{1}),'linear','extrap');
     r_speed = ftData_DAQ.velYaw{:};
     cue     = ftData_DAQ.cuePos{:}';
     cue     = smoothdata(unwrap(cue / 192 *2 * pi - pi),1,ft_type,ft_win);
