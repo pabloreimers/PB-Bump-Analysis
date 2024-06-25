@@ -12,9 +12,7 @@ for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
-        
-
-
+       
 ch1 = squeeze(mean(img{1},3));
 ch2 = squeeze(mean(img{2},3));
 
@@ -51,16 +49,16 @@ for i = 1:length(all_files)
     fprintf('processing: %s ',tmp{end-1})
     %load([all_files(i).folder,'\',all_files(i).name])
     %load([fileparts(all_files(i).folder),'\mask.mat'])
-    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
-    load([tmp2.folder,'\',tmp2.name])
-    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
-    load([tmp2.folder,'\',tmp2.name])
+    %tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    %load([tmp2.folder,'\',tmp2.name])
+    %tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
+    %load([tmp2.folder,'\',tmp2.name])
 
     %regProduct = img{1};
 
-    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    %all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
     %all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
-    %all_data(i).meta = all_files(i).folder;
+    all_data(i).meta = all_files(i).folder;
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
@@ -71,42 +69,39 @@ for i = 1:length(all_files)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
-
-
-
 %% plot heading traces
-idx = 1:6;
+idx = find(cellfun(@(x)(contains(x,'20240618\fly 3')),{all_data.meta}),4,'last');
 
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
 c2 = c1(:,[2,1,3]);
 
-for i = idx
+for i = 1:length(idx)
     a2 = subplot(length(idx),1,i);
-    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).atp.d,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).atp.d,'AlphaData',1);
     colormap(a2,c2)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     xticks([])
 
     set(gca,'color','none')
     hold on
-    a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m');
+    a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m');
     a.YData(abs(diff(a.YData))>pi) = nan;
-    a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w');
+    a = plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'w');
     a.YData(abs(diff(a.YData))>pi) = nan;
     xticks([]);yticks([])
 
     pos = get(gca,'Position');
     a3 = axes('Position',[pos(1),pos(2)+pos(4),pos(3),.03],'color','none'); 
-    plot(all_data(i).ft.xb,sum(all_data(i).atp.f,1)/max(sum(all_data(i).atp.f,1)))   
+    plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)))   
     hold on
-    plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)/max(abs(all_data(i).ft.r_speed)))
-    plot(all_data(i).ft.xf,abs(all_data(i).ft.f_speed)/max(abs(all_data(i).ft.f_speed)))
+    plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
+    plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
     yticks([]);xticks([])
     axis tight
     set(gca,'Color','none')
@@ -125,6 +120,20 @@ for i = idx
 
 end
 
+
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+        end
+    end
+end
 
 %% extract atp pulses
 
@@ -280,6 +289,7 @@ f_pulses = {};
 r_pulses = {};
 a_pulses = {};
 dark_idx = {};
+exp_idx  = {};
 
 figure(10)
 counter = 1;
@@ -297,6 +307,7 @@ for i = 1:length(all_data)
         r_pulses{counter} = all_data(i).ft.r_speed(k+tmp_win2);
         a_pulses{counter} = all_data(i).atp.d(:,j+tmp_win);
         dark_idx{counter} = contains(all_data(i).meta,'dark');
+        exp_idx{counter} = ~contains(all_data(i).meta,'control');
         
         counter = counter+1;
     end
@@ -304,11 +315,13 @@ end
 
 right_idx = cellfun(@(x)(sum(x(1:size(x,1)/2,:),'all') > sum(x(size(x,1)/2:end,:),'all')),a_pulses);
 dark_idx = logical(cell2mat(dark_idx));
-t = all_data(1).ft.xb(1:length(tmp_win)) + win_start;
-t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start;
+exp_idx = logical(cell2mat(exp_idx));
+t = all_data(1).ft.xb(1:length(tmp_win)) + win_start + 2;
+t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
 
-group_idx = right_idx + dark_idx*2;
-group_labels = {'left cl','right cl','left dark','right dark'};
+group_idx = right_idx + dark_idx*2 + exp_idx*4;
+group_labels = {'left cl (con)','right cl (con)','left dark (con)','right dark (con)',...
+                'left cl (exp)','right cl (exp)','left dark (exp)','right dark (exp)'};
 
 for k = unique(group_idx)
 
@@ -378,33 +391,72 @@ end
 
 %% population average
 figure(6); clf
-t = all_data(1).ft.xb(1:length(tmp_win)) + win_start;
-t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start;
+t = all_data(1).ft.xb(1:length(tmp_win)) + win_start + 2;
+t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
 
 m = cell(length(unique(group_idx)),1);
 c = cell(length(unique(group_idx)),1);
+x = cell(length(unique(group_idx)),1);
+
 for i = unique(group_idx)
-m{i+1} = cell2mat(m_pulses(group_idx==i));
-m{i+1} = unwrap(m{i+1}-m{i+1}(1,:))';
-c{i+1} = -cell2mat(c_pulses(group_idx==i));
-c{i+1} = unwrap(c{i+1}-c{i+1}(1,:))';
+    [~,tmp] = min(abs(t));
+    m{i+1} = unwrap(cell2mat(m_pulses(group_idx==i)));
+    m{i+1} = (m{i+1}-m{i+1}(tmp,:))';
+
+    [~,tmp] = min(abs(t2));
+    c{i+1} = -unwrap(cell2mat(c_pulses(group_idx==i)));
+    c{i+1} = (c{i+1}-c{i+1}(tmp,:))';
+
+    x{i+1} = m{i+1} - interp1(t2,c{i+1}',t,'linear','extrap')';
 end
 
-subplot(2,2,1); hold on
-title('CL')
-plot(t,m{1},'r')
-plot(t,m{2},'c')
+%%
+figure(6); clf
+for i = 1:4
+
+subplot(2,4,i); hold on
+plot(t,m{i*2-1},'r')
+plot(t,m{i*2},'c')
 axis tight
 plot([0,0],ylim,'k:')
 plot(xlim,[0,0],'k:')
 ylabel('unwrapped pva')
 set(gca,'YDir','reverse')
 
+subplot(2,4,i+4); hold on
+h = plot_sem(gca,t,m{i*2-1}); h.FaceColor = 'r';
+h = plot_sem(gca,t,m{i*2}); h.FaceColor = 'c';
+ylabel('unwrapped pva')
+set(gca,'YDir','reverse')
+legend('right','left')
+end
+
+ax = get(gcf,'Children');
+linkaxes(ax(2:3:12))
+linkaxes(ax(3:3:12))
+
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).Color = 'none';
+            ax(i).TextColor = 'w';
+        end
+    end
+end
+
+%%
+
 subplot(2,2,3); hold on
-h = plot_sem(gca,t,m{1}); h.FaceColor = 'r';
-h = plot_sem(gca,t,m{2}); h.FaceColor = 'c';
-h = plot_sem(gca,t2,c{1}); h.FaceColor = 'm';
-h = plot_sem(gca,t2,c{2}); h.FaceColor = 'g';
+h = plot_sem(gca,t,x{1}); h.FaceColor = 'r';
+h = plot_sem(gca,t,x{2}); h.FaceColor = 'c';
+h = plot_sem(gca,t,x{5}); h.FaceColor = 'm';
+h = plot_sem(gca,t,x{6}); h.FaceColor = 'g';
 
 legend('mu (right)','mu (left)','cue (right)','cue (left)','autoupdate','off','Location','Northwest')
 axis tight
@@ -416,24 +468,24 @@ set(gca,'YDir','reverse')
 
 subplot(2,2,2); hold on
 title('Dark')
-plot(t,m{3},'r')
-plot(t,m{4},'c')
+plot(t,m{7},'r')
+plot(t,m{8},'c')
 axis tight
 plot([0,0],ylim,'k:')
 plot(xlim,[0,0],'k:')
 set(gca,'YDir','reverse')
 
 subplot(2,2,4); hold on
-x = cell(length(unique(group_idx)),1);
-for i = unique(group_idx)
-x{i+1} = cell2mat(m_pulses(group_idx==i));
-x{i+1} = unwrap(x{i+1}-x{i+1}(1,:))';
-end
+% x = cell(length(unique(group_idx)),1);
+% for i = unique(group_idx)
+% x{i+1} = unwrap(cell2mat(m_pulses(group_idx==i)));
+% x{i+1} = (x{i+1}-x{i+1}(100,:))';
+% end
 
 h = plot_sem(gca,t,x{3}); h.FaceColor = 'r';
 h = plot_sem(gca,t,x{4}); h.FaceColor = 'c';
-h = plot_sem(gca,t2,c{3}); h.FaceColor = 'm';
-h = plot_sem(gca,t2,c{4}); h.FaceColor = 'g';
+h = plot_sem(gca,t,x{7}); h.FaceColor = 'm';
+h = plot_sem(gca,t,x{8}); h.FaceColor = 'g';
 
 legend('mu (right)','mu (left)','cue (right)','cue (left)','autoupdate','off','Location','Northwest')
 axis tight
@@ -464,17 +516,17 @@ end
 dark_mode = true;
 
 figure(10); clf
-for i = unique(group_idx)
+for i = 0:3
     subplot(2,2,i+1)
     hold on
-    plot(t2,cell2mat(f_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
-    plot_sem(gca,t2,cell2mat(f_pulses(group_idx==i))')
+    plot(t2,cell2mat(r_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
+    plot_sem(gca,t2,cell2mat(r_pulses(group_idx==i))')
     axis tight
     title(group_labels(i+1))
     plot([0,0],ylim,':','Color',[0,0,0]+dark_mode)
     ylabel('mm/s'); ylim([-3,10])
 end
-sgtitle('F Speed')
+sgtitle('R Speed')
 fontsize(gcf,20,'pixels')
 
 ax = get(gcf,'Children');
