@@ -41,37 +41,37 @@ im_win = {3,5};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    %load([all_files(i).folder,'\',all_files(i).name])
-    %load([fileparts(all_files(i).folder),'\mask.mat'])
-    %tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
-    %load([tmp2.folder,'\',tmp2.name])
-    %tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
-    %load([tmp2.folder,'\',tmp2.name])
+    load([all_files(i).folder,'\',all_files(i).name])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    load([tmp2.folder,'\',tmp2.name])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
+    load([tmp2.folder,'\',tmp2.name])
 
     %regProduct = img{1};
 
-    %all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    %all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).meta = all_files(i).folder;
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     end
 
-    %all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
 
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240618\fly 3')),{all_data.meta}),4,'last');
-
+idx = find(cellfun(@(x)(contains(x,'20240628\fly 2')),{all_data.meta})); %,6,'last');
+dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
 c2 = c1(:,[2,1,3]);
@@ -83,13 +83,17 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     xticks([])
-
+    
     set(gca,'color','none')
     hold on
+    [~,ind] = max(sum(all_data(idx(i)).atp.d,2));
+    tmp_alpha = unwrap(all_data(i).im.alpha);
+    scatter(0,tmp_alpha(ind),'r*')
+
     a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m');
     a.YData(abs(diff(a.YData))>pi) = nan;
     a = plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'w');
@@ -228,7 +232,7 @@ vid = vid(:,:,:,start_idx:start_idx+length(all_data(1).ft.xf));
 
 %xv = interp1(1:length(all_data(1).ft.xb),all_data(1).ft.xb,1:size(vid,4));
 
-%%
+%% show movie
 pause_time = 0;
 mu_tmp = interp1(all_data(fly_num).ft.xb,all_data(fly_num).im.mu,all_data(fly_num).ft.xf);
 
@@ -300,12 +304,12 @@ for i = 1:length(all_data)
 
     for j = loc
         [~,k] = min(abs(all_data(i).ft.xf - all_data(i).ft.xb(j)));
-        d_pulses{counter} = all_data(i).im.d(:,j+tmp_win);
-        m_pulses{counter} = all_data(i).im.mu(j+tmp_win);
-        c_pulses{counter} = all_data(i).ft.cue(k+tmp_win2);
-        f_pulses{counter} = all_data(i).ft.f_speed(k+tmp_win2);
-        r_pulses{counter} = all_data(i).ft.r_speed(k+tmp_win2);
-        a_pulses{counter} = all_data(i).atp.d(:,j+tmp_win);
+        d_pulses{counter} = all_data(i).im.d(:,max(j+tmp_win,1));
+        m_pulses{counter} = all_data(i).im.mu(max(j+tmp_win,1));
+        c_pulses{counter} = all_data(i).ft.cue(max(k+tmp_win2,1));
+        f_pulses{counter} = all_data(i).ft.f_speed(max(k+tmp_win2,1));
+        r_pulses{counter} = all_data(i).ft.r_speed(max(k+tmp_win2,1));
+        a_pulses{counter} = all_data(i).atp.d(:,max(j+tmp_win,1));
         dark_idx{counter} = contains(all_data(i).meta,'dark');
         exp_idx{counter} = ~contains(all_data(i).meta,'control');
         
@@ -410,13 +414,13 @@ for i = unique(group_idx)
     x{i+1} = m{i+1} - interp1(t2,c{i+1}',t,'linear','extrap')';
 end
 
-%%
+%% show pop avg
 figure(6); clf
 for i = 1:4
 
 subplot(2,4,i); hold on
-plot(t,x{i*2-1},'r')
-plot(t,x{i*2},'c')
+plot(t,m{i*2-1},'r')
+plot(t,m{i*2},'c')
 axis tight
 plot([0,0],ylim,'k:')
 plot(xlim,[0,0],'k:')
@@ -424,17 +428,33 @@ ylabel('unwrapped pva')
 set(gca,'YDir','reverse')
 
 subplot(2,4,i+4); hold on
-h = plot_sem(gca,t,x{i*2-1}); h.FaceColor = 'r';
-h = plot_sem(gca,t,x{i*2}); h.FaceColor = 'c';
+h = plot_sem(gca,t,m{i*2-1}); h.FaceColor = 'r';
+h = plot_sem(gca,t,m{i*2}); h.FaceColor = 'c';
 ylabel('unwrapped pva')
 set(gca,'YDir','reverse')
+legend('right','left')
 end
 
 ax = get(gcf,'Children');
-linkaxes(ax(1:2:8))
-linkaxes(ax(2:2:8))
+linkaxes(ax(2:3:12))
+linkaxes(ax(3:3:12))
 
-%%
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).Color = 'none';
+            ax(i).TextColor = 'w';
+        end
+    end
+end
+
+%% show pop avg
 
 subplot(2,2,3); hold on
 h = plot_sem(gca,t,x{1}); h.FaceColor = 'r';
@@ -500,11 +520,11 @@ end
 dark_mode = true;
 
 figure(10); clf
-for i = 0:3
-    subplot(2,2,i+1)
+for i = 4:7
+    subplot(2,2,i-3)
     hold on
-    plot(t2,cell2mat(r_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
-    plot_sem(gca,t2,cell2mat(r_pulses(group_idx==i))')
+    plot(t2,cell2mat(f_pulses(group_idx==i)),'Color',[[0,0,0]+dark_mode,.3])
+    plot_sem(gca,t2,cell2mat(f_pulses(group_idx==i))')
     axis tight
     title(group_labels(i+1))
     plot([0,0],ylim,':','Color',[0,0,0]+dark_mode)
@@ -675,30 +695,196 @@ for i = 1:length(d_pulses{1})
     pause(pause_time)
 end
 
-%% look at gain
+%% look at gain over the entire trial
 gains = nan(length(all_data),1);
-pre_idx = false(length(all_data),1);
 
 for i = 1:length(all_data)
     fr = mean(diff(all_data(i).ft.xf));
-    mu_tmp = interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf,'linear','extrap');
+    mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap');
     rho_tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
     atp_tmp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap');
     cue_tmp = all_data(i).ft.cue;
     m_speed = gradient(mu_tmp)/fr;
 
-    [~,loc] = findpeaks(atp_tmp,'MinPeakProminence',9);
-    idx = true(size(m_speed));
-    idx(loc) = false; idx = smoothdata(idx,'movmean',ceil([20,3]/fr)); idx(idx<1) = false;
-    idx(abs(all_data(i).ft.r_speed) < .1) = false;
-    idx(abs(m_speed)>10) = false;
-    idx = logical(idx);
+    tmp1 = m_speed(lag+1:end);
+    tmp2 = all_data(i).ft.r_speed(1:end-lag);
+    tmp3 = rho_tmp(lag+1:end);
+    idx  = abs(tmp1) < 10 & abs(tmp2) > .1 & tmp3 > .5;
 
-
-    pre_idx(i) = isempty(loc);
     gains(i) = m_speed(idx) \ all_data(i).ft.r_speed(idx);
 end
+
+%% find gain over a rolling window
+lag = 10;
+win = 30;
+gains = cell(length(all_data),1);
+
+
+for i = 1:length(all_data)
+    fprintf('num %i of %i\n',i,length(all_data))
+    fr = mean(diff(all_data(i).ft.xf));
+    mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap');
+    rho_tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
+    atp_tmp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap');
+    cue_tmp = all_data(i).ft.cue;
+    m_speed = gradient(mu_tmp)/fr;
+    c_speed = gradient(cue_tmp)/fr;
+
+    tmp1 = m_speed(lag+1:end);
+    tmp2 = c_speed(1:end-lag);
+    tmp3 = rho_tmp(lag+1:end);
+    idx  = abs(tmp1) < 10 & abs(tmp2) > .1 & tmp3 > .2;
     
+    tmp1(~idx) = nan;
+    tmp2(~idx) = nan;
+    num_frames = ceil(win/fr);
+    max_frames = length(tmp1);
+    tmp_gains  = nan(1,max_frames);
+    for j = 1:max_frames
+        tmp11 = tmp1(j:min(j+num_frames,max_frames));
+        tmp21 = tmp2(j:min(j+num_frames,max_frames));
+        idx2 = ~isnan(tmp11);
+        if sum(idx2)>2
+            tmp_gains(j) = tmp11(idx2) \ -tmp21(idx2);
+        end
+    end
+    gains{i} = tmp_gains;
+end
+
+%% show fly
+fly_str = '20240702\fly 2';
+figure(11); clf
+idx = find(cellfun(@(x)(contains(x,fly_str)),{all_data.meta})); %,6,'last');
+for i = 1:length(idx)
+    subplot(length(idx),1,i)
+    hold on
+    plot(all_data(idx(i)).ft.xf(1:end-lag),gains{idx(i)})
+    plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue)
+    plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu)
+    plot(xlim,[.8,.8],'r:'); ylim([-.1,2])
+end
+
+%% extract instantaneous gains on each pulse and show pop effect
+win_start = -30;
+win_end   = 60;
+g_pulses = {};
+dark_idx = {};
+exp_idx = {};
+counter  = 0;
+for i = 1:length(all_data)
+    [~,loc] = findpeaks(sum(all_data(i).atp.d,1),'MinPeakProminence',9);
+    tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
+    tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
+
+    for j = loc
+        counter = counter+1;
+        [~,k] = min(abs(all_data(i).ft.xf - all_data(i).ft.xb(j)));
+        g_pulses{counter} = gains{i}(min(max(k+tmp_win2,1),length(gains{i})));
+        dark_idx{counter} = contains(all_data(i).meta,'dark');
+        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+    end
+end
+
+right_idx = cellfun(@(x)(sum(x(1:size(x,1)/2,:),'all') > sum(x(size(x,1)/2:end,:),'all')),a_pulses);
+dark_idx = logical(cell2mat(dark_idx));
+exp_idx = logical(cell2mat(exp_idx));
+
+figure(12); clf
+tmp1 = cell2mat(g_pulses(exp_idx)');
+h = plot_sem(gca,(1:size(tmp1,2))',tmp1); h.FaceColor = 'r'; ylim([-1,1])
+hold on
+tmp2 = cell2mat(g_pulses(~exp_idx)');
+h = plot_sem(gca,(1:size(tmp2,2))',tmp2); h.FaceColor = 'b'; ylim([-1,1])
+
+%% estimate gain as a minimized positional error
+lag = 10;
+win = 30;
+x0 = [.7,0];
+lb = [-10,-3*pi];
+ub = [10,3*pi];
+gains_int = cell(length(all_data),1);
+fvals_int = cell(length(all_data),1);
+opts = optimoptions('fmincon','Display','off');
+
+tic
+for i = 1:length(all_data)
+    fprintf('num %i of %i ETR: ',i,length(all_data))
+    fr = mean(diff(all_data(i).ft.xf));
+    mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap');
+    rho_tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
+    atp_tmp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap');
+    cue_tmp = all_data(i).ft.cue;
+    m_speed = gradient(mu_tmp)/fr;
+    c_speed = gradient(cue_tmp)/fr;
+    r_speed = all_data(i).ft.r_speed;
+
+    tmp1 = mu_tmp(lag+1:end);
+    tmp2 = r_speed(1:end-lag);
+    tmp3 = rho_tmp(lag+1:end);
+    idx  = abs(tmp2) > .1 & tmp3 > .2;
+    
+    tmp1(~idx) = nan;
+    %tmp2(~idx) = nan;
+    num_frames = ceil(win/fr);
+    max_frames = length(tmp1);
+    tmp_frames = 1:30:max_frames;
+    tmp_gains  = nan(length(tmp_frames),2);
+    tmp_fvals  = nan(length(tmp_frames),1);
+    for k = 1:length(tmp_frames)
+        j = tmp_frames(k);
+        tmp11 = tmp1(j:min(j+num_frames,max_frames));
+        tmp21 = tmp2(j:min(j+num_frames,max_frames));
+        idx2 = ~isnan(tmp11);
+        if sum(idx2)>2
+            [tmp_gains(k,:),tmp_fvals(k)] = fmincon(@(x)(sum((x(1)*fr*cumsum(tmp21) - (tmp11 - x(2))).^2,'omitnan')),x0,[],[],[],[],lb,ub,[],opts);
+        end
+    end
+    gains_int{i} = tmp_gains;
+    fvals_int{i} = tmp_fvals;
+    fprintf('%.2f mins\n',toc / i * (length(all_data)-i) / 60)
+    if i > 33
+        a = 1;
+    end
+end
+
+%% extract instantaneous gains on each pulse and show pop effect
+win_start = -30;
+win_end   = 60;
+g_pulses = {};
+dark_idx = {};
+exp_idx = {};
+counter  = 0;
+for i = 1:length(all_data)
+    [~,loc] = findpeaks(sum(all_data(i).atp.d,1),'MinPeakProminence',9);
+    tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
+    tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
+   
+    tmp_win2= round(tmp_win2/30);
+    for j = loc
+        counter = counter+1;
+        [~,k] = min(abs(all_data(i).ft.xf(1:30:end) - all_data(i).ft.xb(j)));
+        g_pulses{counter} = gains_int{i}(min(max(k+tmp_win2,1),length(gains_int{i})),1)';
+        v_pulses{counter} = fvals_int{i}(min(max(k+tmp_win2,1),length(gains_int{i})));
+        dark_idx{counter} = contains(all_data(i).meta,'dark');
+        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+    end
+end
+
+right_idx = cellfun(@(x)(sum(x(1:size(x,1)/2,:),'all') > sum(x(size(x,1)/2:end,:),'all')),a_pulses);
+dark_idx = logical(cell2mat(dark_idx));
+exp_idx = logical(cell2mat(exp_idx));
+
+figure(12); clf
+tmp1 = cell2mat(g_pulses(exp_idx&dark_idx)');
+tmp3  = cell2mat(v_pulses(exp_idx&dark_idx)');
+tmp1(tmp3>5e3) = nan;
+h = plot_sem(gca,(1:size(tmp1,2))',tmp1); h.FaceColor = 'r'; %ylim([-1,3])
+hold on
+tmp2 = cell2mat(g_pulses(~exp_idx&dark_idx)');
+tmp3  = cell2mat(v_pulses(~exp_idx&dark_idx)');
+tmp2(tmp3>5e3) = nan;
+h = plot_sem(gca,(1:size(tmp2,2))',tmp2); h.FaceColor = 'b';% ylim([-1,3])
+
 %% plot all
 vel_thresh = .2;
 bump_thresh = 10;
@@ -1113,8 +1299,10 @@ function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
     f_speed = ftData_dat.velFor{:};                       %store each speed
     f_speed = interp1(ftData_dat.trialTime{1},f_speed,seconds(ftData_DAQ.trialTime{1}),'linear','extrap');
     r_speed = ftData_DAQ.velYaw{:};
-    cue     = ftData_DAQ.cuePos{:}';
-    cue     = smoothdata(unwrap(cue / 192 *2 * pi - pi),1,ft_type,ft_win);
+    cue     = ftData_DAQ.cuePos{:}' / 192 * 2 * pi - pi;
+    cue(abs(gradient(cue)) > 2) = nan;
+    cue     = unwrap(cue);
+    cue     = smoothdata(cue,1,ft_type,ft_win,'omitnan');
     cue   = mod(cue,2*pi);                                %rewrap heading data, and put between -pi and pi.
     cue(cue > pi) = cue(cue > pi) - 2*pi;
     
@@ -1233,8 +1421,8 @@ end
 
 function h = plot_sem(ax,t,x)
 
-m1 = mean(x,1);
-s1 = std(x,1)./sqrt(size(x,1));
+m1 = mean(x,1,'omitnan');
+s1 = std(x,1,'omitnan')./sqrt(size(x,1));
 
 h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
 end
