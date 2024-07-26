@@ -41,7 +41,7 @@ im_win = {3,5};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
 for i = 1:length(all_files)
@@ -69,8 +69,61 @@ for i = 1:length(all_files)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
+%% add in different mu calculations
+
+for i = 1:length(all_data)
+    disp(i)
+    [x_tmp,y_tmp]   = pol2cart(all_data(i).im.alpha,all_data(i).im.z');
+    [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+    mu = smoothdata(unwrap(mu),1,im_type{2},im_win{2});
+    mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+    mu(mu > pi) = mu(mu > pi) - 2*pi;
+    rho = smoothdata(rho,1,im_type{2},im_win{2});
+
+    all_data(i).im.mu_z = mu;
+    all_data(i).im.rho_z = rho;
+    
+    [x_tmp,y_tmp]   = pol2cart(all_data(i).im.alpha,all_data(i).im.d');
+    [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+    mu = smoothdata(unwrap(mu),1,im_type{2},im_win{2});
+    mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+    mu(mu > pi) = mu(mu > pi) - 2*pi;
+    rho = smoothdata(rho,1,im_type{2},im_win{2});
+
+    all_data(i).im.mu_d = mu;
+    all_data(i).im.rho_d = rho;
+
+
+    [x_tmp,y_tmp]   = pol2cart(all_data(i).im.alpha,all_data(i).im.f');
+    [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+    mu = smoothdata(unwrap(mu),1,im_type{2},im_win{2});
+    mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+    mu(mu > pi) = mu(mu > pi) - 2*pi;
+    rho = smoothdata(rho,1,im_type{2},im_win{2});
+
+    all_data(i).im.mu_f = mu;
+    all_data(i).im.rho_f = rho;
+
+    tmp = sum(all_data(i).atp.f,2);
+    if sum(tmp(1:end/2)) < sum(tmp(end/2:end))
+        [x_tmp,y_tmp]   = pol2cart(all_data(i).im.alpha(1:end/2),all_data(i).im.z(1:end/2,:)');
+    else
+        [x_tmp,y_tmp]   = pol2cart(all_data(i).im.alpha(end/2:end),all_data(i).im.z(end/2:end,:)');
+    end
+    [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+    mu = smoothdata(unwrap(mu),1,im_type{2},im_win{2});
+    mu = mod(mu,2*pi);                                %rewrap heading data, and put between -pi and pi.
+    mu(mu > pi) = mu(mu > pi) - 2*pi;
+    rho = smoothdata(rho,1,im_type{2},im_win{2});
+
+    all_data(i).im.mu_a = mu;
+    all_data(i).im.rho_a = rho;
+end
+
+
+
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240628\fly 2')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20240618\fly 3')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -287,6 +340,7 @@ close(writerObj);
 %% show population effects
 win_start = -10;
 win_end   = 20; %in seconds
+z_pulses = {};
 d_pulses = {};
 m_pulses = {};
 f_pulses = {};
@@ -302,8 +356,9 @@ for i = 1:length(all_data)
     tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
     tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
 
-    for j = loc
+    for j = loc        
         [~,k] = min(abs(all_data(i).ft.xf - all_data(i).ft.xb(j)));
+        z_pulses{counter} = all_data(i).im.z(:,max(j+tmp_win,1));
         d_pulses{counter} = all_data(i).im.d(:,max(j+tmp_win,1));
         m_pulses{counter} = all_data(i).im.mu(max(j+tmp_win,1));
         c_pulses{counter} = all_data(i).ft.cue(max(k+tmp_win2,1));
@@ -338,7 +393,7 @@ sgtitle(group_labels{k+1})
 for j = 1:length(tmp)
     i = tmp(j);
     subplot(rows,cols,j)
-    imagesc(t,unwrap(all_data(1).im.alpha),d_pulses{i})
+    imagesc(t,unwrap(all_data(1).im.alpha),z_pulses{i})
     [~,pos] = max(sum(a_pulses{i},2));
     y = unwrap(all_data(1).im.alpha);
    
@@ -398,6 +453,10 @@ figure(6); clf
 t = all_data(1).ft.xb(1:length(tmp_win)) + win_start + 2;
 t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
 
+group_idx = right_idx + 2*exp_idx + 4*dark_idx;
+group_labels = {'left con cl','right con cl','left exp cl','right exp cl',...
+                'left con dark','right con dark','left exp dark','right exp dark'};
+
 m = cell(length(unique(group_idx)),1);
 c = cell(length(unique(group_idx)),1);
 x = cell(length(unique(group_idx)),1);
@@ -415,6 +474,7 @@ for i = unique(group_idx)
 end
 
 %% show pop avg
+dark_mode = false;
 figure(6); clf
 for i = 1:4
 
@@ -422,17 +482,18 @@ subplot(2,4,i); hold on
 plot(t,m{i*2-1},'r')
 plot(t,m{i*2},'c')
 axis tight
-plot([0,0],ylim,'k:')
-plot(xlim,[0,0],'k:')
 ylabel('unwrapped pva')
 set(gca,'YDir','reverse')
 
 subplot(2,4,i+4); hold on
 h = plot_sem(gca,t,m{i*2-1}); h.FaceColor = 'r';
 h = plot_sem(gca,t,m{i*2}); h.FaceColor = 'c';
+%h = plot_sem(gca,t2,c{i*2-1}); h.FaceColor = 'g';
+%h = plot_sem(gca,t2,c{i*2}); h.FaceColor = 'm';
+
 ylabel('unwrapped pva')
 set(gca,'YDir','reverse')
-legend('right','left')
+legend(group_labels((i*2-1):(i*2)),'Autoupdate','off')
 end
 
 ax = get(gcf,'Children');
@@ -440,6 +501,15 @@ linkaxes(ax(2:3:12))
 linkaxes(ax(3:3:12))
 
 ax = get(gcf,'Children');
+
+for i = 1:length(ax)
+    if contains(class(ax(i)),'Axes')
+        plot(ax(i),ax(i).XLim,[0,0],':k')
+        plot(ax(i),[0,0],ax(i).YLim,':k')
+        axis tight
+    end
+end
+
 if dark_mode
     set(gcf,'color','none','InvertHardcopy','off')
     
@@ -453,6 +523,8 @@ if dark_mode
         end
     end
 end
+
+fontsize(gcf,20,'pixels')
 
 %% show pop avg
 
@@ -716,9 +788,12 @@ end
 
 %% find gain over a rolling window
 lag = 10;
-win = 30;
-gains = cell(length(all_data),1);
-
+win = 10;
+gains_inst = cell(length(all_data),1);
+disp_inst = cell(length(all_data),1);
+rho_thresh  = 0.1;
+cue_thresh  = .1;
+cs_max      = 10;
 
 for i = 1:length(all_data)
     fprintf('num %i of %i\n',i,length(all_data))
@@ -730,78 +805,160 @@ for i = 1:length(all_data)
     m_speed = gradient(mu_tmp)/fr;
     c_speed = gradient(cue_tmp)/fr;
 
-    tmp1 = m_speed(lag+1:end);
-    tmp2 = c_speed(1:end-lag);
-    tmp3 = rho_tmp(lag+1:end);
-    idx  = abs(tmp1) < 10 & abs(tmp2) > .1 & tmp3 > .2;
+    m_speed = m_speed(lag+1:end);
+    c_speed = c_speed(1:end-lag);
+    rho_tmp = rho_tmp(lag+1:end);
+    idx  = abs(c_speed) < cs_max & abs(c_speed) > cue_thresh & rho_tmp > rho_thresh;
     
-    tmp1(~idx) = nan;
-    tmp2(~idx) = nan;
+    m_speed(~idx) = nan;
+    c_speed(~idx) = nan;
     num_frames = ceil(win/fr);
-    max_frames = length(tmp1);
+    max_frames = length(m_speed);
     tmp_gains  = nan(1,max_frames);
+    tmp_disp  = nan(1,max_frames);
     for j = 1:max_frames
-        tmp11 = tmp1(j:min(j+num_frames,max_frames));
-        tmp21 = tmp2(j:min(j+num_frames,max_frames));
-        idx2 = ~isnan(tmp11);
+        tmp1 = m_speed(j:min(j+num_frames,max_frames));
+        tmp2 = c_speed(j:min(j+num_frames,max_frames));
+        idx2 = ~isnan(tmp1);
         if sum(idx2)>2
-            tmp_gains(j) = tmp11(idx2) \ -tmp21(idx2);
+            tmp_gains(j) = tmp1(idx2) \ -tmp2(idx2);
         end
+        tmp_disp(j) = sum(tmp2,'omitnan');
     end
-    gains{i} = tmp_gains;
+    gains_inst{i} = tmp_gains;
+    disp_inst{i} = tmp_disp;
 end
 
 %% show fly
-fly_str = '20240702\fly 2';
+fly_str = '20240523\fly 3';
 figure(11); clf
 idx = find(cellfun(@(x)(contains(x,fly_str)),{all_data.meta})); %,6,'last');
-for i = 1:length(idx)
-    subplot(length(idx),1,i)
+for i = 1 %:length(idx)
+    subplot(2,1,i)
     hold on
     plot(all_data(idx(i)).ft.xf(1:end-lag),gains{idx(i)})
-    plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue)
-    plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu)
-    plot(xlim,[.8,.8],'r:'); ylim([-.1,2])
+    plot(xlim,[.8,.8],'k:'); ylim([-pi,pi])
+    plot(xlim,[0,0],':k')
+    subplot(2,1,2); hold on
+    a=plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+    a=plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'k'); a.YData(abs(diff(a.YData))>pi) = nan;
+    %plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.d,1)/max(sum(all_data(idx(i)).atp.d,1)),'r')
+    axis tight
+    
 end
 
 %% extract instantaneous gains on each pulse and show pop effect
 win_start = -30;
-win_end   = 60;
+win_end   = 80;
+disp_thresh = 0;
+turn_dir = -1; %1 for left turns, -1 for right turns
+
+c = [1,.5,0;... con cl
+    0,.5,1;... exp cl
+    .5,0,1;... con dark
+    1,0,.5];   %exp dark
+
+y_var = {'gain','(instantaneous)'};
+y_bound = [-1,2];
+y_ref = [1,1];
+
 g_pulses = {};
+disp_pulses = {};
+rho_pulses = {};
 dark_idx = {};
 exp_idx = {};
+right_idx = {};
 counter  = 0;
 for i = 1:length(all_data)
-    [~,loc] = findpeaks(sum(all_data(i).atp.d,1),'MinPeakProminence',9);
-    tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
-    tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
+    tmp_atp = sum(all_data(i).atp.d,1);
+    tmp_atp = interp1(all_data(i).ft.xb,tmp_atp,all_data(i).ft.xf,'linear','extrap');
+    tmp_right = sum(all_data(i).atp.d(1:end/2,:),'all') > sum(all_data(i).atp.d(end/2:end,:),'all');
+    tmp_rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
 
-    for j = loc
+    [~,loc] = findpeaks(tmp_atp,'MinPeakProminence',9); %find the index to atp pulses in our new timeframe
+    
+    fr = mean(diff(all_data(i).ft.xf)); %find the new framerate (amount of time per frame)
+    tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
+    
+    for j = loc'
         counter = counter+1;
-        [~,k] = min(abs(all_data(i).ft.xf - all_data(i).ft.xb(j)));
-        g_pulses{counter} = gains{i}(min(max(k+tmp_win2,1),length(gains{i})));
+        tmp_idx = max(min(j+tmp_win,length(gains{i})),1);
+        rho_pulses{counter} = tmp_rho(tmp_idx)';
+        g_pulses{counter} = gains_inst{i}(tmp_idx);
+        disp_pulses{counter} = disp_inst{i}(tmp_idx);
         dark_idx{counter} = contains(all_data(i).meta,'dark');
-        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+        exp_idx{counter}  = ~contains(all_data(i).meta,'control');
+        right_idx{counter} = tmp_right;
     end
 end
 
-right_idx = cellfun(@(x)(sum(x(1:size(x,1)/2,:),'all') > sum(x(size(x,1)/2:end,:),'all')),a_pulses);
-dark_idx = logical(cell2mat(dark_idx));
-exp_idx = logical(cell2mat(exp_idx));
+dark_idx    = logical(cell2mat(dark_idx));
+exp_idx     = logical(cell2mat(exp_idx));
+right_idx   = logical(cell2mat(right_idx));
+t = tmp_win*fr + 2;
 
-figure(12); clf
-tmp1 = cell2mat(g_pulses(exp_idx)');
-h = plot_sem(gca,(1:size(tmp1,2))',tmp1); h.FaceColor = 'r'; ylim([-1,1])
-hold on
-tmp2 = cell2mat(g_pulses(~exp_idx)');
-h = plot_sem(gca,(1:size(tmp2,2))',tmp2); h.FaceColor = 'b'; ylim([-1,1])
+
+group_idx = exp_idx + dark_idx*2 + right_idx*4;
+group_labels = {'con  (cl) L','exp (cl) L','con (dark) L','exp (dark) L',...
+                'con  (cl) R','exp (cl) R','con (dark) R','exp (dark) R'};
+c = [c;c];
+
+
+figure(12); clf; hold on
+
+for i = unique(group_idx)
+    tmp1 = cell2mat(g_pulses(group_idx==i)');
+    tmp2 = cell2mat(disp_pulses(group_idx==i)');
+    
+    tmp1(tmp2*turn_dir > disp_thresh) = nan; %turn dir is 1 for left turns, so if tmp2*1 > 50 then the fly turned left. Invert the sign of displacement for right turns
+
+    subplot(2,4,floor(i/2)+1);    hold on
+    h = plot_sem(gca,t',tmp1); h.FaceColor = c(i+1,:); %ylim([-1,3])
+    plot(t,tmp1,'Color',[c(i+1,:),.05])
+    axis tight
+    plot(xlim,y_ref,':k')
+    plot(xlim,[0,0],':k')
+    ylim(y_bound)
+    ylabel(y_var)
+
+    xlabel('time (s)')
+    
+    subplot(2,4,floor(i/2)+5); hold on
+    histogram(reshape(tmp1,1,[]),'Normalization','probability','Binwidth',.1,'FaceColor',c(i+1,:));
+    
+    if mod(i,2) == 1; legend(group_labels(i:i+1)); xlabel(y_var); xlim(y_bound); end
+end
+
+% subplot(2,2,1); axis tight
+% plot(xlim,y_ref,':k')
+% plot(xlim,[0,0],':k')
+% ylim(y_bound)
+% ylabel(y_var)
+% subplot(2,2,2); axis tight
+% plot(xlim,y_ref,':k')
+% plot(xlim,[0,0],':k')
+% ylim(y_bound)
+% subplot(2,2,3)
+% legend(group_labels(1:2)); xlabel(y_var); xlim(y_bound)
+% subplot(2,2,4)
+% legend(group_labels(3:4)); xlabel(y_var); xlim(y_bound) 
+
+fontsize(gcf,20,'pixels')
+
 
 %% estimate gain as a minimized positional error
-lag = 10;
-win = 30;
+lag         = 10;
+win         = 10;
+rho_thresh  = .05;
+r_thresh    = .1;
+ds_factor   = 30; %how many frames to downsample by
+smooth_win  = 3;
+
 x0 = [.7,0];
-lb = [-10,-3*pi];
-ub = [10,3*pi];
+lb = [-1,-3*pi];
+ub = [5,3*pi];
+disp_int = cell(length(all_data),1);
+dist_int = cell(length(all_data),1);
 gains_int = cell(length(all_data),1);
 fvals_int = cell(length(all_data),1);
 opts = optimoptions('fmincon','Display','off');
@@ -810,80 +967,411 @@ tic
 for i = 1:length(all_data)
     fprintf('num %i of %i ETR: ',i,length(all_data))
     fr = mean(diff(all_data(i).ft.xf));
-    mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap');
+    
+    mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap'); %interpolate everything so that times/frames align
     rho_tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
     atp_tmp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap');
     cue_tmp = all_data(i).ft.cue;
-    m_speed = gradient(mu_tmp)/fr;
+
+    m_speed = gradient(mu_tmp)/fr; %get all speeds in easily accessible variables. make sure to multiply gradients by the framerate to get a speed per second
     c_speed = gradient(cue_tmp)/fr;
     r_speed = all_data(i).ft.r_speed;
 
-    tmp1 = mu_tmp(lag+1:end);
-    tmp2 = r_speed(1:end-lag);
-    tmp3 = rho_tmp(lag+1:end);
-    idx  = abs(tmp2) > .1 & tmp3 > .2;
-    
-    tmp1(~idx) = nan;
-    %tmp2(~idx) = nan;
-    num_frames = ceil(win/fr);
-    max_frames = length(tmp1);
-    tmp_frames = 1:30:max_frames;
+    mu_tmp = mu_tmp(lag+1:end); %shift each vector by the appropriate lag to line up time points
+    r_speed = r_speed(1:end-lag);
+    rho_tmp = rho_tmp(lag+1:end);
+
+    idx  = abs(r_speed) > r_thresh & rho_tmp > rho_thresh; %nan out "distractor" time points, when the fly isnt moving or bump is poorly estimated
+    mu_tmp(~idx) = nan;
+
+    num_frames = ceil(win/fr); %define how many frames to sample in each window
+    max_frames = length(mu_tmp); %find how many frames there are in whole vector
+    tmp_frames = 1:ds_factor:(max_frames-num_frames); %create a vector of the frames we will actually sample (downsample for speed)
+    tmp_dist  = nan(length(tmp_frames),1); %initialize vectors to store angular distance, angular displacement, gain, and fval in each fitting window)
+    tmp_disp  = nan(length(tmp_frames),1); 
     tmp_gains  = nan(length(tmp_frames),2);
     tmp_fvals  = nan(length(tmp_frames),1);
-    for k = 1:length(tmp_frames)
+    
+    for k = 1:length(tmp_frames) %for each sampled frame, extract the bump and r_speed in that window
         j = tmp_frames(k);
-        tmp11 = tmp1(j:min(j+num_frames,max_frames));
-        tmp21 = tmp2(j:min(j+num_frames,max_frames));
-        idx2 = ~isnan(tmp11);
-        if sum(idx2)>2
-            [tmp_gains(k,:),tmp_fvals(k)] = fmincon(@(x)(sum((x(1)*fr*cumsum(tmp21) - (tmp11 - x(2))).^2,'omitnan')),x0,[],[],[],[],lb,ub,[],opts);
+        tmp1 = mu_tmp(j:j+num_frames) - mean(mu_tmp(j:j+num_frames),'omitnan');
+        tmp2 = r_speed(j:j+num_frames);
+        idx2 = ~isnan(tmp1);
+        if sum(idx2)>10
+            [tmp_gains(k,:),tmp_fvals(k)] = fmincon(@(x)(sum((x(1)*fr*cumsum(tmp2) - (tmp1 - x(2))).^2,'omitnan')),x0,[],[],[],[],lb,ub,[],opts);
         end
+        tmp_dist(k) = sum(abs(tmp2));
+        tmp_disp(k) = sum(tmp2);
     end
-    gains_int{i} = tmp_gains;
+    
+    disp_int{i} = tmp_disp;
+    dist_int{i} = tmp_dist;
+    gains_int{i} = smoothdata(tmp_gains,1,'movmean',(1/fr)/ds_factor*smooth_win);
     fvals_int{i} = tmp_fvals;
     fprintf('%.2f mins\n',toc / i * (length(all_data)-i) / 60)
-    if i > 33
-        a = 1;
-    end
 end
 
-%% extract instantaneous gains on each pulse and show pop effect
+
+%% show fly
+fly_str = '20240523\fly 3';
+figure(11); clf
+idx = find(cellfun(@(x)(contains(x,fly_str)),{all_data.meta})); %,6,'last');
+for i = 5 %:length(idx)
+    subplot(2,1,1)
+    hold on
+
+    tmp_t = all_data(idx(i)).ft.xf(1:end-lag);
+    tmp_t = tmp_t(1:ds_factor:end);
+    tmp_t = tmp_t(1:length(gains_int{idx(i)}));
+    plot(tmp_t,gains_int{idx(i)}(:,1))
+    plot(xlim,[.8,.8],'k:'); %ylim([-pi,pi])
+    subplot(2,1,2); hold on
+    a=plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+    a=plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'k'); a.YData(abs(diff(a.YData))>pi) = nan;
+    %plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.rho);
+    %plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.rho);
+    %plot(tmp_t,dist_int{idx(i)}/200)
+    %plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.d,1)/max(sum(all_data(idx(i)).atp.d,1)),'r')
+    axis tight
+    
+end
+subplot(2,1,1)
+ylabel({'gain','(integrative)'}); xlabel('time (s)')
+fontsize(gcf,20,'pixels')
+linkaxes(get(gcf,'Children'),'x')
+
+%% extract positional gains on each pulse and show pop effect
 win_start = -30;
-win_end   = 60;
+win_end   = 120;
+fval_thresh = 100;
+turn_dir  = -1;
+disp_thresh = nan;
+
+c = [1,.5,0;... con cl
+    0,.5,1;... exp cl
+    .5,0,1;... con dark
+    1,0,.5];   %exp dark
+
+x_pulses = {};
 g_pulses = {};
+v_pulses = {};
+first_idx = {};
 dark_idx = {};
 exp_idx = {};
+right_idx = {};
+
+
 counter  = 0;
 for i = 1:length(all_data)
-    [~,loc] = findpeaks(sum(all_data(i).atp.d,1),'MinPeakProminence',9);
-    tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
-    tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
-   
-    tmp_win2= round(tmp_win2/30);
-    for j = loc
+    tmp_atp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap'); %get the atp fluorescence peaks in the same scale as the gain values
+    tmp_atp = tmp_atp(1:ds_factor:end);
+    tmp_right = sum(all_data(i).atp.d(1:end/2,:),'all') > sum(all_data(i).atp.d(end/2:end,:),'all');
+
+    [~,loc] = findpeaks(tmp_atp,'MinPeakProminence',8.5); %find the index to atp pulses in our new timeframe. dropped the threshold a smidge because with the downsampling you do just miss one
+    
+    fr = mean(diff(all_data(i).ft.xf)) * ds_factor; %find the new framerate (amount of time per frame)
+    tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
+    
+    if i==1 || strcmp(all_data(i).meta(1:38),all_data(i-1).meta(1:38))
+        first_log = true;
+    end
+
+    for j = loc'
+        tmp_nan = nan(size(tmp_win));
+        pad1 = nan(1,sum(j+tmp_win < 1));
+        pad2 = nan(1,sum(j+tmp_win > length(gains_int{i})));
+        tmp_idx = j+tmp_win((length(pad1)+1):(end-length(pad2))); %extract all of the appropriate frames. if we exceed the window in either direction, just fill it with the nearest calculated gain. a bit hacky
+        
         counter = counter+1;
-        [~,k] = min(abs(all_data(i).ft.xf(1:30:end) - all_data(i).ft.xb(j)));
-        g_pulses{counter} = gains_int{i}(min(max(k+tmp_win2,1),length(gains_int{i})),1)';
-        v_pulses{counter} = fvals_int{i}(min(max(k+tmp_win2,1),length(gains_int{i})));
+        g_pulses{counter} = [pad1,gains_int{i}(tmp_idx,1)',pad2]; 
+        v_pulses{counter} = [pad1,fvals_int{i}(tmp_idx)',pad2];
+        x_pulses{counter} = [pad1,disp_int{i}(tmp_idx)',pad2];
         dark_idx{counter} = contains(all_data(i).meta,'dark');
         exp_idx{counter} = ~contains(all_data(i).meta,'control');
+        right_idx{counter} = tmp_right;
+        first_idx{counter} = first_log;
+        
+        if first_log
+            first_log = false;
+        end
+
     end
 end
 
-right_idx = cellfun(@(x)(sum(x(1:size(x,1)/2,:),'all') > sum(x(size(x,1)/2:end,:),'all')),a_pulses);
 dark_idx = logical(cell2mat(dark_idx));
 exp_idx = logical(cell2mat(exp_idx));
+right_idx = logical(cell2mat(right_idx));
+first_idx = logical(cell2mat(first_idx));
+
+group_idx = exp_idx + dark_idx*2 + 4*right_idx;
+group_labels = {'con (cl) L','exp (cl) L','con (dark) L','exp (dark) L',...
+                'con (cl) R','exp (cl) R','con (dark) R','exp (dark) R'};
+
+t_ds = tmp_win * fr + 2; %create a time vector for the extracted pulses. +2 hardcoded since 0 is really 2 seconds before the fluorescence peak
+c = [c;c];
 
 figure(12); clf
-tmp1 = cell2mat(g_pulses(exp_idx&dark_idx)');
-tmp3  = cell2mat(v_pulses(exp_idx&dark_idx)');
-tmp1(tmp3>5e3) = nan;
-h = plot_sem(gca,(1:size(tmp1,2))',tmp1); h.FaceColor = 'r'; %ylim([-1,3])
+figure(13); clf
+
+for i = unique(group_idx)
+tmp1 = cell2mat(g_pulses(group_idx==i)');
+tmp2 = cell2mat(x_pulses(group_idx==i)');
+tmp3  = cell2mat(v_pulses(group_idx==i)');
+tmp1(tmp3>fval_thresh) = nan;
+tmp1(tmp2*turn_dir>disp_thresh) = nan;
+%tmp2(tmp3>fval_thresh) = nan;
+%tmp1 = tmp1(:,all(~isnan(tmp1),1));
+
+if i<4
+    figure(12); hold on
+else
+    figure(13); hold on
+end
+
+subplot(2,2,floor(mod(i,4)/2)+1); hold on
+%h = plot_sem(gca,t_ds',tmp1); h.FaceColor = c(i+1,:); %ylim([-1,3])
+plot(t_ds,tmp1,'Color',[c(i+1,:),.2])
+axis tight
+plot(xlim,[.8,.8],':k')
+plot(xlim,[0,0],':k')
+ylim([-1,5])
+
+subplot(2,2,floor(mod(i,4)/2)+3); hold on
+histogram(reshape(tmp1,1,[]),'Normalization','probability','Binwidth',.1,'FaceColor',c(i+1,:));
+if mod(i,2) ==1
+legend([group_labels(i:i+1),str]); xlabel({'gain','(integrative)'})
+end
+end
+
+
+subplot(2,2,1); 
+ylabel({'gain','(integrative)'})
+
+fontsize(gcf,20,'pixels')
+
+%% show bumps after atp pulse
+win_start = 0;
+win_end   = 300;
+
+d_pulses = {};
+a_pulses = {};
+dark_idx = {};
+exp_idx = {};
+right_idx = {};
+counter = 0;
+
+for i = 1:length(all_data)
+    tmp_atp = sum(all_data(i).atp.d,1); %get the atp fluorescence peaks in imaging time
+    tmp_right = sum(all_data(i).atp.d(1:end/2,:),'all') > sum(all_data(i).atp.d(end/2:end,:),'all');
+
+    [~,loc] = findpeaks(tmp_atp,'MinPeakProminence',9); %find the index to atp pulses in imaging time
+    
+    fr = median(diff(all_data(i).ft.xb)); %find the new framerate (amount of time per frame)
+    tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
+
+    for j = loc
+        
+        pad1 = nan(length(all_data(i).im.alpha),sum(j+tmp_win < 1));
+        pad2 = nan(length(all_data(i).im.alpha),sum(j+tmp_win > size(all_data(i).im.d,2)));
+        tmp_idx = j+tmp_win((length(pad1)+1):(end-length(pad2))); %extract all of the appropriate frames. if we exceed the window in either direction, just fill it with the nearest calculated gain. a bit hacky
+        tmp_d = all_data(i).im.d(:,tmp_idx); %extract the dff and the bump position
+        tmp_a = all_data(i).atp.d(:,tmp_idx);
+        tmp_m = all_data(i).im.mu(tmp_idx);
+        
+        for k = 1:size(tmp_d,2) %go through each frame in the pulse snippet
+            %[~,tmp_shift] = min(abs(all_data(i).im.alpha - tmp_m(k))); %find the index of the bump position for that frame
+            [~,tmp_shift] = max(sum(all_data(i).atp.d,2));
+            tmp_d(1:end/2,k) = circshift(tmp_d(1:end/2,k),-tmp_shift + length(all_data(i).im.alpha)/4); %circshift EACH HALF of the pb to center the bump
+            tmp_d(end/2:end,k) = circshift(tmp_d(end/2:end,k),-tmp_shift+ length(all_data(i).im.alpha)/4);
+            tmp_a(1:end/2,k) = circshift(tmp_a(1:end/2,k),-tmp_shift+ length(all_data(i).im.alpha)/4);
+            tmp_a(end/2:end,k) = circshift(tmp_a(end/2:end,k),-tmp_shift+ length(all_data(i).im.alpha)/4);
+        end
+        counter = counter+1;
+        d_pulses{counter} = [pad1,tmp_d,pad2];
+        a_pulses{counter} = [pad1,tmp_a,pad2];
+        dark_idx{counter} = contains(all_data(i).meta,'dark');
+        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+        right_idx{counter} = tmp_right;
+    end
+end
+
+dark_idx = logical(cell2mat(dark_idx));
+exp_idx = logical(cell2mat(exp_idx));
+right_idx = logical(cell2mat(right_idx));
+
+group_idx = exp_idx + dark_idx*2 + 4*right_idx;
+group_labels = {'con  (cl)','exp (cl)','con (dark)','exp (dark)',...
+                'con  (cl)','exp (cl)','con (dark)','exp (dark)'};
+
+%% plot the bumps for each condition
+d_means = cellfun(@(x)(mean(x,2,'omitnan')),d_pulses,'UniformOutput',false);
+a_means = cellfun(@(x)(mean(x,2,'omitnan')),a_pulses,'UniformOutput',false);
+
+figure(14); clf
 hold on
-tmp2 = cell2mat(g_pulses(~exp_idx&dark_idx)');
-tmp3  = cell2mat(v_pulses(~exp_idx&dark_idx)');
-tmp2(tmp3>5e3) = nan;
-h = plot_sem(gca,(1:size(tmp2,2))',tmp2); h.FaceColor = 'b';% ylim([-1,3])
+for i = unique(group_idx)
+    subplot(2,2,floor(i/2)+1); hold on
+    h = plot_sem(gca,unwrap(all_data(1).im.alpha'),cell2mat(d_means(group_idx==i))'); h.FaceColor = c(i+1,:);
+    %h = plot_sem(gca,unwrap(all_data(1).im.alpha'),cell2mat(a_means(group_idx==i))'); h.FaceColor = c(i+1,:);
+    %h = plot(unwrap(all_data(1).im.alpha'),cell2mat(d_means(group_idx==i))','Color',[c(i+1,:),.1]);
+    if mod(i,2) == 1
+        legend(group_labels(i:i+1))
+    end
+end
+
+%subplot(1,2,1); legend(group_labels); ylabel({'mean dFF','(5s - 25s)'})
+%subplot(1,2,2); legend(group_labels)
+subplot(2,2,1); ylabel({'dFF','left ATP'})
+subplot(2,2,3); ylabel({'dFF','right ATP'});
+fontsize(gcf,20,'pixels')
+
+%% show heatmap of variable
+
+figure(14); clf
+for i = unique(group_idx)
+subplot(2,4,i+1)
+tmp1 = cell2mat(g_pulses(group_idx==i)');
+tmp2 = cell2mat(x_pulses(group_idx==i)');
+% tmp3  = cell2mat(v_pulses(group_idx==i)');
+% tmp1(tmp3>fval_thresh) = nan;
+tmp1(tmp2*turn_dir>disp_thresh) = nan;
+imagesc(t,1:size(tmp1,1),tmp1)
+colormap(flipud(cbrewer2('RdBu',256))); clim([-4,4]);
+xlabel(group_labels{i+1})
+end
+fontsize(gcf,20,'pixels')
+title('rho (vector strength)')
+p = get(gca,'Position');
+colorbar
+set(gca,'Position',p)
+
+%% find common themes for moving bump pulses
+win_start = -10;
+win_end = 80;
+
+m_pulses = {};
+a_pulses = {};
+d_pulses = {};
+z_pulses = {};
+f_pulses = {};
+dark_idx = {};
+exp_idx  = {};
+right_idx= {};
+first_idx= {};
+
+figure(15); clf
+counter = 0;
+for i = 1:length(all_data)
+    tmp_atp = sum(all_data(i).atp.d,1);
+    tmp_right = sum(all_data(i).atp.d(1:end/2,:),'all') > sum(all_data(i).atp.d(end/2:end,:),'all');
+
+    [~,loc] = findpeaks(tmp_atp,'MinPeakProminence',8.5);
+    fr = mean(diff(all_data(i).ft.xb)); %find the new framerate (amount of time per frame)
+    tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
+    
+    if numel(loc) < 2
+        continue
+    end
+
+    if i==1 || strcmp(all_data(i).meta(1:38),all_data(i-1).meta(1:38))
+        first_log = true;
+    end
+    if counter>200
+        a=1;
+    end
+    for j = loc
+
+        n = length(all_data(i).im.alpha);
+        pad1 = nan(n,sum(j+tmp_win < 1)); %create padding for images
+        pad2 = nan(n,sum(j+tmp_win > length(all_data(i).ft.xb)));
+        tmp_idx = j+tmp_win((size(pad1,2)+1):(end-size(pad2,2))); %extract all of the appropriate frames. if we exceed the window in either direction, just fill it with the nearest calculated gain. a bit hacky
+        
+        counter = counter+1;
+        d_pulses{counter} = [pad1,all_data(i).im.d(:,tmp_idx),pad2];
+        z_pulses{counter} = [pad1,all_data(i).im.z(:,tmp_idx),pad2];       
+        f_pulses{counter} = [pad1,all_data(i).im.f(:,tmp_idx),pad2];       
+        a_pulses{counter} = [pad1,all_data(i).atp.d(:,tmp_idx),pad2];
+        m_pulses{counter} = [pad1(1,:),all_data(i).im.mu(tmp_idx)',pad2(1,:)];
+        dark_idx{counter} = contains(all_data(i).meta,'dark');
+        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+        right_idx{counter} = tmp_right;
+        first_idx{counter} = first_log;
+        
+        if first_log
+            first_log = false;
+        end
+
+    end
+end
+
+dark_idx = logical(cell2mat(dark_idx));
+exp_idx = logical(cell2mat(exp_idx));
+right_idx = logical(cell2mat(right_idx));
+first_idx = logical(cell2mat(first_idx));
+
+mean_gradient = cellfun(@(x)(mean(gradient(unwrap(x)),'omitnan')),m_pulses);
+group_idx = exp_idx + 2*dark_idx + 4*right_idx;
+group_labels = {'left con cl','left exp cl','left con dark','left exp dark',...
+                'right con cl','right exp cl','right con dark','right exp dark'};
+
+figure(1); clf
+for i = unique(group_idx)
+    subplot(2,4,i+1)
+    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(d_pulses(group_idx==i),[3,1,2])),3,'omitnan'))
+    colormap(parula)
+    title(group_labels(i+1));
+end
+
+d_pulses_aligned = cell(size(d_pulses));
+z_pulses_aligned = cell(size(z_pulses));
+f_pulses_aligned = cell(size(f_pulses));
+a_pulses_aligned = cell(size(a_pulses));
+
+figure(2); clf
+for i = 1:length(d_pulses)
+    if i == 158
+        a=1;
+    end
+    [~,k] = max(sum(a_pulses{i},2,'omitnan'));
+
+    tmp1 = circshift(d_pulses{i}(1:n/2,:),-k+n/4,1);
+    tmp2 = circshift(d_pulses{i}(n/2+1:end,:),-k+n/4,1);
+    d_pulses_aligned{i} = [tmp1;tmp2];
+
+    tmp1 = circshift(z_pulses{i}(1:n/2,:),-k+n/4,1);
+    tmp2 = circshift(z_pulses{i}(n/2+1:end,:),-k+n/4,1);
+    z_pulses_aligned{i} = [tmp1;tmp2];
+
+    tmp1 = circshift(f_pulses{i}(1:n/2,:),-k+n/4,1);
+    tmp2 = circshift(f_pulses{i}(n/2+1:end,:),-k+n/4,1);
+    f_pulses_aligned{i} = [tmp1;tmp2];
+
+    tmp1 = circshift(a_pulses{i}(1:n/2,:),-k+n/4,1);
+    tmp2 = circshift(a_pulses{i}(n/2+1:end,:),-k+n/4,1);
+    a_pulses_aligned{i} = [tmp1;tmp2];
+end
+
+for i = unique(group_idx)
+    subplot(2,4,i+1)
+    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(d_pulses_aligned(group_idx==i & overlap_idx),[3,1,2])),3,'omitnan'))
+    hold on
+    if i<4; scatter(0,3*n/4,'r*')
+    else  ;  scatter(0,n/4,'r*'); end
+    plot(xlim,[n/2,n/2]+.5,'w','linewidth',2)
+    colormap(parula)
+    title(group_labels(i+1));
+    ylabel({'zscore dff','aligned'})
+end
+
+%% plot just bumps where mu is overlapped with atp
+alpha = all_data(1).im.alpha;
+[~,ind] = min(abs(tmp_win*fr));
+
+atp_loc = cellfun(@(x)(find(sum(x,2,'omitnan')==max(sum(x,2,'omitnan')),1,'first')),a_pulses);
+atp_loc(atp_loc > n/2) = atp_loc(atp_loc>n/2) - n/2;
+mu_loc  = cellfun(@(x)(find(abs(mean(x(ind)-alpha)==min(abs(x(ind)-alpha)),1,'first')),m_pulses);
+
+overlap_idx = abs(atp_loc - mu_loc) < 4;
 
 %% plot all
 vel_thresh = .2;
@@ -1422,7 +1910,13 @@ end
 function h = plot_sem(ax,t,x)
 
 m1 = mean(x,1,'omitnan');
-s1 = std(x,1,'omitnan')./sqrt(size(x,1));
+s1 = std(x,1,'omitnan')./sqrt(sum(~isnan(x),1));
+
+idx = ~isnan(m1);
+m1 = m1(idx);
+s1 = s1(idx);
+t  = t(idx);
+
 
 h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
 end
