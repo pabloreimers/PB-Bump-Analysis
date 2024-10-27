@@ -110,6 +110,38 @@ end
 
 [~,~,fly_num] = unique(fly_id);
 
+%% plot example fly
+for i = 1:length(all_data)
+all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.d));
+end
+
+i = 10;
+figure(8); clf
+subplot(3,1,1)
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue);
+a.YData(abs(diff(a.YData))>pi) = nan;
+yticks([-pi,0,pi])
+yticklabels({'\-pi',0,'\pi'})
+yticklabels({'-\pi',0,'\pi'})
+ylim([-pi,pi])
+set(gca,'Ydir','reverse')
+
+subplot(3,1,2)
+tmp = all_data(i).im.d;
+tmp(:,sum(tmp,1)>10) = nan;
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
+
+subplot(3,1,3)
+a = plot(all_data(i).ft.xb,all_data(i).im.mu);
+a.YData(abs(diff(a.YData))>pi) = nan;
+yticks([-pi,0,pi])
+yticklabels({'\-pi',0,'\pi'})
+yticklabels({'-\pi',0,'\pi'})
+ylim([-pi,pi])
+set(gca,'Ydir','reverse')
+
+linkaxes(get(gcf,'Children'),'x')
+
 %% Plot results
 group_order = {'EPG > GRAB(DA2m) (CL)','EPG > GRAB(DA2m) (dark)','LPsP > syt7f (CL)','LPsP > syt7f (dark)'};
 ind = dark_idx + 2*lpsp_idx + 1;
@@ -142,8 +174,8 @@ ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
 hold on; plot(xlim,[0,0],'k:')
 
 subplot(2,2,2)
-scatter(ind,r_corr); hold on
-scatter(ind+.1,f_corr)
+scatter(ind,r_R2); hold on
+scatter(ind+.1,f_R2)
 
 
 subplot(2,1,2)

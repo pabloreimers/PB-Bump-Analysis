@@ -52,15 +52,14 @@ end
 %% Make compress in z, and scale between 0 and 256
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
-imgData     = movmean(imgData,mov_smooth,3);
-
+%imgData     = movmean(imgData,mov_smooth,3);
 
 imgData2 = imgData;
 top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
 bot_int = prctile(imgData2,5,'all');
 imgData2 = max(min(imgData2,top_int),bot_int) - bot_int;
 imgData2 = 256*imgData2/max(imgData2,[],'all');
-imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
+%imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
 
 %% Play the movie
 pause_time  = 0;                         %pause this many seconds between each frame
@@ -110,7 +109,7 @@ centroids   = centroids(2:2:end-1,:);                                           
 cmap        = repmat(make_colors(n_centroid),2,1); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
 
 figure(1); clf
-imagesc(max(imgData,[],3))                                      %plot the image again with max intensity over time to show the whole pb
+imagesc(mean(imgData2,3))                                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 plot(x_mid,y_mid,'w')                                                   %plot the midline in white
@@ -120,7 +119,7 @@ axis equal tight
 %% assign each pixel to a centroid
 [~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 figure(1); clf
-imagesc(max(imgData,[],3))                      %plot the image again with max intensity over time to show the whole pb
+imagesc(mean(imgData2,3))                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 for i = 1:2*n_centroid                          %overlay each pixel in its indexed color onto the pb image. 
