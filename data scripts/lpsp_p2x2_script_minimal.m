@@ -123,7 +123,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240618\fly 3')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20240514\fly 2')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -399,8 +399,8 @@ for j = 1:length(tmp)
    
     hold on
     scatter(0,y(pos),'*r')
-    a = plot(t,m_pulses{i},'w'); a.YData(abs(diff(a.YData))>pi) = nan;
-    a = plot(t2,-c_pulses{i},'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+    %a = plot(t,m_pulses{i},'w'); a.YData(abs(diff(a.YData))>pi) = nan;
+    a = plot(t2,-c_pulses{i},'m','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
 end
 
 ax = get(gcf,'Children');
@@ -591,6 +591,13 @@ end
 %% look at locomotor effects
 dark_mode = true;
 
+t = all_data(1).ft.xb(1:length(tmp_win)) + win_start + 2;
+t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
+
+group_idx = right_idx + 2*exp_idx + 4*dark_idx;
+group_labels = {'left con cl','right con cl','left exp cl','right exp cl',...
+                'left con dark','right con dark','left exp dark','right exp dark'};
+
 figure(10); clf
 for i = 4:7
     subplot(2,2,i-3)
@@ -602,7 +609,7 @@ for i = 4:7
     plot([0,0],ylim,':','Color',[0,0,0]+dark_mode)
     ylabel('mm/s'); ylim([-3,10])
 end
-sgtitle('R Speed')
+sgtitle('F Speed')
 fontsize(gcf,20,'pixels')
 
 ax = get(gcf,'Children');
@@ -833,10 +840,10 @@ end
 fly_str = '20240523\fly 3';
 figure(11); clf
 idx = find(cellfun(@(x)(contains(x,fly_str)),{all_data.meta})); %,6,'last');
-for i = 1 %:length(idx)
-    subplot(2,1,i)
+for i = 1:length(idx)
+    subplot(length(idx),1,i)
     hold on
-    plot(all_data(idx(i)).ft.xf(1:end-lag),gains{idx(i)})
+    plot(all_data(idx(i)).ft.xf(1:end-lag),gains(idx(i)))
     plot(xlim,[.8,.8],'k:'); ylim([-pi,pi])
     plot(xlim,[0,0],':k')
     subplot(2,1,2); hold on

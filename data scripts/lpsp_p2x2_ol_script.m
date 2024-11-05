@@ -59,7 +59,7 @@ for i = 5:length(all_files)
 end
 
 %% plot
-i = 6;
+i = 8;
 alpha = unwrap(all_data(i).im.alpha);
 fr = mean(diff(all_data(i).ft.xb));
 
@@ -68,7 +68,8 @@ fr = mean(diff(all_data(i).ft.xb));
 
 figure(1); clf
 subplot(2,1,1); 
-imagesc(all_data(i).ft.xb,alpha,all_data(i).im.f)
+imagesc(all_data(i).ft.xb,alpha,all_data(i).atp.d)
+colormap(gca,[linspace(0,1,256)',zeros(256,2)])
 hold on
 scatter(all_data(i).ft.xb(xloc),alpha(yloc),'r*');
 axis tight
@@ -76,23 +77,41 @@ title(all_data(i).meta)
 
 subplot(2,1,2);
 imagesc(all_data(i).ft.xb,alpha,all_data(i).im.d)
+colormap(gca,'parula')
 hold on
 scatter(all_data(i).ft.xb(xloc),alpha(yloc),'r*');
-a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi)=nan;
-a = plot(all_data(i).ft.xb,all_data(i).im.mu+2*pi,'w'); a.YData(abs(diff(a.YData))>pi)=nan;
-a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m'); a.YData(abs(diff(a.YData))>pi)=nan;
+%a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi)=nan;
+%a = plot(all_data(i).ft.xb,all_data(i).im.mu+2*pi,'w'); a.YData(abs(diff(a.YData))>pi)=nan;
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m','linewidth',2); a.YData(abs(diff(a.YData))>pi)=nan;
 axis tight
-
+xlabel('time (s)')
 pos = get(gca,'Position');
 a3 = axes('Position',[pos(1),pos(2)+pos(4),pos(3),.03],'color','none'); 
-plot(all_data(i).ft.xb,sum(all_data(i).atp.f,1)/max(sum(all_data(i).atp.f,1)))
+plot(all_data(i).ft.xb,sum(all_data(i).atp.f,1)/max(sum(all_data(i).atp.f,1)),'r','linewidth',2)
+xticks([]); yticks([])
 
 linkaxes(get(gcf,'Children'),'x')
 axis tight
 
+fontsize(gcf,20,'pixels')
+
+    ax = get(gcf,'Children');
+    if dark_mode
+        set(gcf,'color','none','InvertHardcopy','off')
+        
+        for i = 1:length(ax)
+            if contains(class(ax(i)),'Axes')
+                ax(i).Title.Color = 'w';
+                set(ax(i),'Color','none','ycolor','w','xcolor','w')
+            else
+                ax(i).Color = 'w';
+            end
+        end
+    end
+
 %% extract mu aligned pulses
-win_start = -2;
-win_end = 15;
+win_start = -30;
+win_end = 60;
 
 c_pulses = {};
 m_pulses = {};
@@ -192,20 +211,45 @@ for i = unique(group_idx)
     
         imagesc(tmp_win,unwrap(alpha),d_pulses{tmp_ind(j)})
         hold on
-        a = plot(tmp_win,m_pulses{tmp_ind(j)},'k');  a.YData(abs(diff(a.YData))>pi) = nan;
-        a = plot(tmp_win,-c_pulses{tmp_ind(j)},'m');  a.YData(abs(diff(a.YData))>pi) = nan;
+        %a = plot(tmp_win,m_pulses{tmp_ind(j)},'k');  a.YData(abs(diff(a.YData))>pi) = nan;
+        a = plot(tmp_win,-c_pulses{tmp_ind(j)},'m','linewidth',2);  a.YData(abs(diff(a.YData))>pi) = nan;
     end
     sgtitle(group_labels{i+1})
+
+    ax = get(gcf,'Children');
+    if dark_mode
+        set(gcf,'color','none','InvertHardcopy','off')
+        
+        for i = 1:length(ax)
+            if contains(class(ax(i)),'Axes')
+                ax(i).Title.Color = 'w';
+                set(ax(i),'Color','none','ycolor','w','xcolor','w')
+            else
+                ax(i).Color = 'w';
+            end
+        end
+    end
 end
+
+
+
 %% plot sweeps
+dark_mode = true;
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
+
+
 figure(5); clf
 subplot(1,2,1); hold on
 a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
+a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'c';
 %a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
 
 
-plot([win_start,win_end],[0,0],':k')
+plot([win_start,win_end],[0,0],':','Color',c)
 scatter(-.5,0,100,'r*')
 title('experimental')
 xlabel('time post stim (s)')
@@ -215,19 +259,33 @@ set(gca,'YDir','reverse')
 
 subplot(1,2,2); hold on
 a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(~exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(~exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
+a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(~exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'c';
 %a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(~exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
-plot([win_start,win_end],[0,0],':k')
+plot([win_start,win_end],[0,0],':','Color',c)
 scatter(-.5,0,100,'r*')
 title('control')
 xlabel('time post stim (s)')
 ylabel('unwrapped bump position (rad)')
-legend('right','left','Location','Southeast')
+h = legend('right','left','Location','Southeast','Color',(1-dark_mode)*[1,1,1],'TextColor',c)
 axis tight
 set(gca,'YDir','reverse')
 
 linkaxes(get(gcf,'Children'))
 fontsize(gcf,20,'pixels')
+
+ ax = get(gcf,'Children');
+    if dark_mode
+        set(gcf,'color','none','InvertHardcopy','off')
+
+        for i = 1:length(ax)
+            if contains(class(ax(i)),'Axes')
+                ax(i).Title.Color = 'w';
+                set(ax(i),'Color','none','ycolor','w','xcolor','w')
+            else
+                ax(i).Color = 'w';
+            end
+        end
+    end
 
 %% assess changes to fluorescence
 group_idx = exp_idx + 2*right_idx + 4*overlap_idx;

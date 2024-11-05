@@ -110,7 +110,7 @@ end
 [~,~,fly_num] = unique(fly_id);
 
 %% Plot results
-dark_mode = false;
+dark_mode = true;
 group_order = {'LPsP > syt8m (CL)','LPsP > syt8m (dark)'};
 ind = dark_idx + 1;
 

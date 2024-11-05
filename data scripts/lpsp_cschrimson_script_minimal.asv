@@ -44,7 +44,7 @@ im_win = {10,10};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = length(all_data):length(all_files)
@@ -98,7 +98,7 @@ for i = length(all_data):length(all_files)
 end
 
 %% show dff with flashes
-i = 2;
+i = 46;
 r_thresh = .1;
 rho_thresh = .4;
 
@@ -123,9 +123,9 @@ tmp = all_data(i).im.z;
 %tmp_idx = sum(all_data(i).im.d,1) > 100;
 %tmp(:,tmp_idx) = nan;
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
-a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m');
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m','linewidth',2);
 a.YData(abs(diff(a.YData))>pi) = nan;
-a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w');
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2);
 a.YData(abs(diff(a.YData))>pi) = nan;
 
 linkaxes(get(gcf,'Children'),'x')
@@ -172,33 +172,47 @@ plot([1,1],ylim,':k')
 
 %xlim([-2,10])
 
-%% show movie
-i = 19;
-pause_time = 1e-2;
-
-tmp_cue = interp1(all_data(i).ft.xf,all_data(i).ft.cue,all_data(i).ft.xb);
-tmp_img = smoothdata(imgData_reg,3,'movmean',10);
-tmp_img = 256*(tmp_img - min(tmp_img,[],'all')) / (max(tmp_img,[],'all') - min(tmp_img,[],'all')); 
-
-figure(8); clf
-subplot(2,1,1)
-h(1) = image(tmp_img(:,:,1));
-subplot(2,1,2); hold on
-h(2) = plot(unwrap(all_data(i).im.alpha),all_data(i).im.z(:,1));
-h(3) = scatter(-tmp_cue(1),0,'r','filled');
-ylim([-1,5])
-
-for ii = 1:length(all_data(i).ft.xb)
-    h(1).CData = tmp_img(:,:,ii);
-    h(2).YData = all_data(i).im.z(:,ii);
-    h(3).XData = -tmp_cue(ii);
-    title(all_data(i).ft.xb(ii))
-    drawnow
-    pause(pause_time);
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).Color = 'w';
+        end
+    end
 end
 
+%% show movie
+% i = 19;
+% pause_time = 1e-2;
+% 
+% tmp_cue = interp1(all_data(i).ft.xf,all_data(i).ft.cue,all_data(i).ft.xb);
+% tmp_img = smoothdata(imgData_reg,3,'movmean',10);
+% tmp_img = 256*(tmp_img - min(tmp_img,[],'all')) / (max(tmp_img,[],'all') - min(tmp_img,[],'all')); 
+% 
+% figure(8); clf
+% subplot(2,1,1)
+% h(1) = image(tmp_img(:,:,1));
+% subplot(2,1,2); hold on
+% h(2) = plot(unwrap(all_data(i).im.alpha),all_data(i).im.z(:,1));
+% h(3) = scatter(-tmp_cue(1),0,'r','filled');
+% ylim([-1,5])
+% 
+% for ii = 1:length(all_data(i).ft.xb)
+%     h(1).CData = tmp_img(:,:,ii);
+%     h(2).YData = all_data(i).im.z(:,ii);
+%     h(3).XData = -tmp_cue(ii);
+%     title(all_data(i).ft.xb(ii))
+%     drawnow
+%     pause(pause_time);
+% end
+
 %% compare gains
-tmp_win = 20;
+tmp_win = 10;
 
 gain_vel = nan(length(all_data),60);
 gain_pos = cell(length(all_data),2);
@@ -225,7 +239,7 @@ for i = 1:length(all_data)
     dr = all_data(i).ft.r_speed;
     rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
-    for lag = 1:size(gain,2)
+    for lag = 1:size(gain_vel,2)
         tmp_dr = dr(1:end-lag);
         tmp_dm = dm(lag+1:end);
         tmp_rho= rho(lag+1:end);
@@ -235,20 +249,31 @@ for i = 1:length(all_data)
     end
 
 
-    tmp_mu = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),1:floor(all_data(i).ft.xb(end))); %interpolate mu for 1 timepoint per second
-    tmp_rs = interp1(all_data(i).ft.xf,all_data(i).ft.r_speed,1:floor(all_data(i).ft.xb(end)));
-    tmp_gain = nan(length(tmp_mu)-tmp_win,2);
-    tmp_fval = tmp_gain;
-    tmp_mov  = tmp_gain;
-    for t = 1:length(tmp_gain)
-        fun = @(x)(circ_var(circ_dist(...
-                   cumsum(tmp_rs(t:t+tmp_win))*x,tmp_mu(t:t+tmp_win))'));
+    % tmp_mu = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),1:floor(all_data(i).ft.xb(end))); %interpolate mu for 1 timepoint per second
+    % tmp_rs = interp1(all_data(i).ft.xf,all_data(i).ft.r_speed,1:floor(all_data(i).ft.xb(end)));
+    % tmp_gain = nan(length(tmp_mu)-tmp_win,2);
+    % tmp_fval = nan(length(tmp_mu)-tmp_win,1);
+    % tmp_mov  = nan(length(tmp_mu)-tmp_win,1);
+
+    tmp_t = floor(all_data(i).ft.xb(1)):ceil(all_data(i).ft.xb(end));
+    tmp1 = unwrap(all_data(i).im.mu);
+    tmp1 = interp1(all_data(i).ft.xb,tmp1,tmp_t,'linear','extrap');
+    tmp2 = cumsum(all_data(i).ft.r_speed)/60;
+    tmp2 = interp1(all_data(i).ft.xf,tmp2,tmp_t,'linear','extrap');
+    
+    for t = 1:(length(tmp_t) - tmp_win)
+        % fun = @(x)(circ_var(circ_dist(...
+        %            cumsum(tmp_rs(t:t+tmp_win))*x,tmp_mu(t:t+tmp_win))'));
+        % [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,1);
+        % tmp_mov(i) = sum(abs(tmp_rs(i:i+tmp_win)));
     % 
         
+    fun = @(x)(sum((...
+           tmp2(t:t+tmp_win)*x(1)+x(2) - tmp1(t:t+tmp_win)).^2));
     
-        %fun = @(x)(sum(cumsum(tmp_rs(i:i+tmp_win) + x(1))*x(2) - tmp_mu(i:i+tmp_win)).^2);
-        [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,1);
-        tmp_mov(i) = sum(abs(tmp_rs(i:i+tmp_win)));
+
+    [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,[1,0]);
+
         fprintf('time: %i\n',i)
     end
     gain_pos{i,1} = tmp_gain;
@@ -264,13 +289,13 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 figure(8); clf
 hold on
-c = cool(size(gain,2));
-for i = 1:size(gain,2)
-    scatter(empty_idx(first_idx)+(.5/size(gain,2))*i,gain(first_idx,i),'.','CData',c(i,:))
+c = cool(size(gain_vel,2));
+for i = 1:size(gain_vel,2)
+    scatter(empty_idx(first_idx)+(.5/size(gain_vel,2))*i,gain_vel(first_idx,i),'.','CData',c(i,:))
 end
 xlim([-1,2])
 ylim([-1,10])
-ylabel(gain)
+ylabel('gain')
 xticks([0,1]); xticklabels({'lpsp','empty'})
 
 figure(9); clf
@@ -316,11 +341,13 @@ for i = find(first_idx)'
     else
         c = 'r';
     end
-    a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c);
+    a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2);
     a.YData(abs(diff(a.YData))>pi) = nan;
-    title(all_data(i).meta)
+    title(all_data(i).meta,'Color','w')
 end
-
+if dark_mode
+set(gcf,'Color','none','InvertHardCopy','off')
+end
 figure(11); clf
 tiledlayout(ceil(sum(first_idx)/2),2)
 for i = find(first_idx)'
@@ -339,11 +366,76 @@ end
 num_fly = length(fly_names);
 
 figure(11); clf; hold on
-for i = 1:num_fly
-    plot(empty_idx(fly_idx==i) + [0,.1,.2],gain(fly_idx==i,1)','o-','Color',.8*[1,1,1])
+for i = 1:(num_fly-7)
+    plot(empty_idx(fly_idx==i) + [0,.1,.2],gain_vel(fly_idx==i,1)','o-','Color',.8*[1,1,1])
 end
 
 xlim([-1,2])
+
+%% work on a positional gain metric
+i = 1;
+figure(2); clf
+subplot(2,1,1)
+plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu))
+hold on
+plot(all_data(i).ft.xf,cumsum(all_data(i).ft.r_speed)/60)
+legend('$$\hat{\theta}$$ (bump)','$$\int\dot{\theta}$$ (int vel)','Interpreter','Latex')
+
+subplot(2,1,2)
+tmp_win = 10;
+tmp_t = floor(all_data(i).ft.xb(1)):ceil(all_data(i).ft.xb(end));
+tmp1 = unwrap(all_data(i).im.mu);
+tmp1 = interp1(all_data(i).ft.xb,tmp1,tmp_t,'linear','extrap');
+tmp2 = cumsum(all_data(i).ft.r_speed)/60;
+tmp2 = interp1(all_data(i).ft.xf,tmp2,tmp_t,'linear','extrap');
+
+tmp_gain = nan(length(tmp_t)-tmp_win,2);
+tmp_fval = nan(length(tmp_t)-tmp_win,1);
+
+hold on
+for t = 1:length(tmp_t)-tmp_win
+    fun = @(x)(sum((...
+           tmp2(t:t+tmp_win)*x(1)+x(2) - tmp1(t:t+tmp_win)).^2));
+    
+
+    [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,[1,0]);
+    %scatter(t,fun(tmp_gain(t,:)),'.','r')
+    scatter(t,tmp_gain(t,1),'.','r')
+end
+
+linkaxes(get(gcf,'Children'),'x')
+
+%% plot result
+figure(5); clf
+subplot(2,2,1)
+histogram(gain_pos{1,1}(:,1),'binwidth',.1)
+hold on
+histogram(gain_pos{2,1}(:,1),'binwidth',.1)
+title('LPsP > CsChrimson, Light Dissect','Color','w')
+xlim([-1,5])
+
+subplot(2,2,2)
+histogram(gain_pos{19,1}(:,1),'binwidth',.1)
+hold on
+histogram(gain_pos{20,1}(:,1),'binwidth',.1)
+title('Empty > CsChrimson, Light Dissect','Color','w')
+xlim([-1,5])
+
+subplot(2,2,3)
+histogram(gain_pos{46,1}(gain_pos{46,2}<20,1),'binwidth',.1)
+hold on
+histogram(gain_pos{47,1}(gain_pos{47,2}<20,1),'binwidth',.1)
+title('LPsP > CsChrimson, IR Dissect','Color','w')
+xlim([-1,5])
+
+subplot(2,2,4)
+histogram(gain_pos{25,1}(gain_pos{25,2}<20,1),'binwidth',.1)
+hold on
+histogram(gain_pos{26,1}(gain_pos{26,2}<20,1),'binwidth',.1)
+title('Empty > CsChrimson, IR Dissect','Color','w')
+set(get(gcf,'Children'),'xcolor','w','ycolor','w'
+xlim([-1,5])
+legend('pre stim','post stim')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
