@@ -1247,7 +1247,7 @@ set(gca,'Position',p)
 
 %% find common themes for moving bump pulses
 win_start = -10;
-win_end = 80;
+win_end = 10;
 
 m_pulses = {};
 a_pulses = {};
@@ -1259,7 +1259,9 @@ exp_idx  = {};
 right_idx= {};
 first_idx= {};
 
-figure(15); clf
+
+last_fly = '';
+figure(15); clf 
 counter = 0;
 for i = 1:length(all_data)
     tmp_atp = sum(all_data(i).atp.d,1);
@@ -1273,12 +1275,11 @@ for i = 1:length(all_data)
         continue
     end
 
-    if i==1 || strcmp(all_data(i).meta(1:38),all_data(i-1).meta(1:38))
+    if i==1 || ~strcmp(all_data(i).meta(1:38),last_fly)
+        last_fly = all_data(i).meta(1:38);
         first_log = true;
     end
-    if counter>200
-        a=1;
-    end
+
     for j = loc
 
         n = length(all_data(i).im.alpha);
@@ -1317,7 +1318,7 @@ group_labels = {'left con cl','left exp cl','left con dark','left exp dark',...
 figure(1); clf
 for i = unique(group_idx)
     subplot(2,4,i+1)
-    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(d_pulses(group_idx==i),[3,1,2])),3,'omitnan'))
+    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(z_pulses(group_idx==i),[3,1,2])),3,'omitnan'))
     colormap(parula)
     title(group_labels(i+1));
 end
@@ -1353,7 +1354,7 @@ end
 
 for i = unique(group_idx)
     subplot(2,4,i+1)
-    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(d_pulses_aligned(group_idx==i & overlap_idx),[3,1,2])),3,'omitnan'))
+    imagesc(tmp_win*fr + 2,1:n,mean(cell2mat(permute(z_pulses_aligned(group_idx==i & first_idx),[3,1,2])),3,'omitnan'))
     hold on
     if i<4; scatter(0,3*n/4,'r*')
     else  ;  scatter(0,n/4,'r*'); end
@@ -1363,15 +1364,25 @@ for i = unique(group_idx)
     ylabel({'zscore dff','aligned'})
 end
 
+%%
+figure(15); clf
+tmp = find(group_idx==6);
+for i = 1:length(tmp)
+subplot(5,3,i)
+imagesc(z_pulses_aligned{tmp(i)})
+end
+shg
+
 %% plot just bumps where mu is overlapped with atp
 alpha = all_data(1).im.alpha;
 [~,ind] = min(abs(tmp_win*fr));
+ind = round(ind- 2/fr):ind;
 
 atp_loc = cellfun(@(x)(find(sum(x,2,'omitnan')==max(sum(x,2,'omitnan')),1,'first')),a_pulses);
 atp_loc(atp_loc > n/2) = atp_loc(atp_loc>n/2) - n/2;
-mu_loc  = cellfun(@(x)(find(abs(mean(x(ind)-alpha)==min(abs(x(ind)-alpha)),1,'first')),m_pulses);
+mu_loc  = cellfun(@(x)(find(abs(mean(x(ind),'omitnan')-alpha)==min(abs(mean(x(ind),'omitnan')-alpha)),1,'first')),m_pulses);
 
-overlap_idx = abs(atp_loc - mu_loc) < 4;
+overlap_idx = abs(atp_loc - mu_loc) > 8;
 
 %% plot all
 vel_thresh = .2;

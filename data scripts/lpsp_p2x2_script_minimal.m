@@ -1247,7 +1247,7 @@ set(gca,'Position',p)
 
 %% find common themes for moving bump pulses
 win_start = -10;
-win_end = 10;
+win_end = 180;
 
 m_pulses = {};
 a_pulses = {};
@@ -1259,7 +1259,9 @@ exp_idx  = {};
 right_idx= {};
 first_idx= {};
 
-figure(15); clf
+
+last_fly = '';
+figure(15); clf 
 counter = 0;
 for i = 1:length(all_data)
     tmp_atp = sum(all_data(i).atp.d,1);
@@ -1269,6 +1271,8 @@ for i = 1:length(all_data)
     fr = mean(diff(all_data(i).ft.xb)); %find the new framerate (amount of time per frame)
     tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
     
+    tmp_win = tmp_win(1:1998);
+
     if numel(loc) < 2
         continue
     end
@@ -1361,6 +1365,15 @@ for i = unique(group_idx)
     title(group_labels(i+1));
     ylabel({'zscore dff','aligned'})
 end
+
+%%
+figure(15); clf
+tmp = find(group_idx==0);
+for i = 1:length(tmp)
+subplot(5,3,i)
+imagesc(z_pulses_aligned{tmp(i)})
+end
+shg
 
 %% plot just bumps where mu is overlapped with atp
 alpha = all_data(1).im.alpha;
