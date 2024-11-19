@@ -12,7 +12,7 @@ for i = 1:length(all_files)
     filename = all_files(i).name;
     fprintf('checking %s\n',filepath);
     
-    if ~(isfolder([filepath,'\registration']) || isfolder([filepath,'\registration_001'])) || isempty(dir([filepath,'\registration*\*imagingData*.mat']))
+    if ~(isfolder([filepath,'\registration']) || isfolder([filepath,'\registration_001'])) || isempty(dir([filepath,'\registration*\*imgData_smooth_reg*.mat']))
         
         mkdir([filepath,'\registration'])
             

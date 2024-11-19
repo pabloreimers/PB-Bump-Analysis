@@ -1,6 +1,6 @@
 %% start fresh
-% close all
-% clear all
+ % close all
+ % clear all
 
 %% load in data
 base_dir = ('Z:\pablo\lpsp_cschrimson\to do\curr'); %uigetdir(); %
@@ -98,15 +98,20 @@ for i = length(all_data):length(all_files)
 end
 
 %% show dff with flashes
-i = 46;
+tmp_str = '20241114\fly 7';
+trial_num = 1;
+
+tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
+i = tmp_ind(trial_num);
+%i = 19;
 r_thresh = .1;
-rho_thresh = .4;
+rho_thresh = 0;
 
 % ind1 = find(all_data(i).ft.lasing > mean(all_data(i).ft.lasing),1,'first');
 % ind2 = find(all_data(i).ft.lasing > mean(all_data(i).ft.lasing),1,'last');
 % stims = interp1(1:(ind2-ind1+1),all_data(i).ft.stims(ind1:ind2),1:length(all_data(i).ft.xf),'linear','extrap');
 %stims = interp1(1:length(all_data(i).ft.stims),stims,1:length(all_data(i).ft.xf),'linear','extrap');
-stims = all_data(i).ft.stims;
+%stims = all_data(i).ft.stims;
 
 figure(1); clf
 subplot(6,1,1); hold on
@@ -116,10 +121,11 @@ plot(all_data(i).ft.xf,all_data(i).ft.r_speed)
 legend('forward','rotation')
 
 subplot(6,1,2)
-plot(all_data(i).ft.xf,stims)
+%plot(all_data(i).ft.xf,stims)
 
 subplot(3,1,2); hold on
 tmp = all_data(i).im.z;
+%tmp = tmp ./ sum(tmp,1);
 %tmp_idx = sum(all_data(i).im.d,1) > 100;
 %tmp(:,tmp_idx) = nan;
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
@@ -130,6 +136,7 @@ a.YData(abs(diff(a.YData))>pi) = nan;
 
 linkaxes(get(gcf,'Children'),'x')
 axis tight
+colormap(parula)
 
 subplot(3,2,5) % instantaneous gain
 dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
@@ -260,6 +267,9 @@ for i = 1:length(all_data)
     tmp1 = interp1(all_data(i).ft.xb,tmp1,tmp_t,'linear','extrap');
     tmp2 = cumsum(all_data(i).ft.r_speed)/60;
     tmp2 = interp1(all_data(i).ft.xf,tmp2,tmp_t,'linear','extrap');
+
+    tmp_gain = nan(length(tmp_t)-tmp_win,2);
+    tmp_fval = nan(length(tmp_t)-tmp_win,1);
     
     for t = 1:(length(tmp_t) - tmp_win)
         % fun = @(x)(circ_var(circ_dist(...
@@ -350,12 +360,16 @@ set(gcf,'Color','none','InvertHardCopy','off')
 end
 figure(11); clf
 tiledlayout(ceil(sum(first_idx)/2),2)
-for i = find(first_idx)'
+
+[fly_names,~,fly_idx] = unique(cellfun(@(x)(x(1:50)),{all_data.meta},'UniformOutput',false));
+num_fly = length(fly_names);
+
+for i = 1:num_fly
     nexttile
-    histogram(gain_pos{i,1}(gain_pos{i,2} < median(gain_pos{i,2})),'binwidth',.1)
-    hold on
-    histogram(gain_pos{i+1,1}(gain_pos{i+1,2} < median(gain_pos{i+1,2})),'binwidth',.1)
-    histogram(gain_pos{i+2,1}(gain_pos{i+2,2} < median(gain_pos{i+2,2})),'binwidth',.1)
+    for j = find(fly_idx == i)'
+        histogram(gain_pos{j,1}(gain_pos{j,2} < median(gain_pos{j,2})),'binwidth',.1)
+        hold on
+    end
     plot([1,1],ylim,':k')
     xlim([-1,5])    
     title(all_data(i).meta)
@@ -366,14 +380,26 @@ end
 num_fly = length(fly_names);
 
 figure(11); clf; hold on
-for i = 1:(num_fly-7)
-    plot(empty_idx(fly_idx==i) + [0,.1,.2],gain_vel(fly_idx==i,1)','o-','Color',.8*[1,1,1])
+for i = 1:(num_fly)
+    plot(empty_idx(fly_idx==i) + .1*(1:sum(fly_idx==i)),gain_vel(fly_idx==i,1)','o-','Color',.8*[1,1,1])
 end
-
 xlim([-1,2])
+    
+plot(empty_idx(fly_idx==i) + .1*(1:sum(fly_idx==i)),gain_vel(fly_idx==i,1)','o-','Color',.8*[1,0,0])
 
+
+figure(12); clf
+rows = ceil(num_fly/2);
+rows = 2;
+for i = num_fly-3:(num_fly)
+    subplot(rows,2,i-(num_fly-3)+1)
+    hold on
+    for j = find(fly_idx==i)'
+        histogram(gain_pos{j}(gain_pos{j}(:,2)<median(gain_pos{j}(:,2)),1),'binwidth',.1)
+    end
+end
 %% work on a positional gain metric
-i = 1;
+i = 91;
 figure(2); clf
 subplot(2,1,1)
 plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu))
@@ -433,9 +459,47 @@ histogram(gain_pos{25,1}(gain_pos{25,2}<20,1),'binwidth',.1)
 hold on
 histogram(gain_pos{26,1}(gain_pos{26,2}<20,1),'binwidth',.1)
 title('Empty > CsChrimson, IR Dissect','Color','w')
-set(get(gcf,'Children'),'xcolor','w','ycolor','w'
+set(get(gcf,'Children'),'xcolor','w','ycolor','w','color','none')
 xlim([-1,5])
-legend('pre stim','post stim')
+legend('pre stim','post stim','TextColor','w')
+
+%% show individual movie
+i = 4;
+pause_time = 1e-1;
+
+%load([all_files(i).folder,'\',all_files(i).name])
+
+tmp_img = imgData_smooth_reg; %smoothdata(imgData_reg,3,'movmean',20);
+b1 = min(tmp_img,[],'all');
+b2 = prctile(tmp_img(:),99.99); %max(tmp_img,[],'all');
+tmp_img = 256*(tmp_img - b1) ./ (b2 - b1);
+% 
+% tmp_img2 = imgData_reg; %smoothdata(imgData_reg,3,'movmean',20);
+% b1 = min(tmp_img2,[],'all');
+% b2 = prctile(tmp_img2(:),99.99); %max(tmp_img,[],'all');
+% tmp_img2 = 256*(tmp_img2 - b1) ./ (b2 - b1);
+
+
+
+stims = interp1(all_data(i).ft.xf,all_data(i).ft.stims,all_data(i).ft.xb);
+tmp_cue = interp1(all_data(i).ft.xf,-all_data(i).ft.cue,all_data(i).ft.xb, 'linear','extrap');
+
+figure(13); clf
+subplot(2,2,1); h1 = image(tmp_img(:,:,1)); axis equal tight
+subplot(2,2,2); h2 = image(tmp_img2(:,:,1)); axis equal tight
+subplot(2,2,3); h3 = plot(unwrap(all_data(i).im.alpha),all_data(i).im.z(:,1));ylim([-1,5]);
+hold on;        h4 = scatter(0,0,'m','filled');
+                h5 = scatter(-pi,0,'r');
+for f = 1:size(tmp_img,3)
+    h1.CData = tmp_img(:,:,f);
+    h2.CData = tmp_img2(:,:,f);
+    h3.YData = all_data(i).im.z(:,f);
+    h4.XData = tmp_cue(f);
+    h5.YData = stims(f);
+    xlabel(all_data(i).ft.xb(f))
+    pause(pause_time)
+end
+
 %% Functions
 
 function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)

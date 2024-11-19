@@ -55,7 +55,7 @@ imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min
 %imgData     = movmean(imgData,mov_smooth,3);
 
 imgData2 = imgData;
-top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
+top_int = prctile(imgData2,90,'all');                                    %clip the extremes and renormalize for viewing
 bot_int = prctile(imgData2,5,'all');
 imgData2 = max(min(imgData2,top_int),bot_int) - bot_int;
 imgData2 = 256*imgData2/max(imgData2,[],'all');
