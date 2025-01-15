@@ -1,5 +1,5 @@
 
-vid_name = 'example_EPG_GRAB(DA2m).avi';
+vid_name = 'example_LPsP_syt7f.avi';
 base_dir = 'Z:\pablo\lpsp_cl\to analyze\to do\20221212\20221212-1_EPG_GRAB(DA2m)_cl\';
 %base_dir = 'Z:\pablo\lpsp_cl_redo\20240305\fly 1\20240305-1_epg_syt8m\';
 %base_dir = 'Z:\pablo\lpsp_cl\to analyze\to do\20221208\20221208-1_LPsP_syt7f_cl\';

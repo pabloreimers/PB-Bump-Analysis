@@ -373,6 +373,10 @@ end
 opt_lag = nan(length(all_data),1);
 opt_cc  = nan(length(all_data),1);
 
+vel_thresh = .2;
+bump_thresh = 10;
+rho_thresh = .2;
+
 for i = 1:length(all_data)
     xf = all_data(i).ft.xf;
     xb = linspace(min(xf),max(xf),size(all_data(i).im.mu,1));

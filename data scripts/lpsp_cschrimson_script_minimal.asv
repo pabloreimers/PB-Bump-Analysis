@@ -14,15 +14,7 @@ for i = 1:length(all_files)
     if ~isfile([fileparts(all_files(i).folder),'\mask_smooth_reg.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
         
-        if exist('img','var')
-            regProduct = img{2};
-        end
-        
-        if exist('regProduct','var')
-            imgData = squeeze(sum(regProduct,3));
-        else
-            imgData = imgData_smooth_reg;
-        end
+        imgData = imgData_smooth_reg;
 
         top_pct = prctile(imgData,98,'all');
         bot_pct = prctile(imgData,5,'all');
@@ -44,11 +36,11 @@ im_win = {10,10};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = length(all_data):length(all_files)
-    clear img regProduct 
+for i = 159
+    clear img regProduct imgData_reg
 
     try
     tmp = strsplit(all_files(i).folder,'\');
@@ -64,15 +56,7 @@ for i = length(all_data):length(all_files)
     % vid  = read(vidObj);
 
     
-    if exist('img','var')
-        regProduct = img{1};
-    end
-
-    if exist('regProduct','var')
-        imgData = squeeze(sum(regProduct,3));
-    else
-        imgData = imgData_smooth_reg;
-    end
+    imgData = imgData_smooth_reg;
 
     all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
     all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
@@ -97,9 +81,93 @@ for i = length(all_data):length(all_files)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
+%% compare gains
+tmp_win = 10;
+fr = 1;
+r_thresh = .1;
+rho_thresh = 0;
+
+gain_vel = nan(length(all_data),60);
+gain_pos = cell(length(all_data),2);
+first_idx = false(length(all_data),1);
+dangle_idx= false(length(all_data),1);
+
+last_str = 'blank';
+
+for i = 1:length(all_data)
+
+    tmp_str = all_data(i).meta(1:50);
+    
+    if ~strcmp(tmp_str,last_str) && circ_var(circ_dist(cumsum(all_data(i).ft.r_speed)/60*.8,-unwrap(all_data(i).ft.cue))) < .5
+        first_idx(i) = true;
+        last_str = tmp_str;
+    end
+
+    if  circ_var(circ_dist(cumsum(all_data(i).ft.r_speed)/60*.8,-unwrap(all_data(i).ft.cue))) > .5
+        dangle_idx(i) = true;
+    end
+
+    dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
+    dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
+    dr = all_data(i).ft.r_speed;
+    rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+
+    for lag = 1:size(gain_vel,2)
+        tmp_dr = dr(1:end-lag);
+        tmp_dm = dm(lag+1:end);
+        tmp_rho= rho(lag+1:end);
+        idx = abs(tmp_dr) > r_thresh &  tmp_rho > rho_thresh & ~isnan(tmp_dm);
+        
+        gain_vel(i,lag) = tmp_dr(idx) \ tmp_dm(idx);
+    end
+
+
+    % tmp_mu = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),1:floor(all_data(i).ft.xb(end))); %interpolate mu for 1 timepoint per second
+    % tmp_rs = interp1(all_data(i).ft.xf,all_data(i).ft.r_speed,1:floor(all_data(i).ft.xb(end)));
+    % tmp_gain = nan(length(tmp_mu)-tmp_win,2);
+    % tmp_fval = nan(length(tmp_mu)-tmp_win,1);
+    % tmp_mov  = nan(length(tmp_mu)-tmp_win,1);
+
+    tmp_t = floor(all_data(i).ft.xb(1)):fr:ceil(all_data(i).ft.xb(end));
+    tmp1 = unwrap(all_data(i).im.mu);
+    tmp1 = interp1(all_data(i).ft.xb,tmp1,tmp_t,'linear','extrap');
+    tmp2 = cumsum(all_data(i).ft.r_speed)/60;
+    tmp2 = interp1(all_data(i).ft.xf,tmp2,tmp_t,'linear','extrap');
+
+    tmp_gain = nan(length(tmp_t)-tmp_win,2);
+    tmp_fval = nan(length(tmp_t)-tmp_win,1);
+    tmp_dist = nan(length(tmp_t)-tmp_win,1);
+    
+    for t = 1:(length(tmp_t) - tmp_win/fr)
+        % fun = @(x)(circ_var(circ_dist(...
+        %            cumsum(tmp_rs(t:t+tmp_win))*x,tmp_mu(t:t+tmp_win))'));
+        % [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,1);
+        % tmp_mov(i) = sum(abs(tmp_rs(i:i+tmp_win)));
+    % 
+        
+    fun = @(x)(sum((...
+           tmp2(t:t+(tmp_win/fr))*x(1)+x(2) - tmp1(t:t+(tmp_win/fr))).^2));
+    
+
+    [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,[1,0]);
+    tmp_dist(t) = sum(abs(diff(tmp2(t:t+tmp_win))));
+        
+    end
+    fprintf('fly: %i\n',i)
+    all_data(i).gain.g = tmp_gain(:,1);
+    all_data(i).gain.b = tmp_gain(:,2);
+    all_data(i).gain.f = tmp_fval;
+    all_data(i).gain.d = tmp_dist;
+
+    i / length(all_data)
+end
+
+empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
+
+
 %% show dff with flashes
-tmp_str = '20241114\fly 7';
-trial_num = 1;
+tmp_str = '20250110\fly 3';
+trial_num = 5;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);
@@ -111,7 +179,7 @@ rho_thresh = 0;
 % ind2 = find(all_data(i).ft.lasing > mean(all_data(i).ft.lasing),1,'last');
 % stims = interp1(1:(ind2-ind1+1),all_data(i).ft.stims(ind1:ind2),1:length(all_data(i).ft.xf),'linear','extrap');
 %stims = interp1(1:length(all_data(i).ft.stims),stims,1:length(all_data(i).ft.xf),'linear','extrap');
-%stims = all_data(i).ft.stims;
+stims = all_data(i).ft.stims/10;
 
 figure(1); clf
 subplot(6,1,1); hold on
@@ -121,7 +189,13 @@ plot(all_data(i).ft.xf,all_data(i).ft.r_speed)
 legend('forward','rotation')
 
 subplot(6,1,2)
-%plot(all_data(i).ft.xf,stims)
+plot(all_data(i).ft.xf,stims)
+hold on
+tmp_gain = all_data(i).gain.g;
+%tmp_gain(all_data(i).gain.d < 2) = nan;
+scatter(1:length(tmp_gain),tmp_gain,'.')
+plot(xlim,[.8,.8],':','Color',dark_mode*[1,1,1])
+ylim([-5,10])
 
 subplot(3,1,2); hold on
 tmp = all_data(i).im.z;
@@ -141,8 +215,9 @@ colormap(parula)
 subplot(3,2,5) % instantaneous gain
 dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
 dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
+m  = interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf);
 idx = abs(all_data(i).ft.r_speed) > r_thresh & interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf) > rho_thresh & ~isnan(dm);
-scatter(all_data(i).ft.r_speed(idx),dm(idx),'filled','MarkerFaceAlpha',.1)
+scatter(all_data(i).ft.r_speed(idx),dm(idx),10,m(idx),'filled','MarkerFaceAlpha',.2)
 axis tight
 hold on
 gl = all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed>0) \ dm(idx & all_data(i).ft.r_speed>0);
@@ -150,7 +225,7 @@ gr = all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed<0) \ dm(idx & all_data(
 x = xlim;
 plot([0,x(2)],gl*[0,x(2)],'r','linewidth',2)
 plot([x(1),0],gr*[x(1),0],'g','linewidth',2)
-text(xlim,ylim,sprintf('gain L: %.2f\n gain R: %.2f',gl,gr))
+text(xlim,ylim,sprintf('gain L: %.2f\n gain R: %.2f',gl,gr),'Color',(dark_mode)*[1,1,1])
 
 subplot(3,2,6) % positional gain
 tmp_win = 20;
@@ -159,11 +234,12 @@ tmp_rs = interp1(all_data(i).ft.xf,all_data(i).ft.r_speed,1:floor(all_data(i).ft
 tmp_gain = nan(length(tmp_mu)-tmp_win,2);
 tmp_fval = tmp_gain;
 tmp_mov  = tmp_gain;
+j = i;
 for i = 1:length(tmp_gain)
     fun = @(x)(circ_var(circ_dist(...
                cumsum(tmp_rs(i:i+tmp_win))*x,tmp_mu(i:i+tmp_win))'));
 % 
-    
+
 
     %fun = @(x)(sum(cumsum(tmp_rs(i:i+tmp_win) + x(1))*x(2) - tmp_mu(i:i+tmp_win)).^2);
     [tmp_gain(i,:),tmp_fval(i)] = fminsearch(fun,1);
@@ -171,7 +247,10 @@ for i = 1:length(tmp_gain)
     fprintf('time: %i\n',i)
 end
 tmp_gain(tmp_fval>prctile(tmp_fval,50)) = nan;
-h = histogram(tmp_gain,'binwidth',.1);
+tmp_gain2 = all_data(j).gain.g;
+tmp_gain2(all_data(j).gain.f > median(all_data(j).gain.f)) = nan;
+h = histogram(tmp_gain(:,1),'binwidth',.1);
+hold on; histogram(tmp_gain2,'binwidth',.1);
 
 %scatter(tmp_fval,tmp_gain)
 hold on
@@ -218,81 +297,6 @@ end
 %     pause(pause_time);
 % end
 
-%% compare gains
-tmp_win = 10;
-
-gain_vel = nan(length(all_data),60);
-gain_pos = cell(length(all_data),2);
-first_idx = false(length(all_data),1);
-dangle_idx= false(length(all_data),1);
-
-last_str = 'blank';
-
-for i = 1:length(all_data)
-
-    tmp_str = all_data(i).meta(1:50);
-    
-    if ~strcmp(tmp_str,last_str) && circ_var(circ_dist(cumsum(all_data(i).ft.r_speed)/60*.8,-unwrap(all_data(i).ft.cue))) < .5
-        first_idx(i) = true;
-        last_str = tmp_str;
-    end
-
-    if  circ_var(circ_dist(cumsum(all_data(i).ft.r_speed)/60*.8,-unwrap(all_data(i).ft.cue))) > .5
-        dangle_idx(i) = true;
-    end
-
-    dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
-    dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
-    dr = all_data(i).ft.r_speed;
-    rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
-
-    for lag = 1:size(gain_vel,2)
-        tmp_dr = dr(1:end-lag);
-        tmp_dm = dm(lag+1:end);
-        tmp_rho= rho(lag+1:end);
-        idx = abs(tmp_dr) > r_thresh &  tmp_rho > rho_thresh & ~isnan(tmp_dm);
-        
-        gain_vel(i,lag) = tmp_dr(idx) \ tmp_dm(idx);
-    end
-
-
-    % tmp_mu = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),1:floor(all_data(i).ft.xb(end))); %interpolate mu for 1 timepoint per second
-    % tmp_rs = interp1(all_data(i).ft.xf,all_data(i).ft.r_speed,1:floor(all_data(i).ft.xb(end)));
-    % tmp_gain = nan(length(tmp_mu)-tmp_win,2);
-    % tmp_fval = nan(length(tmp_mu)-tmp_win,1);
-    % tmp_mov  = nan(length(tmp_mu)-tmp_win,1);
-
-    tmp_t = floor(all_data(i).ft.xb(1)):ceil(all_data(i).ft.xb(end));
-    tmp1 = unwrap(all_data(i).im.mu);
-    tmp1 = interp1(all_data(i).ft.xb,tmp1,tmp_t,'linear','extrap');
-    tmp2 = cumsum(all_data(i).ft.r_speed)/60;
-    tmp2 = interp1(all_data(i).ft.xf,tmp2,tmp_t,'linear','extrap');
-
-    tmp_gain = nan(length(tmp_t)-tmp_win,2);
-    tmp_fval = nan(length(tmp_t)-tmp_win,1);
-    
-    for t = 1:(length(tmp_t) - tmp_win)
-        % fun = @(x)(circ_var(circ_dist(...
-        %            cumsum(tmp_rs(t:t+tmp_win))*x,tmp_mu(t:t+tmp_win))'));
-        % [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,1);
-        % tmp_mov(i) = sum(abs(tmp_rs(i:i+tmp_win)));
-    % 
-        
-    fun = @(x)(sum((...
-           tmp2(t:t+tmp_win)*x(1)+x(2) - tmp1(t:t+tmp_win)).^2));
-    
-
-    [tmp_gain(t,:),tmp_fval(t)] = fminsearch(fun,[1,0]);
-
-        fprintf('time: %i\n',i)
-    end
-    gain_pos{i,1} = tmp_gain;
-    gain_pos{i,2} = tmp_fval;
-
-    i / length(all_data)
-end
-
-empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 %%
 %first_idx = second_idx;
@@ -316,7 +320,7 @@ tiledlayout(rows, cols)
 lag = 20;
 for i = find(first_idx)'
     
-    dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
+    dc = gradient(unwrap(all_data(i).ft.cue))  * 60;
     dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
     dr = all_data(i).ft.r_speed;
     rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
@@ -464,7 +468,7 @@ xlim([-1,5])
 legend('pre stim','post stim','TextColor','w')
 
 %% show individual movie
-i = 4;
+i = 16;
 pause_time = 1e-1;
 
 %load([all_files(i).folder,'\',all_files(i).name])
@@ -474,10 +478,10 @@ b1 = min(tmp_img,[],'all');
 b2 = prctile(tmp_img(:),99.99); %max(tmp_img,[],'all');
 tmp_img = 256*(tmp_img - b1) ./ (b2 - b1);
 % 
-% tmp_img2 = imgData_reg; %smoothdata(imgData_reg,3,'movmean',20);
-% b1 = min(tmp_img2,[],'all');
-% b2 = prctile(tmp_img2(:),99.99); %max(tmp_img,[],'all');
-% tmp_img2 = 256*(tmp_img2 - b1) ./ (b2 - b1);
+tmp_img2 = smoothdata(imgData_reg,3,'movmean',5);
+b1 = min(tmp_img2,[],'all');
+b2 = prctile(tmp_img2(:),99.99); %max(tmp_img,[],'all');
+tmp_img2 = 256*(tmp_img2 - b1) ./ (b2 - b1);
 
 
 
@@ -490,7 +494,7 @@ subplot(2,2,2); h2 = image(tmp_img2(:,:,1)); axis equal tight
 subplot(2,2,3); h3 = plot(unwrap(all_data(i).im.alpha),all_data(i).im.z(:,1));ylim([-1,5]);
 hold on;        h4 = scatter(0,0,'m','filled');
                 h5 = scatter(-pi,0,'r');
-for f = 1:size(tmp_img,3)
+for f = 900:size(tmp_img,3)
     h1.CData = tmp_img(:,:,f);
     h2.CData = tmp_img2(:,:,f);
     h3.YData = all_data(i).im.z(:,f);
