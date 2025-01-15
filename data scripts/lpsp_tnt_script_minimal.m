@@ -166,28 +166,38 @@ for i = unique(ind)'
 end
 
 %% compare correlation coefficients and gains
+dark_mode = false;
+
 group_order = {'empty (CL)','LPsP (CL)','empty (dark)','LPsP (dark)'};
 ind = 2*dark_idx + lpsp_idx + 1;
 figure(5); clf
 
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
+
 subplot(2,2,1)
-scatter(ind, cc,'w'); hold on
+scatter(ind, cc,c); hold on
 m = accumarray(ind,cc,[],@mean);
 s = accumarray(ind,cc,[],@(x)(std(x)/sqrt(length(x))));
 errorbar(unique(ind)+.1,m,s,'ro')
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
-set(gca,'color','none','ycolor','w','xcolor','w')
+set(gca,'color','none','ycolor',c,'xcolor',c)
+ylim([-.1,1.2])
 
 subplot(2,2,2)
-scatter(ind, gains,'w'); hold on
+scatter(ind, gains,c); hold on
 m = accumarray(ind,gains,[],@mean);
 s = accumarray(ind,gains,[],@(x)(std(x)/sqrt(length(x))));
 errorbar(unique(ind)+.1,m,s,'ro')
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Gain', '(fly vs bump vel)'})
-set(gca,'color','none','ycolor','w','xcolor','w')
-set(gcf,'color','none','InvertHardCopy','Off')
+set(gca,'color','none','ycolor',c,'xcolor',c)
+ylim([-.1,1.2])
+if dark_mode; set(gcf,'color','none','InvertHardCopy','Off'); end
 %% test significance (bootstrap to ask about a mean difference, we don't know how variances compare)
 N = 1e4;
 lpsp_cl  = mean(resample_pablo(N,cc(~dark_idx & lpsp_idx)),1);
@@ -204,14 +214,14 @@ a = swarmchart(ones(N,4) .* [1:4],[...
      lpsp_cl', ...
      empty_dark', ...
      lpsp_dark'], ...
-     'w.','CData',[1,1,1]);%[0 0.4470 0.7410]);
+     '.','CData',dark_mode*[1,1,1]);%[0 0.4470 0.7410]);
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Correlation Coefficient (R)', 'Resampled Means'})
 hold on
 y = ylim;
-plot([1,2],[y(2),y(2)],'w'); text(1.5,y(2),sprintf('p = %.3f',p_cl),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
-plot([3,4],[y(2),y(2)],'w'); text(3.5,y(2),sprintf('p = %.3f',p_dark),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
-set(gca,'color','none','ycolor','w','xcolor','w')
+plot([1,2],[y(2),y(2)],c); text(1.5,y(2),sprintf('p = %.3f',p_cl),'HorizontalAlignment','center','VerticalAlignment','bottom','color',c)
+plot([3,4],[y(2),y(2)],c); text(3.5,y(2),sprintf('p = %.3f',p_dark),'HorizontalAlignment','center','VerticalAlignment','bottom','color',c)
+set(gca,'color','none','ycolor',c,'xcolor',c)
 
 lpsp_cl  = mean(resample_pablo(N,gains(~dark_idx & lpsp_idx)),1);
 empty_cl = mean(resample_pablo(N,gains(~dark_idx & ~lpsp_idx)),1);
@@ -227,14 +237,14 @@ a = swarmchart(ones(N,4) .* [1:4],[...
      lpsp_cl', ...
      empty_dark', ...
      lpsp_dark'], ...
-     '.','CData',[1,1,1]);%[0 0.4470 0.7410]);
+     '.','CData',dark_mode*[1,1,1]);%[0 0.4470 0.7410]);
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Gain', 'Resampled Means'})
 hold on
 y = ylim;
-plot([1,2],[y(2),y(2)],'w'); text(1.5,y(2),sprintf('p = %.3f',p_cl),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
-plot([3,4],[y(2),y(2)],'w'); text(3.5,y(2),sprintf('p = %.3f',p_dark),'HorizontalAlignment','center','VerticalAlignment','bottom','color','w')
-set(gca,'color','none','ycolor','w','xcolor','w')
+plot([1,2],[y(2),y(2)],c); text(1.5,y(2),sprintf('p = %.3f',p_cl),'HorizontalAlignment','center','VerticalAlignment','bottom','color',c)
+plot([3,4],[y(2),y(2)],c); text(3.5,y(2),sprintf('p = %.3f',p_dark),'HorizontalAlignment','center','VerticalAlignment','bottom','color',c)
+set(gca,'color','none','ycolor',c,'xcolor',c)
 fontsize(gcf,20,'pixels')
 %% check the interleaving
 c = [min(hsv(2)+.6,1);...

@@ -68,6 +68,7 @@ r_R2 = nan(length(all_data),1);
 f_R2 = nan(length(all_data),1);
 j_R2 = nan(length(all_data),1);
 vel_corr = nan(length(all_data),1);
+vel_gain = nan(length(all_data),1);
 fly_id = cell(length(all_data),1);
 
 
@@ -104,11 +105,170 @@ for i = 1:length(all_data)
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
     vel_corr(i)    = corr(fly_vel(idx),bump_vel(idx));
+    vel_gain(i)    = fly_vel(idx) \ bump_vel(idx);
 
     end
 end
 
 [~,~,fly_num] = unique(fly_id);
+
+
+for i = 1:length(all_data)
+all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.d));
+end
+
+%% plot example fly
+
+i = 79;
+dark_mode = true;
+rho_thresh = .1;
+
+
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
+
+
+figure(8); clf
+subplot(4,1,1)
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'Color',c,'linewidth',2);
+a.YData(abs(diff(a.YData))>pi) = nan;
+yticks([-pi,0,pi])
+yticklabels({'\-pi',0,'\pi'})
+yticklabels({'-\pi',0,'\pi'})
+ylim([-pi,pi])
+set(gca,'Ydir','reverse')
+title(all_data(i).meta,'Color',c)
+xticks([])
+ylabel('heading')
+
+subplot(4,1,2:3)
+tmp = all_data(i).im.d;
+tmp(:,sum(tmp,1)>10) = nan;
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
+xticks([])
+ylabel('\DeltaF/F')
+
+subplot(4,1,4)
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',c,'linewidth',2);
+a.YData(abs(diff(a.YData))>pi) = nan;
+a.YData(all_data(i).im.rho<rho_thresh) = nan;
+yticks([-pi,0,pi])
+yticklabels({'\-pi',0,'\pi'})
+yticklabels({'-\pi',0,'\pi'})
+ylim([-pi,pi])
+set(gca,'Ydir','reverse')
+ylabel('pva')
+
+linkaxes(get(gcf,'Children'),'x')
+axis tight
+ylim([-pi,pi])
+
+fontsize(gcf,40,'pixels')
+set(get(gcf,'Children'),'YColor',c,'XColor',c,'color','none')
+if dark_mode
+    set(gcf,'Color','none','InvertHardcopy','off');
+else
+    set(gcf,'Color','w');
+end
+
+%% show movie of lag effect
+i = 84;
+figure(3); clf
+ax(1) = gca;
+vel_min = 0.1;
+vel_max = 10;
+rho_min = .2;
+max_lag = 60;
+movie_flag = true;
+
+ax(2) = axes('Position',[.7,.7,.2,.2]); hold on
+ax(3) = axes('Position',[.7,.2,.2,.2]); hold on
+
+gain_vec = nan(max_lag,1);
+corr_vec = nan(max_lag,1);
+for lag = 1:max_lag %go through everything and find the gain
+    fly_vel  = all_data(i).ft.r_speed;
+    bump_vel = gradient(all_data(i).im.mu) ./ gradient(all_data(i).ft.xb)';
+    bump_vel = interp1(all_data(i).ft.xb,bump_vel,all_data(i).ft.xf);
+    tmp_rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+    
+    fly_vel = fly_vel(1:end-lag);
+    bump_vel = bump_vel(1+lag:end);
+    tmp_rho = tmp_rho(1+lag:end);
+    
+    idx = abs(fly_vel) > vel_min & abs(fly_vel) < vel_max & tmp_rho > rho_min & abs(bump_vel)< vel_max;
+
+    gain_vec(lag) =  fly_vel(idx) \ bump_vel(idx);
+    tmp =  corrcoef(fly_vel(idx),bump_vel(idx));
+    corr_vec(lag) = tmp(1,2);
+end
+
+xlim(ax(2),[0,max_lag*mean(diff(all_data(i).ft.xf))]*1000)
+h(1) = scatter(ax(2),(1:max_lag)*mean(diff(all_data(i).ft.xf)*1000),gain_vec,'filled','MarkerFaceColor',[.5,.5,.5]);
+h(2) = scatter(ax(2),nan,nan,'filled','MarkerFaceColor',cmap(1,:));
+xlabel(ax(2),'lag (ms)')
+ylabel(ax(2),'gain')
+
+xlim(ax(3),[0,max_lag*mean(diff(all_data(i).ft.xf))]*1000)
+h(3) = scatter(ax(3),(1:max_lag)*mean(diff(all_data(i).ft.xf)*1000),corr_vec,'filled','MarkerFaceColor',[.5,.5,.5]);
+h(4) = scatter(ax(3),nan,nan,'filled','MarkerFaceColor',cmap(1,:));
+xlabel(ax(3),'lag(ms)')
+ylabel(ax(3),'correlation coefficient')
+
+if movie_flag
+writerObj = VideoWriter("example_movies\lag_effect.avi");
+writerObj.FrameRate = 30;
+open(writerObj);
+
+for lag = [(1:max_lag),(max_lag:-1:1)] %go through everything and plot
+fly_vel  = all_data(i).ft.r_speed;
+bump_vel = gradient(all_data(i).im.mu) ./ gradient(all_data(i).ft.xb)';
+bump_vel = interp1(all_data(i).ft.xb,bump_vel,all_data(i).ft.xf);
+tmp_rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+
+fly_vel = fly_vel(1:end-lag);
+bump_vel = bump_vel(1+lag:end);
+tmp_rho = tmp_rho(1+lag:end);
+
+idx = abs(fly_vel) > vel_min & abs(fly_vel) < vel_max & tmp_rho > rho_min & abs(bump_vel)< vel_max;
+
+cla(ax(1));
+scatter(ax(1),fly_vel(idx),bump_vel(idx),20,'filled','MarkerFaceAlpha',.5,'MarkerFaceColor','w')
+hold(ax(1),'on')
+plot(ax(1),[-3,3],gain_vec(lag)*[-3,3],'r','linewidth',2)
+xlabel(ax(1),'fly vel (rad/s)'); ylabel(ax(1),'bump vel (rad/s)')
+ylim(ax(1),[-5,5])
+
+h(2).XData = lag*mean(diff(all_data(i).ft.xf))*1000;
+h(2).YData = fly_vel(idx) \ bump_vel(idx);
+h(2).MarkerFaceColor = [1,0,0];
+
+h(4).XData = lag*mean(diff(all_data(i).ft.xf))*1000;
+tmp =  corrcoef(fly_vel(idx),bump_vel(idx));
+h(4).YData = tmp(1,2);
+h(4).MarkerFaceColor = [1,0,0];
+
+
+fontsize(ax(1),40,'pixels')
+fontsize(ax(2),20,'pixels')
+fontsize(ax(3),20,'pixels')
+set(get(gcf,'Children'),'YColor',c,'XColor',c,'color','none')
+if dark_mode
+    set(get(gcf,'Children'),'Color','none')
+    set(gcf,'InvertHardcopy','off');
+else
+    set(gcf,'Color','w');
+end
+
+frame=  getframe(gcf);
+writeVideo(writerObj, frame);
+
+end
+close(writerObj)
+end
 
 %% Plot results
 group_order = {'EPG > GRAB(DA2m) (CL)','EPG > GRAB(DA2m) (dark)','LPsP > syt7f (CL)','LPsP > syt7f (dark)'};
@@ -136,19 +296,49 @@ fontsize(gcf,20,'pixels')
 
 figure(2)
 subplot(2,2,1);
-scatter(ind,vel_corr);
+scatter(ind,vel_gain);
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
 hold on; plot(xlim,[0,0],'k:')
 
 subplot(2,2,2)
-scatter(ind,r_corr); hold on
-scatter(ind+.1,f_corr)
+scatter(ind,r_R2); hold on
+scatter(ind+.1,f_R2)
 
 
 subplot(2,1,2)
 scatter(fly_num,vel_corr,[],c(ind,:))
 
+%%
+dark_mode = true;
+
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
+
+
+figure(4); clf
+subplot(1,2,1)
+scatter(ind,vel_gain,'MarkerEdgeColor',c,'linewidth',2);
+xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
+ylabel({'Gain', '(fly vs bump vel)'})
+hold on; plot(xlim,[0,0],':','Color',c)
+
+subplot(1,2,2)
+scatter(ind,vel_corr,'MarkerEdgeColor',c,'linewidth',2);
+xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
+ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
+hold on; plot(xlim,[0,0],':','Color',c)
+
+fontsize(gcf,20,'pixels')
+set(get(gcf,'Children'),'YColor',c,'XColor',c,'color','none')
+if dark_mode
+    set(gcf,'Color','none','InvertHardcopy','off');
+else
+    set(gcf,'Color','w');
+end
 
 %% Functions
 

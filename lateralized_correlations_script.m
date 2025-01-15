@@ -1,13 +1,21 @@
 %% load in data
+clear all
 [filename,filepath] = uigetfile('.mat','Select Imaging Data');
 [filename2,filepath2] = uigetfile(filepath,'Select FicTrac Data');
 load([filepath,'\',filename])
 load([filepath2,'\',filename2])
 
 %% Process and find correlations
-imgData = squeeze(sum(regProduct,3));
+clearvars imgData
+if exist('regProduct','var')
+    imgData = squeeze(sum(regProduct,3));
+elseif exist('img','var')
+    imgData = squeeze(sum(img{1},3));
+else
+    imgData = imgData_reg;
+end
 
-velYaw = smoothdata(ftData.yawSpeed{:},1,'gaussian',30);
+velYaw = smoothdata(ftData_DAQ.velYaw{:},1,'gaussian',30);
 %velYaw = smoothdata(ftData_DAQ.velYaw{:},1,'gaussian',30);
 
 xf = linspace(0,10,size(velYaw,1));
@@ -20,7 +28,7 @@ right_rho = reshape(corr(all_pix',max(velYaw,0)),size(imgData,1),size(imgData,2)
 left_rho = reshape(corr(all_pix',max(-velYaw,0)),size(imgData,1),size(imgData,2));
 
 %% Plot 
-im_gain = 30;
+im_gain = 20;
 tot_rho = (right_rho .* reshape([1,.5,0],1,1,3) * im_gain) + ...
           (left_rho .* reshape([0,.5,1],1,1,3) * im_gain);
 
@@ -48,5 +56,6 @@ barh([sum(velYaw<0),sum(velYaw>0)]/60)
 xlabel('time','color','w'); yticklabels({'left turns','right turns'})
 set(gca,'color','none','ycolor','w','xcolor','w')
 
-set(gcf,'color','none')
+set(gcf,'color','none','InvertHardCopy','off')
 annotation(gcf,'textbox',[.4,.4,.1,.1],'String',filepath,'color','w')
+fontsize(gcf,20,'pixels')

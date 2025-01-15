@@ -48,6 +48,8 @@ for i = 1:length(all_files)
 end
 
 %% plot all
+dark_mode = false;
+
 vel_thresh = .2;
 bump_thresh = 10;
 rho_thresh = .2;
@@ -85,6 +87,11 @@ rows = ceil(sum(ind==i)/cols);
 t{i} = tiledlayout(rows,cols);
 end
     
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
 
 for i = 1:length(all_data)
     figure(ind(i)); nexttile; hold on
@@ -101,32 +108,34 @@ for i = 1:length(all_data)
     rho      = rho(lag+1:end);
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
-    scatter(fly_vel(idx),bump_vel(idx),'w','filled','markerfacealpha',.1)
+    scatter(fly_vel(idx),bump_vel(idx),c,'filled','markerfacealpha',.1)
     axis equal
     y = ylim; x = xlim;
-    plot(x,[0,0],':w'); 
-    plot([0,0],y,':w');
+    plot(x,[0,0],':','Color',c); 
+    plot([0,0],y,':','Color',c);
     b = [ones(sum(idx),1),fly_vel(idx)]\bump_vel(idx); %fit the slope of fly vel and bump vel with an arbitrary offset
     r = corr(fly_vel(idx),bump_vel(idx));
-    plot([0,0],y,'w:')
-    plot(x,[0,0],'w:')
+    plot([0,0],y,':','Color', c)
+    plot(x,[0,0],':','Color', c)
     plot(x,x*b(2) + b(1),'r')
-    text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom','color','w')
+    text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom','color',c)
     xlim(x); ylim(y);
 
     cc(i) = r;
     gains(i) = b(2);
 
-    set(gca,'xcolor','w','ycolor','w','color','none')
+    set(gca,'xcolor',c,'ycolor',c,'color','none')
 end
 
 [~,~,fly_num] = unique(fly_id);
 
 for i = unique(ind)'
     fontsize(figure(i),20,'pixels')
-    title(t{i},group_order(i),'fontsize',40,'color','w')
-    xlabel(t{i},'fly vel (rad/s)','fontsize',30,'color','w'); ylabel(t{i},'bump vel (rad/s)','fontsize',30,'color','w')
-    set(gcf,'color','none')
+    title(t{i},group_order(i),'fontsize',40,'color',c)
+    xlabel(t{i},'fly vel (rad/s)','fontsize',30,'color',c); ylabel(t{i},'bump vel (rad/s)','fontsize',30,'color',c)
+    if dark_mode
+        set(gcf,'color','none')
+    end
 end
 
 
@@ -166,28 +175,37 @@ for i = unique(ind)'
 end
 
 %% compare correlation coefficients and gains
+dark_mode = false;
+
 group_order = {'empty (CL)','LPsP (CL)','empty (dark)','LPsP (dark)'};
 ind = 2*dark_idx + lpsp_idx + 1;
 figure(5); clf
 
+if dark_mode
+    c = 'w';
+else
+    c = 'k';
+end
+
 subplot(2,2,1)
-scatter(ind, cc,'w'); hold on
+scatter(ind, cc,c); hold on
 m = accumarray(ind,cc,[],@mean);
 s = accumarray(ind,cc,[],@(x)(std(x)/sqrt(length(x))));
 errorbar(unique(ind)+.1,m,s,'ro')
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
-set(gca,'color','none','ycolor','w','xcolor','w')
-
+set(gca,'color','none','ycolor',c,'xcolor',c)
+ylim([-.1,1.2])
 subplot(2,2,2)
-scatter(ind, gains,'w'); hold on
+scatter(ind, gains,c); hold on
 m = accumarray(ind,gains,[],@mean);
 s = accumarray(ind,gains,[],@(x)(std(x)/sqrt(length(x))));
 errorbar(unique(ind)+.1,m,s,'ro')
 xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
 ylabel({'Gain', '(fly vs bump vel)'})
-set(gca,'color','none','ycolor','w','xcolor','w')
-set(gcf,'color','none','InvertHardcopy','off')
+set(gca,'color','none','ycolor',c,'xcolor',c)
+ylim([-.1,1.2])
+if dark_mode; set(gcf,'color','none','InvertHardcopy','off'); end
 %% test significance (bootstrap to ask about a mean difference, we don't know how variances compare)
 N = 1e4;
 
