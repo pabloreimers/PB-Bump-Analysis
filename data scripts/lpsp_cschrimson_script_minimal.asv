@@ -39,7 +39,7 @@ f0_pct = 7;
 %all_data = struct();
 
 tic
-for i = 159
+for i = length(all_data):length(all_files)
     clear img regProduct imgData_reg
 
     try
@@ -94,7 +94,7 @@ dangle_idx= false(length(all_data),1);
 
 last_str = 'blank';
 
-for i = 1:length(all_data)
+for i = 150:length(all_data)
 
     tmp_str = all_data(i).meta(1:50);
     
@@ -166,8 +166,8 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 
 %% show dff with flashes
-tmp_str = '20250110\fly 3';
-trial_num = 5;
+tmp_str = '20250124\fly 1';
+trial_num = 2;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);

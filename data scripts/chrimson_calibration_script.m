@@ -1,9 +1,5 @@
-%% start fresh
- % close all
- % clear all
-
 %% load in data
-base_dir = ('Z:\pablo\epg_grabda2m_gainchange\'); %uigetdir(); %
+base_dir = ('Z:\pablo\chrimson_calibration\to do\'); %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -14,7 +10,12 @@ for i = 1:length(all_files)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
         
-        imgData = sum(regProduct,[3,4]);
+        if ~exist('regProduct','var')
+            regProduct = img{1};
+        end
+
+        imgData = squeeze(sum(regProduct,3));
+
 
         top_pct = prctile(imgData,98,'all');
         bot_pct = prctile(imgData,5,'all');
@@ -36,25 +37,25 @@ im_win = {10,10};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = length(all_data):length(all_files)
+for i = 1:length(all_files)
+    clear img regProduct 
 
-    try
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
     load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask_smooth_reg.mat'])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     load([tmp2.folder,'\',tmp2.name])
-    % tmp3 = dir([fileparts(all_files(i).folder),'\FicTracData\*.avi']);
-    % vidObj = VideoReader([tmp3.folder,'\',tmp3.name]);
-    % vid  = read(vidObj);
 
-    
+    if ~exist('regProduct','var')
+        regProduct = img{1};
+    end
+
     imgData = squeeze(sum(regProduct,3));
 
     all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
@@ -65,51 +66,165 @@ for i = length(all_data):length(all_files)
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     end
 
-    %all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
-
-    % lasing = squeeze(sum(vid(1:end/3,:,:,:),[1,2,3]));
-    % ind1 = find(lasing > mean(lasing),1,'first');
-    % ind2 = find(lasing > mean(lasing),1,'last');
-    % 
-    % all_data(i).ft.lasing = squeeze(sum(vid(1:end/5,:,:,:),[1,2,3]));
-    % all_data(i).ft.stims = squeeze(sum(vid(1:end/5,1:end/5,:,:),[1,2,3]));
     try
-    all_data(i).ft.stims = ftData_DAQ.stim{1};
-    end
+    % all_data(i).ft.stims = ftData_DAQ.stim{1};
     end
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
-
-%%
-
-tmp_str = '20241212\fly 1';
-trial_num = 3;
+%% show
+tmp_str = '20250114\fly 4';
+trial_num = 2;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);
-%i = 19;
-r_thresh = .1;
-rho_thresh = 0;
-
 figure(1); clf
-subplot(4,2,1)
-imagesc(all_data(i).ft.xb,all_data(i).im.alpha,all_data(i).im.d)
-
-subplot(4,2,3)
-imagesc(all_data(i).ft.xb,all_data(i).im.alpha,all_data(i).im.d ./ (sum(all_data(i).im.d,1)+1))
-
-subplot(4,1,3); hold on
-a = plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu)); a.YData(abs(diff(a.YData))>pi) = nan;
-a = plot(all_data(i).ft.xf,unwrap(-all_data(i).ft.cue)); a.YData(abs(diff(a.YData))>pi) = nan;
-
-
-subplot(4,1,4); hold on
-yyaxis left; plot(all_data(i).ft.xb,mean(all_data(i).im.z,1)); ylabel('mean dff z')
-yyaxis right; plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); 
+subplot(3,1,1)
+plot(all_data(i).ft.xb,mean(all_data(i).im.z,1)); ylabel('dFF')
+title(all_data(i).meta)
+subplot(3,1,2)
+plot(all_data(i).ft.xf,all_data(i).ft.stims/10); ylabel('stim light')
+subplot(3,1,3)
+plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); ylabel('rot speed (rad/s)')
 
 linkaxes(get(gcf,'Children'),'x')
-axis tight
+
+%% show baseline traces for each fly
+
+figure(2); clf; 
+
+subplot(3,1,1); hold on; ylabel('dff'); ylabel('$\frac{F_{mask} - F_{nonmask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',20); axis tight
+subplot(3,2,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('baseline Ca++')
+subplot(3,2,4); hold on; ylabel('$\frac{F_{95,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('peak Ca++ (non-stim)')
+subplot(3,1,3); hold on; 
+for i = 1:length(all_data)
+
+    tmp_idx = contains(all_data(i).meta,'cschrimson');
+    chill_idx = contains(all_data(i).meta,'chilled');
+    idx = logical(interp1(all_data(i).ft.xf,double(~all_data(i).ft.stims),all_data(i).ft.xb,'linear','extrap'));
+
+    h0 = prctile(all_data(i).im.f_nmask(idx),5);
+    h1 = prctile(all_data(i).im.f_mask(idx),5);
+    h2 = prctile(all_data(i).im.f_mask(idx),90);
+
+    subplot(3,1,1)
+    plot(all_data(i).ft.xb,(all_data(i).im.f_mask - all_data(i).im.f_nmask)/h0,'Color',[tmp_idx,.5*chill_idx,1-tmp_idx])
+
+    subplot(3,2,3)
+    scatter3(tmp_idx+(rand(1)-.5)/10,(h1)/h0,i,100,'MarkerEdgeColor',[tmp_idx,.5*chill_idx,1-tmp_idx])
+
+    subplot(3,2,4)
+    scatter(tmp_idx+(rand(1)-.5)/10,(h2)/h0,100,'MarkerEdgeColor',[tmp_idx,.5*chill_idx,1-tmp_idx])
+
+    subplot(3,1,3)
+    scatter(i,(h1)/h0,100,'MarkerEdgeColor',[tmp_idx,.5*chill_idx,1-tmp_idx])
+end
+
+%% show effect of light stimulation on both groups
+
+figure(3); clf;
+subplot(2,1,1); hold on; axis tight; ylabel('dF/F (+)')
+subplot(2,1,2); hold on; axis tight; ylabel('dF/F (CsChrimson)')
+for i = 1:length(all_data)
+    if any(all_data(i).ft.stims)
+        tmp_idx = contains(all_data(i).meta,'cschrimson');
+        subplot(2,1,1+tmp_idx)
+        plot(all_data(i).ft.xb,mean(all_data(i).im.d,1),'Color',[tmp_idx,.5,1-tmp_idx])
+    end
+end
+
+chrim_idx = contains({all_data.meta},'cschrimson');
+figure(4); clf;  hold on
+tmp = find(chrim_idx);
+for i = 1:length(tmp)
+    if any(all_data(tmp(i)).ft.stims)
+    plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + 2*i,'k')
+    a = plot(all_data(tmp(i)).ft.xf,0*all_data(tmp(i)).ft.xf + 2*i,'Color',[1,.6,.6],'linewidth',1.5); a.YData(~all_data(tmp(i)).ft.stims)=nan;
+    end
+end
+title('mean dff traces for chrimson flies')
+xlabel('time (s)')
+
+%% show average dff during stim and off stim for both groups
+in_stim = nan(length(all_data),1);
+out_stim= nan(length(all_data),1);
+stim_idx = false(length(all_data),1);
+chrim_idx = contains({all_data.meta},'cschrimson')';
+
+for i = 1:length(all_data)
+
+    idx = logical(interp1(all_data(i).ft.xf,double(~all_data(i).ft.stims),all_data(i).ft.xb,'linear','extrap'));
+
+    f0 = prctile(all_data(i).im.f_mask(idx),5);
+    
+
+    stim_idx(i) = any(all_data(i).ft.stims);
+    in_stim(i) = (mean(all_data(i).im.f_mask(~idx)) - f0) / f0;
+    out_stim(i)= (mean(all_data(i).im.f_mask(idx)) - f0) / f0;
+end
+
+figure(1); clf; hold on
+plot([1,2],[out_stim(chrim_idx&stim_idx),in_stim(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim(~chrim_idx&stim_idx),in_stim(~chrim_idx&stim_idx)],'.-k')
+
+
+xlim([.5,4.5])
+ylabel('average dff')
+xticks([])
+text(.5,0,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
+text(.5,-.1,'light','HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],[0,0,0,0]-.1,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
+
+%% look at behavioral effects of chrimson vs control
+
+figure(4); clf;  hold on
+tmp = find(chrim_idx & stim_idx);
+for i = 1:length(tmp)
+    a = plot(all_data(tmp(i)).ft.xf,abs(all_data(tmp(i)).ft.r_speed) + 4*i,'k'); a.YData(a.YData > 5+4*i) = nan;
+    a = plot(all_data(tmp(i)).ft.xf,0*all_data(tmp(i)).ft.xf + 4*i,'Color',[1,.6,.6],'linewidth',1.5); a.YData(~all_data(tmp(i)).ft.stims)=nan;
+end
+title('mean f speed traces for chrimson flies')
+xlabel('time (s)')
+
+
+in_stim_r = nan(length(all_data),1);
+out_stim_r= nan(length(all_data),1);
+in_stim_f = nan(length(all_data),1);
+out_stim_f= nan(length(all_data),1);
+stim_idx = false(length(all_data),1);
+chrim_idx = contains({all_data.meta},'cschrimson')';
+
+for i = 1:length(all_data)    
+
+    stim_idx(i) = any(all_data(i).ft.stims);
+    in_stim_r(i) = mean(abs(all_data(i).ft.r_speed(logical(all_data(i).ft.stims))));
+    out_stim_r(i)= mean(abs(all_data(i).ft.r_speed(~logical(all_data(i).ft.stims))));
+    in_stim_f(i) = mean(all_data(i).ft.f_speed(logical(all_data(i).ft.stims)));
+    out_stim_f(i)= mean(all_data(i).ft.f_speed(~logical(all_data(i).ft.stims)));
+
+end
+
+figure(5); clf; subplot(2,1,1); hold on
+plot([1,2],[out_stim_r(chrim_idx&stim_idx),in_stim_r(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim_r(~chrim_idx&stim_idx),in_stim_r(~chrim_idx&stim_idx)],'.-k')
+ylabel('average r speed')
+xlim([.5,4.5])
+xticks([])
+
+subplot(2,1,2); hold on
+plot([1,2],[out_stim_f(chrim_idx&stim_idx),in_stim_f(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim_f(~chrim_idx&stim_idx),in_stim_f(~chrim_idx&stim_idx)],'.-k')
+
+ylim([-1,max(ylim)])
+b = min(ylim);
+xlim([.5,4.5])
+ylabel('average f speed')
+xticks([])
+text(.5,b,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
+text(.5,b-range(ylim)/10,'light','HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],b+[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],b+[0,0,0,0]-range(ylim)/10,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
 
 %% Functions
 
@@ -194,12 +309,19 @@ centroids   = centroids(2:2:end-1,:);                                           
     % imgData = squeeze(sum(imgData,3));
     % imgData = 256*(imgData-min(imgData,[],'all'))/(max(imgData,[],'all')-min(imgData,[],'all'));
 
+    mask_2d = reshape(mask,[],1);
+    f_mask = mean(imgData_2d(mask_2d,:),1);
+    f_nmask= mean(imgData_2d(~mask_2d,:),1);
+
     s.mu = mu;
     s.rho= rho;
     s.z  = zscore_cluster;
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.f_mask = f_mask;
+    s.f_nmask= f_nmask;
+
     %s.imgData = imgData;
 end
 

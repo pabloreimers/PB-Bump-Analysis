@@ -39,7 +39,7 @@ f0_pct = 7;
 %all_data = struct();
 
 tic
-for i = 150:length(all_files)
+for i = length(all_data):length(all_files)
     clear img regProduct imgData_reg
 
     try
@@ -166,8 +166,8 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 
 %% show dff with flashes
-tmp_str = '20250114\fly 2';
-trial_num = 3;
+tmp_str = '20250128\fly 3';
+trial_num = 1;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);
@@ -199,6 +199,8 @@ ylim([-5,10])
 
 subplot(3,1,2); hold on
 tmp = all_data(i).im.z;
+%idx = sum(tmp,1) > mean(sum(tmp,1)) + std(sum(tmp,1));
+%tmp(:,idx) = nan;
 %tmp = tmp ./ sum(tmp,1);
 %tmp_idx = sum(all_data(i).im.d,1) > 100;
 %tmp(:,tmp_idx) = nan;
