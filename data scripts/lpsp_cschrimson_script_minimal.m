@@ -82,7 +82,7 @@ for i = length(all_data):length(all_files)
 end
 
 %% compare gains
-tmp_win = 10;
+tmp_win = 30;
 fr = 1;
 r_thresh = .1;
 rho_thresh = 0;
@@ -94,7 +94,7 @@ dangle_idx= false(length(all_data),1);
 
 last_str = 'blank';
 
-for i = 150:length(all_data)
+for i = 1:length(all_data)
 
     tmp_str = all_data(i).meta(1:50);
     
@@ -166,8 +166,8 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 
 %% show dff with flashes
-tmp_str = '20250129\fly 2';
-trial_num = 1;
+tmp_str = '20250128\fly 1';
+trial_num = 2;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);
@@ -187,15 +187,17 @@ title(all_data(i).meta)
 plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 plot(all_data(i).ft.xf,all_data(i).ft.r_speed)
 legend('forward','rotation')
+ylabel('speed')
 
 subplot(6,1,2)
 plot(all_data(i).ft.xf,stims)
 hold on
 tmp_gain = all_data(i).gain.g;
-%tmp_gain(all_data(i).gain.d < 2) = nan;
+tmp_gain(all_data(i).gain.f > 100) = nan;
 scatter(1:length(tmp_gain),tmp_gain,'.')
 plot(xlim,[.8,.8],':','Color',dark_mode*[1,1,1])
 ylim([-5,10])
+ylabel('instantaneous gain')
 
 subplot(3,1,2); hold on
 tmp = all_data(i).im.z;
@@ -215,19 +217,22 @@ axis tight
 colormap(parula)
 
 subplot(3,2,5) % instantaneous gain
-dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
+dc = gradient(unwrap(all_data(i).ft.cue))*60;
 dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
 m  = interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf);
 idx = abs(all_data(i).ft.r_speed) > r_thresh & interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf) > rho_thresh & ~isnan(dm);
 scatter(all_data(i).ft.r_speed(idx),dm(idx),10,m(idx),'filled','MarkerFaceAlpha',.2)
 axis tight
 hold on
-gl = all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed>0) \ dm(idx & all_data(i).ft.r_speed>0);
-gr = all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed<0) \ dm(idx & all_data(i).ft.r_speed<0);
+gl = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed>0),dm(idx & all_data(i).ft.r_speed>0),1);
+gr = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed<0), dm(idx & all_data(i).ft.r_speed<0),1);
 x = xlim;
-plot([0,x(2)],gl*[0,x(2)],'r','linewidth',2)
-plot([x(1),0],gr*[x(1),0],'g','linewidth',2)
-text(xlim,ylim,sprintf('gain L: %.2f\n gain R: %.2f',gl,gr),'Color',(dark_mode)*[1,1,1])
+plot([0,x(2)],gl(1)*[0,x(2)] + gl(2),'r','linewidth',2)
+plot([x(1),0],gr(1)*[x(1),0] + gr(2),'g','linewidth',2)
+text(max(xlim),max(ylim),sprintf('gain L: %.2f\n gain R: %.2f',gl(1),gr(1)),'Color',(dark_mode)*[1,1,1])
+xlabel('fly speed'); ylabel('bump speed')
+title('instantaeous gain')
+
 
 subplot(3,2,6) % positional gain
 tmp_win = 20;
@@ -251,8 +256,10 @@ end
 tmp_gain(tmp_fval>prctile(tmp_fval,50)) = nan;
 tmp_gain2 = all_data(j).gain.g;
 tmp_gain2(all_data(j).gain.f > median(all_data(j).gain.f)) = nan;
-h = histogram(tmp_gain(:,1),'binwidth',.1);
-hold on; histogram(tmp_gain2,'binwidth',.1);
+h = histogram(tmp_gain(:,1),'binwidth',.1,'Normalization','probability');
+hold on; histogram(tmp_gain2,'binwidth',.1,'Normalization','probability');
+title('integrative gain')
+legend('calc1','calc2','autoupdate','off')
 
 %scatter(tmp_fval,tmp_gain)
 hold on
@@ -274,6 +281,66 @@ if dark_mode
     end
 end
 
+%% show positional gain histogram broken down by type
+gain_empty = {};
+fval_empty = {};
+bias_empty = {};
+dist_empty = {};        
+gain_chrim = {};
+fval_chrim = {};
+bias_chrim = {};
+dist_chrim = {};
+
+
+curr_fly = '';
+num_empty = 0;
+num_chrim = 0;
+for i = 1:length(all_data)
+    if strcmp(curr_fly,all_data(i).meta(1:50)) %~any(all_data(i).ft.stims)
+        continue
+    end
+    
+    curr_fly = all_data(i).meta(1:50);
+
+    if contains(all_data(i).meta,'empty') | contains(all_data(i).meta,'+')
+        num_empty = num_empty+1;
+        gain_empty = [gain_empty;{all_data(i).gain.g}];
+        fval_empty = [fval_empty;{all_data(i).gain.f}];
+        bias_empty = [bias_empty;{all_data(i).gain.b}];
+        dist_empty = [dist_empty;{all_data(i).gain.d}];
+
+    else
+        num_chrim = num_chrim+1;
+        gain_chrim = [gain_chrim;{all_data(i).gain.g}];
+        fval_chrim = [fval_chrim;{all_data(i).gain.f}];
+        bias_chrim = [bias_chrim;{all_data(i).gain.b}];
+        dist_chrim = [dist_chrim;{all_data(i).gain.d}];
+    end
+end
+
+gain_empty = cell2mat(gain_empty);
+fval_empty = cell2mat(fval_empty);
+bias_empty = cell2mat(bias_empty);
+dist_empty = cell2mat(dist_empty);        
+gain_chrim = cell2mat(gain_chrim);
+fval_chrim = cell2mat(fval_chrim);
+bias_chrim = cell2mat(bias_chrim);
+dist_chrim = cell2mat(dist_chrim);
+
+%
+fval_max = 100;
+dist_thresh = 10;
+figure(8); clf
+subplot(3,3,1); hold on; histogram(bias_empty); xlabel('bias'); ylabel('empty')
+subplot(3,3,2); hold on; histogram(dist_empty); plot(dist_thresh*[1,1],ylim,'r'); xlabel('dist'); 
+subplot(3,3,3); hold on; histogram(fval_empty); plot(fval_max*[1,1],ylim,'r'); xlabel('fval');
+
+subplot(3,1,2); hold on
+histogram(gain_empty(fval_empty<fval_max & dist_empty>dist_thresh),'Normalization','probability','Binwidth',.1)
+histogram(gain_chrim(fval_chrim<fval_max & dist_chrim>dist_thresh),'Normalization','probability','Binwidth',.1)
+legend(sprintf('empty (%d)',num_empty),sprintf('cschrimson (%d)',num_chrim))
+xlabel({'integrative gain','baseline (30s window)'})
+ylabel('%')
 %% show movie
 % i = 19;
 % pause_time = 1e-2;

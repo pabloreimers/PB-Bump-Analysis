@@ -73,7 +73,7 @@ for i = 1:length(all_files)
 end
 
 %% show
-tmp_str = '20250114\fly 4';
+tmp_str = '20250107\fly 2';
 trial_num = 2;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
@@ -96,8 +96,8 @@ figure(2); clf;
 subplot(3,1,1); hold on; ylabel('dff'); ylabel('$\frac{F_{mask} - F_{nonmask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',20); axis tight
 subplot(3,2,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('baseline Ca++')
 subplot(3,2,4); hold on; ylabel('$\frac{F_{95,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('peak Ca++ (non-stim)')
-subplot(3,1,3); hold on; 
-for i = 1:length(all_data)
+subplot(3,1,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30)
+for i = 1:36
 
     tmp_idx = contains(all_data(i).meta,'cschrimson');
     chill_idx = contains(all_data(i).meta,'chilled');
@@ -106,6 +106,10 @@ for i = 1:length(all_data)
     h0 = prctile(all_data(i).im.f_nmask(idx),5);
     h1 = prctile(all_data(i).im.f_mask(idx),5);
     h2 = prctile(all_data(i).im.f_mask(idx),90);
+
+    if  (h2 - h1) / h0 < .1 | ~tmp_idx %| any(all_data(i).ft.stims)
+        continue
+    end
 
     subplot(3,1,1)
     plot(all_data(i).ft.xb,(all_data(i).im.f_mask - all_data(i).im.f_nmask)/h0,'Color',[tmp_idx,.5*chill_idx,1-tmp_idx])
@@ -177,6 +181,9 @@ text([1,2,3,4],[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','Vertic
 text([1,2,3,4],[0,0,0,0]-.1,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
 
 %% look at behavioral effects of chrimson vs control
+r_thresh = .1;
+f_thresh = .1;
+f_max    = 20;
 
 figure(4); clf;  hold on
 tmp = find(chrim_idx & stim_idx);
@@ -198,10 +205,11 @@ chrim_idx = contains({all_data.meta},'cschrimson')';
 for i = 1:length(all_data)    
 
     stim_idx(i) = any(all_data(i).ft.stims);
-    in_stim_r(i) = mean(abs(all_data(i).ft.r_speed(logical(all_data(i).ft.stims))));
-    out_stim_r(i)= mean(abs(all_data(i).ft.r_speed(~logical(all_data(i).ft.stims))));
-    in_stim_f(i) = mean(all_data(i).ft.f_speed(logical(all_data(i).ft.stims)));
-    out_stim_f(i)= mean(all_data(i).ft.f_speed(~logical(all_data(i).ft.stims)));
+    mov_idx = (abs(all_data(i).ft.r_speed) > r_thresh | all_data(i).ft.f_speed > f_thresh) & abs(all_data(i).ft.f_speed) < f_max;
+    in_stim_r(i) = mean(abs(all_data(i).ft.r_speed(logical(all_data(i).ft.stims) & mov_idx)));
+    out_stim_r(i)= mean(abs(all_data(i).ft.r_speed(~logical(all_data(i).ft.stims) & mov_idx)));
+    in_stim_f(i) = mean(all_data(i).ft.f_speed(logical(all_data(i).ft.stims) & mov_idx));
+    out_stim_f(i)= mean(all_data(i).ft.f_speed(~logical(all_data(i).ft.stims) & mov_idx));
 
 end
 
@@ -225,6 +233,116 @@ text(.5,b,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
 text(.5,b-range(ylim)/10,'light','HorizontalAlignment','right','VerticalAlignment','top')
 text([1,2,3,4],b+[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','VerticalAlignment','top')
 text([1,2,3,4],b+[0,0,0,0]-range(ylim)/10,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
+
+
+%% plot bump things for an example fly
+i = 3;
+lag = 20;
+
+figure(6); clf
+subplot(2,1,1); 
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
+hold on
+a = plot(all_data(i).ft.xf,max(ylim)*ones(length(all_data(i).ft.xf),1),'r','linewidth',2);
+a.YData(~all_data(i).ft.stims) = nan;
+title(all_data(i).meta)
+
+subplot(2,1,2); hold on
+plot(all_data(i).ft.xf,cumsum(all_data(i).ft.r_speed/60),'m')
+plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu),'k')
+a = plot(all_data(i).ft.xf,max(ylim)*ones(length(all_data(i).ft.xf),1),'r','linewidth',2);
+a.YData(~all_data(i).ft.stims) = nan;
+legend('fly','bump')
+ylabel('unwrapped position')
+set(gca,'YDir','reverse')
+
+linkaxes(get(gcf,'Children'),'x')
+axis tight
+% look at correlation between bump and cue 
+
+
+
+figure(7); clf
+
+m_speed = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap')) * 60;
+r_speed = all_data(i).ft.r_speed;
+m_speed = m_speed(1+lag:end);
+r_speed = r_speed(1:end-lag);
+idx = abs(r_speed) > r_thresh;
+stims = all_data(i).ft.stims(1:end-lag);
+
+subplot(2,1,1); hold on
+plot(all_data(i).ft.xf(1:end-lag),r_speed,'m')
+plot(all_data(i).ft.xf(1:end-lag),m_speed,'k')
+a = plot(all_data(i).ft.xf,min(ylim)*ones(length(all_data(i).ft.xf),1),'r','linewidth',2);
+a.YData(~stims) = nan;
+ylabel('rotational speed (rad/s)')
+xlabel('time (s)')
+legend('fly','bump')
+title(all_data(i).meta)
+
+subplot(2,2,3)
+hold on
+scatter(r_speed(idx),m_speed(idx),'.')
+%scatter(r_speed(idx&stims),m_speed(idx&stims),'.r')
+c = corr(r_speed(idx),m_speed(idx));
+g = polyfit(r_speed(idx),m_speed(idx),1);
+b = g(2);
+g = g(1);
+plot([-2,2],g(1)*[-2,2],'m','linewidth',2)
+plot([-2,2],[-2,2],':k','linewidth',2)
+text(max(xlim),0,sprintf('corr: %.2f\ngain: %.2f\nbias: %.2f\nlag: %dms',c,g,b,round(lag/60*1e3)),'horizontalalignment','left','VerticalAlignment','middle')
+xlabel('fly speed (rad/s)')
+ylabel('bump speed (rad/s)')
+axis tight
+
+%% calculate bump things for all flies
+
+g_vec = nan(length(all_data),1);
+b_vec = nan(length(all_data),1);
+c_vec = nan(length(all_data),1);
+
+chrim_idx = contains({all_data.meta},'cschrimson')';
+chill_idx = contains({all_data.meta},'chill')';
+stims_idx = false(size(chrim_idx));
+
+for i = 1:length(all_data)
+    stims_idx(i) = any(all_data(i).ft.stims);
+
+    try
+    m_speed = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap')) * 60;
+    r_speed = all_data(i).ft.r_speed;
+    m_speed = m_speed(1+lag:end);
+    r_speed = r_speed(1:end-lag);
+    idx = abs(r_speed) > r_thresh;
+    stims = all_data(i).ft.stims(1:end-lag);
+
+    g = polyfit(r_speed(idx),m_speed(idx),1);
+    g_vec(i) = g(1);
+    b_vec(i) = g(2);
+    [c_vec(i)] = corr(r_speed(idx),m_speed(idx));
+    catch
+        fprintf('fly %i failed\n',i)
+    end
+end
+
+figure(8); clf
+group_idx = stim_idx + 2*chrim_idx;
+num_group = length(unique(group_idx));
+
+hold on
+scatter(group_idx,b_vec,'r')
+scatter(group_idx(chill_idx),b_vec(chill_idx),'b')
+plot(xlim,[0,0],':k')
+legend('warm','chilled')
+ylabel('bias')
+xlim([-.5,3.5])
+xticks([])
+b = min(ylim);
+text(-.5,b,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
+text(-.5,b-range(ylim)/10,'light','HorizontalAlignment','right','VerticalAlignment','top')
+text(unique(group_idx),b+zeros(num_group,1),{'-','-','+','+'},'HorizontalAlignment','right','VerticalAlignment','top')
+text(unique(group_idx),b+zeros(num_group,1)-range(ylim)/10,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
 
 %% Functions
 
