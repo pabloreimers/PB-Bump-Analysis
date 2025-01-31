@@ -45,29 +45,29 @@ for i = 1:length(all_files)
 
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
+    % load([all_files(i).folder,'\',all_files(i).name])
+    % load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     load([tmp2.folder,'\',tmp2.name])
 
-    if ~exist('regProduct','var')
-        regProduct = img{1};
-    end
+    % if ~exist('regProduct','var')
+    %     regProduct = img{1};
+    % end
 
-    imgData = squeeze(sum(regProduct,3));
-
-    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
-    all_data(i).meta = all_files(i).folder;
+    % imgData = squeeze(sum(regProduct,3));
+    % 
+    % all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    % all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
+    % all_data(i).meta = all_files(i).folder;
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     end
 
     try
-    % all_data(i).ft.stims = ftData_DAQ.stim{1};
+     all_data(i).ft.stims = ftData_DAQ.stim{1};
     end
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end

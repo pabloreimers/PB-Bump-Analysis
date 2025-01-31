@@ -166,7 +166,7 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 
 %% show dff with flashes
-tmp_str = '20250128\fly 3';
+tmp_str = '20250129\fly 2';
 trial_num = 1;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
