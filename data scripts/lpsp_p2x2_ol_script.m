@@ -59,7 +59,7 @@ for i = 5:length(all_files)
 end
 
 %% plot
-i = 8;
+i = 3;
 alpha = unwrap(all_data(i).im.alpha);
 fr = mean(diff(all_data(i).ft.xb));
 
@@ -402,6 +402,8 @@ for i = 1:num_flies
         ylabel(round(gains{i}(j),2))
     end
 end
+
+
 %% Functions
 
 function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
