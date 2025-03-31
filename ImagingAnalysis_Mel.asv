@@ -1,6 +1,6 @@
 %% reset the workspace and set script parameters
-clear all
-close all
+% clear all
+% close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
@@ -9,7 +9,7 @@ f0_pct              = 5;                                                    %set
 n_centroid          = 20;                                                   %this is how many centroids per hemisphere. centroids = bins = glomeruli, basically
 b_smooth            = 5;                                                   %define how many frames to smooth 2p data. both for bump parameters, and for fluorescence. gaussian filter.
 f_smooth            = 50;                                                   %set how many frames to smooth for fictrac. gaussian, and repeated n times because very noisy
-mo
+mov_smooth          = 5;
 n_smooth            = 5;                                                   %set how many times to perform gaussian smoothing on fictrac
 max_lag             = 1e3;                                                  %max lag to search for optimal cross correlation between dF/F and kinematics, in seconds
 cluster_flag        = 0;                                                    %find dff by cluster or for whole pb (do we see a bump)
@@ -19,6 +19,9 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = 5e-3;
+
+regProduct = img{1};
+
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])
@@ -52,15 +55,14 @@ end
 %% Make compress in z, and scale between 0 and 256
 imgData     = squeeze(sum(regProduct,3));   %regProduct is X x Y x Plane x Frames matrix. sum fluorescence across all planes, and squeeze into an X x Y x frames matrix
 imgData     = 256*(imgData - min(imgData,[],'all'))/(max(imgData,[],'all') - min(imgData,[],'all')); %linearly rescale the scanimage data so that it can be shown as an image (without scaling the image for each plane, which can change baseline brightness in the visuals)
-imgData     = movmean(imgData,mov_smooth,3);
-
+%imgData     = movmean(imgData,mov_smooth,3);
 
 imgData2 = imgData;
-top_int = prctile(imgData2,99,'all');                                    %clip the extremes and renormalize for viewing
+top_int = prctile(imgData2,90,'all');                                    %clip the extremes and renormalize for viewing
 bot_int = prctile(imgData2,5,'all');
 imgData2 = max(min(imgData2,top_int),bot_int) - bot_int;
 imgData2 = 256*imgData2/max(imgData2,[],'all');
-imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
+%imgData2 = smoothdata(imgData2,3,'movmean',avg_win);                      %smooth the data, again for viewing purposes (should this go before the clipping)            
 
 %% Play the movie
 pause_time  = 0;                         %pause this many seconds between each frame
@@ -110,7 +112,7 @@ centroids   = centroids(2:2:end-1,:);                                           
 cmap        = repmat(make_colors(n_centroid),2,1); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
 
 figure(1); clf
-imagesc(max(imgData,[],3))                                      %plot the image again with max intensity over time to show the whole pb
+imagesc(mean(imgData2,3))                                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 plot(x_mid,y_mid,'w')                                                   %plot the midline in white
@@ -120,7 +122,7 @@ axis equal tight
 %% assign each pixel to a centroid
 [~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 figure(1); clf
-imagesc(max(imgData,[],3))                      %plot the image again with max intensity over time to show the whole pb
+imagesc(mean(imgData2,3))                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 for i = 1:2*n_centroid                          %overlay each pixel in its indexed color onto the pb image. 

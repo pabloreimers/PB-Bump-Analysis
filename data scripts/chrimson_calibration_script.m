@@ -1,5 +1,5 @@
 %% load in data
-base_dir = ('Z:\pablo\chrimson_calibration\to do\'); %uigetdir(); %
+base_dir = uigetdir(); %('Z:\pablo\chrimson_calibration\to do\'); %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -30,14 +30,14 @@ for i = 1:length(all_files)
 end
 
 %% process and store all values
-ft_type= 'gaussian'; %the type of smoothing for fictrac data
-ft_win = 60; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
-im_type= {'gaussian','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {10,10};
+ft_type= 'movmean'; %the type of smoothing for fictrac data
+ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
+im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
+im_win = {1,1};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
@@ -45,22 +45,22 @@ for i = 1:length(all_files)
 
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    % load([all_files(i).folder,'\',all_files(i).name])
-    % load([fileparts(all_files(i).folder),'\mask.mat'])
+    load([all_files(i).folder,'\',all_files(i).name])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     load([tmp2.folder,'\',tmp2.name])
 
-    % if ~exist('regProduct','var')
-    %     regProduct = img{1};
-    % end
+    if ~exist('regProduct','var')
+        regProduct = img{1};
+    end
 
-    % imgData = squeeze(sum(regProduct,3));
-    % 
-    % all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    % all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
-    % all_data(i).meta = all_files(i).folder;
+    imgData = squeeze(sum(regProduct,3));
+
+    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).meta = all_files(i).folder;
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
@@ -73,14 +73,22 @@ for i = 1:length(all_files)
 end
 
 %% show
-tmp_str = '20250107\fly 2';
+tmp_str = '20250221\fly 1';
 trial_num = 2;
+
+
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 i = tmp_ind(trial_num);
+
+idx = logical(interp1(all_data(i).ft.xf,double(~all_data(i).ft.stims),all_data(i).ft.xb,'linear','extrap'));
+h0 = prctile(all_data(i).im.f_nmask(idx),5);
+
 figure(1); clf
 subplot(3,1,1)
-plot(all_data(i).ft.xb,mean(all_data(i).im.z,1)); ylabel('dFF')
+plot(all_data(i).ft.xb,(all_data(i).im.f_mask - all_data(i).im.f_nmask)/h0); ylabel('dFF')
+%plot(all_data(i).ft.xb,mean(all_data(i).im.d,1))
+ ylabel('(f_{mask} - f_{nmask})/f0_{nmask}')
 title(all_data(i).meta)
 subplot(3,1,2)
 plot(all_data(i).ft.xf,all_data(i).ft.stims/10); ylabel('stim light')
@@ -97,7 +105,7 @@ subplot(3,1,1); hold on; ylabel('dff'); ylabel('$\frac{F_{mask} - F_{nonmask}}{F
 subplot(3,2,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('baseline Ca++')
 subplot(3,2,4); hold on; ylabel('$\frac{F_{95,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('peak Ca++ (non-stim)')
 subplot(3,1,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30)
-for i = 1:36
+for i = 1:3
 
     tmp_idx = contains(all_data(i).meta,'cschrimson');
     chill_idx = contains(all_data(i).meta,'chilled');
@@ -107,7 +115,7 @@ for i = 1:36
     h1 = prctile(all_data(i).im.f_mask(idx),5);
     h2 = prctile(all_data(i).im.f_mask(idx),90);
 
-    if  (h2 - h1) / h0 < .1 | ~tmp_idx %| any(all_data(i).ft.stims)
+    if  (h2 - h1) / h0 < .1 %| ~tmp_idx %| any(all_data(i).ft.stims)
         continue
     end
 
@@ -142,12 +150,14 @@ figure(4); clf;  hold on
 tmp = find(chrim_idx);
 for i = 1:length(tmp)
     if any(all_data(tmp(i)).ft.stims)
-    plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + 2*i,'k')
+    plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + 2*i,'w')
     a = plot(all_data(tmp(i)).ft.xf,0*all_data(tmp(i)).ft.xf + 2*i,'Color',[1,.6,.6],'linewidth',1.5); a.YData(~all_data(tmp(i)).ft.stims)=nan;
     end
 end
 title('mean dff traces for chrimson flies')
 xlabel('time (s)')
+set(gca,'Color','none','ycolor','w','xcolor','w')
+set(gcf,'Color','none','InvertHardCopy','off')
 
 %% show average dff during stim and off stim for both groups
 in_stim = nan(length(all_data),1);
