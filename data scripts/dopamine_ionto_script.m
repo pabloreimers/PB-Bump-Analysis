@@ -71,13 +71,15 @@ end
 i  = 1;
 
 tmp = zeros([size(all_data(i).im.d),3]);
-tmp(:,:,1) = all_data(i).atp.d/2;
+tmp(:,:,1) = all_data(i).atp.d*3;
 tmp(:,:,2) = all_data(i).im.d;
 
 figure(1); clf
 subplot(3,1,1)
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
-
+hold on
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
 
 subplot(3,1,2)
 %imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
@@ -87,17 +89,38 @@ subplot(3,1,3)
 plot(all_data(i).ft.xf,all_data(i).ft.stims)
 
 linkaxes(get(gcf,'Children'),'x')
+fontsize(gcf,20,'pixels')
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+            ax(i).Color = 'none';
+        end
+    end
+end
 
 %%
+rows = 2; %floor(sqrt(length(all_data)));
+cols = 1; %ceil(length(all_data)/rows);
 figure(3); clf
-for i = 1:length(all_data)
+for i = 10:11 %length(all_data)
 
     tmp = zeros([size(all_data(i).im.d),3]);
-    tmp(:,:,1) = all_data(i).atp.d/2;
+    tmp(:,:,1) = all_data(i).atp.d*5;
     tmp(:,:,2) = all_data(i).im.d;
 
-    a1 = subplot(9,6,i);
+    a1 = subplot(rows,cols,i-9);
     imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
+     hold on
+% a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'m'); a.YData(abs(diff(a.YData))>pi) = nan;
+% a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
+    xticks([]); yticks([]);
     pos = get(gca,'Position');
     pos(2) = pos(2)+pos(4);
     pos(4) = .03;
@@ -105,7 +128,7 @@ for i = 1:length(all_data)
     hold on
     plot(all_data(i).ft.xb,sum(all_data(i).atp.d,1)/max(sum(all_data(i).atp.d,1)),'r')
     plot(all_data(i).ft.xb,sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)),'g')
-    xticks([])
+    xticks([]); yticks([])
 
     linkaxes([a1,a2],'x')
     axis tight
@@ -114,6 +137,22 @@ end
 pos=  get(gca,'Position');
 legend('dopamine','gcamp','location','NortheastOutside')
 set(gca,'Position',pos)
+
+fontsize(gcf,20,'pixels')
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+            ax(i).Color = 'none';
+        end
+    end
+end
 
 %% create an averaged trace
 win = [-10,60];
@@ -178,7 +217,23 @@ xlabel('time from stim start (s)')
 legend('2s','.5s','autoupdate','off')
 linkaxes(get(gcf,'Children'),'x')
 axis tight
-plot(xlim,[0,0],':k')
+plot(xlim,[0,0],':','color',(dark_mode)+[0,0,0])
+
+fontsize(gcf,20,'pixels')
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+            ax(i).Color = 'none';
+        end
+    end
+end
 
 figure(5); clf
 subplot(1,2,1); hold on; set(gca,'YDir','reverse')
@@ -189,7 +244,7 @@ patch([t,fliplr(t)],[m+s,fliplr(m-s)],[1,.5,.5])
 m = mean(mus(pulse_length>1 & pulse_left==0,:),1,'omitnan');
 s = std(mus(pulse_length>1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
 patch([t,fliplr(t)],[m+s,fliplr(m-s)],[.5,.5,1])
-plot(xlim,[0,0],':k')
+plot(xlim,[0,0],':','color',(dark_mode)+[0,0,0])
 title('2s eject')
 ylabel('unwrapped bump position')
 xlabel('time since stim start')
@@ -202,11 +257,26 @@ patch([t,fliplr(t)],[m+s,fliplr(m-s)],[1,.5,.5])
 m = mean(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan');
 s = std(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
 patch([t,fliplr(t)],[m+s,fliplr(m-s)],[.5,.5,1])
-plot(xlim,[0,0],':k')
+plot(xlim,[0,0],':','color',(dark_mode)+[0,0,0])
 title('.5s eject')
 legend('left','right')
 fontsize(gcf,20,'pixels')
 
+
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+            ax(i).Color = 'none';
+        end
+    end
+end
 %% find the effect on fluorescence
 dff_aligned = nan(32,900,length(all_data));
 stim_length = nan(length(all_data),1);
@@ -214,9 +284,11 @@ stim_length = nan(length(all_data),1);
 figure(4); clf
 
 for i = 1:length(all_data)
+    if any(all_data(i).ft.stims)
     start_idx = find(diff(all_data(i).ft.stims)>0,1);
     end_idx = find(diff(all_data(i).ft.stims)<0,1);
     stim_length(i) = all_data(i).ft.xf(end_idx) - all_data(i).ft.xf(start_idx);
+    end
 end
 
 for i = 1:length(all_data)
@@ -232,7 +304,20 @@ end
 subplot(3,1,1); imagesc(mean(dff_aligned,3)); title({'mean aligned fluorescence','all trials'})
 subplot(3,1,2); imagesc(mean(dff_aligned(:,:,stim_length<1),3)); title('0.5s'); ylabel('aligned glomeruli')
 subplot(3,1,3); imagesc(mean(dff_aligned(:,:,stim_length>1),3)); title('2s'); xlabel({'frames','first ~30 seconds, last ~60 seconds'})
-
+ax = get(gcf,'Children');
+if dark_mode
+    set(gcf,'color','none','InvertHardcopy','off')
+    
+    for i = 1:length(ax)
+        if contains(class(ax(i)),'Axes')
+            ax(i).Title.Color = 'w';
+            set(ax(i),'Color','none','ycolor','w','xcolor','w')
+        else
+            ax(i).TextColor = 'w';
+            ax(i).Color = 'none';
+        end
+    end
+end
 
 %% extract first trials for each fly
 first_idx = false(length(all_data),1);
@@ -244,6 +329,29 @@ for i = 1:length(all_data)
     end
 end
     
+%% calculate gain
+lag = 15;
+r_thresh = .5;
+
+rows = floor(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
+
+figure(8); clf
+for i = 1:length(all_data)
+    
+    dm = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))*60;
+    dr = all_data(i).ft.r_speed;
+
+    dm = dm(1+lag:end);
+    dr = dr(1:end-lag);
+
+    idx = abs(dr) > r_thresh & ~isnan(dm);
+
+    subplot(rows,cols,i)
+    scatter(dr(idx),dm(idx),'.')
+    title(sprintf('gain: %.2f',dr(idx) \ dm(idx)))
+end
+
 %% Functions
 
 function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
