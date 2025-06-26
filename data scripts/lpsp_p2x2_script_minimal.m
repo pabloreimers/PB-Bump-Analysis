@@ -4,7 +4,7 @@ clear all
 close all
 
 %% find path to all relevant files
-base_dir = uigetdir(); %('Z:\pablo\lpsp_p2x2\todo\');
+base_dir = ('Z:\pablo\lpsp_p2x2\todo\');
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 
 %% make sure that each file has a mask
@@ -123,7 +123,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240708\fly 1')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20240520\fly 3')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -908,8 +908,7 @@ plot(mean(tmp,1,'omitnan') + std(tmp,1,'omitnan')./sum(~isnan(tmp),1),'r')
 plot(mean(tmp,1,'omitnan') - std(tmp,1,'omitnan')./sum(~isnan(tmp),1),'r')
 
 %% show fly
-fly_str = '20240523\fly 3';
-figure(11); clf
+fly_str = '20240514\fly 2';
 idx = find(cellfun(@(x)(contains(x,fly_str)),{all_data.meta})); %,6,'last');
 for i = 1:length(idx)
     subplot(length(idx),1,i)

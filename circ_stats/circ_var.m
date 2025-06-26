@@ -1,4 +1,4 @@
-function [S s] = circ_var(alpha, w, d, dim)
+function [S s] = circ_var(alpha, w, d, dim, in)
 % s = circ_var(alpha, w, d, dim)
 %   Computes circular variance for circular data 
 %   (equ. 26.17/18, Zar).   
@@ -29,6 +29,10 @@ function [S s] = circ_var(alpha, w, d, dim)
 
 % By Philipp Berens, 2009
 % berens@tuebingen.mpg.de - www.kyb.mpg.de/~berens/circStat.html
+
+if nargin > 4 && strcmp(in,'omitnan')
+    alpha = alpha(~isnan(alpha));
+end
 
 if nargin < 4
   dim = 1;

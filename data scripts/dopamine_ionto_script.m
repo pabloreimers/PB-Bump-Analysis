@@ -37,10 +37,10 @@ im_win = {1,1};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = length(all_data):length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
@@ -68,35 +68,44 @@ for i = 1:length(all_files)
 end
 
 %%
-i  = 1;
+i  = 147;
 
 tmp = zeros([size(all_data(i).im.d),3]);
-tmp(:,:,1) = all_data(i).atp.d/2;
-tmp(:,:,2) = all_data(i).im.d;
+tmp(:,:,1) = all_data(i).atp.d*5;
+tmp(:,:,2) = all_data(i).im.d*5;
 
 figure(1); clf
-subplot(3,1,1)
+subplot(4,1,1); hold on
+plot(all_data(i).ft.xb,sum(all_data(i).atp.d,1)/max(sum(all_data(i).atp.d,1)),'r')
+plot(all_data(i).ft.xb,sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)),'g')
+plot(xlim,mean(sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)))*[1,1],':k')
+title(all_data(i).meta)
+
+subplot(4,1,2);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
 
-
-subplot(3,1,2)
+subplot(4,1,3); hold on
 %imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
 plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu))
+plot(all_data(i).ft.xf,-unwrap(all_data(i).ft.cue))
 
-subplot(3,1,3)
+subplot(4,1,4)
 plot(all_data(i).ft.xf,all_data(i).ft.stims)
 
 linkaxes(get(gcf,'Children'),'x')
+axis tight
 
 %%
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
 figure(3); clf
 for i = 1:length(all_data)
 
     tmp = zeros([size(all_data(i).im.d),3]);
     tmp(:,:,1) = all_data(i).atp.d/2;
-    tmp(:,:,2) = all_data(i).im.d;
+    tmp(:,:,2) = all_data(i).im.d*2;
 
-    a1 = subplot(9,6,i);
+    a1 = subplot(rows,cols,i);
     imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
     pos = get(gca,'Position');
     pos(2) = pos(2)+pos(4);
@@ -127,6 +136,7 @@ end
 
 pulses = nan(num_pulse,length(t));
 mus = nan(num_pulse,length(t));
+cues = nan(num_pulse,length(t));
 pulse_length = nan(num_pulse,1);
 pulse_left = nan(num_pulse,1);
 
@@ -141,6 +151,7 @@ for i = 1:length(all_data)
     tmp_t   = all_data(i).ft.xb(1):dt:all_data(i).ft.xb(end);
     tmp_trace = interp1(all_data(i).ft.xb,sum(all_data(i).im.d,1),tmp_t);
     tmp_mu = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),tmp_t);
+    tmp_cue = interp1(all_data(i).ft.xf,unwrap(all_data(i).ft.cue),tmp_t);
 
     for j = 1:length(stim_times)
         counter = counter+1;
@@ -149,6 +160,8 @@ for i = 1:length(all_data)
         pulses(counter,1:sum(idx)) = tmp_trace(idx);
         tmp = tmp_mu(idx);
         mus(counter,1:sum(idx)) = tmp - tmp(round(abs(win(1))/dt));
+        tmp = tmp_cue(idx);
+        cues(counter,1:sum(idx)) = tmp - tmp(round(abs(win(1))/dt));
         pulse_length(counter) = stim_lengths(j);
         pulse_left(counter) = stim_left;
     end
@@ -157,6 +170,7 @@ end
 idx = all(isnan(pulses),1);
 pulses(:,idx) = [];
 mus(:,idx) = [];
+cues(:,idx) = [];
 t(idx) = [];
 
 figure(4); clf
@@ -189,10 +203,23 @@ patch([t,fliplr(t)],[m+s,fliplr(m-s)],[1,.5,.5])
 m = mean(mus(pulse_length>1 & pulse_left==0,:),1,'omitnan');
 s = std(mus(pulse_length>1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
 patch([t,fliplr(t)],[m+s,fliplr(m-s)],[.5,.5,1])
+
+
+m = mean(cues(pulse_length<1 & pulse_left==1,:),1,'omitnan');
+s = std(cues(pulse_length<1 & pulse_left==1,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
+patch([t,fliplr(t)],[m+s,fliplr(m-s)],'c')
+
+m = mean(cues(pulse_length<1 & pulse_left==0,:),1,'omitnan');
+s = std(cues(pulse_length<1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
+patch([t,fliplr(t)],[m+s,fliplr(m-s)],'m')
+
+
 plot(xlim,[0,0],':k')
 title('2s eject')
 ylabel('unwrapped bump position')
 xlabel('time since stim start')
+
+legend('left (mu)','right (mu)','left (cue)','right (cue)')
 
 subplot(1,2,2); hold on; set(gca,'YDir','reverse')
 m = mean(mus(pulse_length<1 & pulse_left==1,:),1,'omitnan');
@@ -202,9 +229,10 @@ patch([t,fliplr(t)],[m+s,fliplr(m-s)],[1,.5,.5])
 m = mean(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan');
 s = std(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
 patch([t,fliplr(t)],[m+s,fliplr(m-s)],[.5,.5,1])
+
+
 plot(xlim,[0,0],':k')
 title('.5s eject')
-legend('left','right')
 fontsize(gcf,20,'pixels')
 
 %% find the effect on fluorescence
@@ -244,6 +272,40 @@ for i = 1:length(all_data)
     end
 end
     
+
+%% show things for walking flies
+i = 9;
+figure(1); clf
+a1 = subplot(2,1,1);
+tmp = zeros([size(all_data(i).im.d),3]);
+tmp(:,:,1) = all_data(i).atp.d*3;
+tmp(:,:,2) = all_data(i).im.d;
+
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
+hold on
+a = plot(all_data(i).ft.xb,all_data(i).im.mu); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue); a.YData(abs(diff(a.YData))>pi) = nan;
+
+pos = get(gca,'Position');
+pos(2) = pos(2)+pos(4);
+pos(4) = .05;
+a2 = axes('Position',pos,'color','none');
+hold on
+plot(all_data(i).ft.xb,sum(all_data(i).atp.d,1)/max(sum(all_data(i).atp.d,1)),'r')
+plot(all_data(i).ft.xb,sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)),'g')
+xticks([])
+
+
+
+a3 = subplot(2,1,2); hold on
+a = plot(all_data(i).ft.xb,unwrap(all_data(i).im.mu) - all_data(i).im.mu(1)); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xf,-unwrap(all_data(i).ft.cue) + all_data(i).ft.cue(1)); a.YData(abs(diff(a.YData))>pi) = nan;
+a = scatter(all_data(i).ft.xf,zeros(length(all_data(i).ft.stims),1)); a.YData(~all_data(i).ft.stims) = nan;
+set(gca,'YDir','reverse')
+legend('mu','cue')
+
+linkaxes([a1,a2,a3],'x')
+axis tight
 %% Functions
 
 function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)

@@ -105,10 +105,10 @@ idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 
 x_mid       = x_mid(idx);
 y_mid       = y_mid(idx);
 
-xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
+xq          = linspace(1,length(y_mid),(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
 centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
 centroids   = centroids(2:2:end-1,:);                                                 %take every other so that we dont start at the edges, and all are same size
-cmap        = repmat(make_colors(n_centroid),2,1); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
+cmap        = make_colors(n_centroid); %repmat(cbrewer2('set1',n_centroid),2,1);                     %set a colormap to plot each centroid in a different color, and which repeats per hemisphere (note that if a hemisphere has more clusters than colorbrewer can generate, it will repeat colors within each hemisphere).
 
 figure(1); clf
 imagesc(mean(imgData2,3))                                      %plot the image again with max intensity over time to show the whole pb
@@ -124,7 +124,7 @@ figure(1); clf
 imagesc(mean(imgData2,3))                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
-for i = 1:2*n_centroid                          %overlay each pixel in its indexed color onto the pb image. 
+for i = 1:n_centroid                          %overlay each pixel in its indexed color onto the pb image. 
     scatter(x_mask(idx == i),y_mask(idx == i),'filled','MarkerFaceColor',cmap(i,:),'MarkerFaceAlpha',0.2)
 end
 plot(x_mid,y_mid,'w')                                                   %plot the midline in white
@@ -133,25 +133,25 @@ axis equal tight
 
 %% Find the mean activity in each group over time
 imgData_2d      = reshape(imgData,[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
-centroid_log    = false(2*n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
-for i = 1:2*n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
+centroid_log    = false(n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
+for i = 1:n_centroid                                                  %For each centroid, define which pixels are contained in that centroid
     centroid_log(i, sub2ind(size(imgData),y_mask(idx==i),x_mask(idx ==i))) = true;
 end
 
 f_cluster       = centroid_log * imgData_2d ./ sum(centroid_log,2);     %the summed fluorescence in each group will be [centroids x pixels] * [pixels  x frames], and dividing by the number of pixels in each group gives the average intensity at each frame
 f0              = prctile(f_cluster,f0_pct,2);                          %find the baseline fluorescence in each cluster
 dff_cluster     = (f_cluster - f0) ./ f0;                               %find the dF/F in each cluster. this puts everything on the same scale and eliminates baseline differences.
-zscore_cluster  = zscore(f_cluster,[],2);
+zscore_cluster  = zscore(dff_cluster,[],2);
 %dff_cluster     = smoothdata(dff_cluster,2,'gaussian',b_smooth);
 figure(3); clf
 imagesc(subplot(2,2,1),centroid_log); colormap('bone')
 xlabel('all pixels'); ylabel('cluster'); title('Centroid Logical')
 imagesc(subplot(2,2,2),imgData_2d); colormap('bone')
 xlabel('frames'); ylabel('all pixels'); title('Pixel Intensity (2D)')
-imagesc(subplot(2,1,2),dff_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
+imagesc(subplot(2,1,2),zscore_cluster); colormap('bone'); pos = get(gca,'position'); colorbar; set(gca,'Position',pos)
 xlabel('frame'); ylabel('cluster'); title('Grouped Intensity')
 hold on
-scatter(ones(1,2*n_centroid),1:2*n_centroid,100,cmap,'filled','square')
+scatter(ones(1,n_centroid),1:n_centroid,100,cmap,'filled','square')
 
 %% Estimate von mises parameters (both sides)
 % n_frames    = size(dff_cluster,2);
@@ -319,7 +319,7 @@ scatter(ones(1,2*n_centroid),1:2*n_centroid,100,cmap,'filled','square')
 
 %% Find bump as PVA
 tmp_data    = dff_cluster;
-alpha       = repmat(linspace(-pi,pi,n_centroid),1,2);
+alpha       = linspace(-pi,pi,n_centroid);
 
 [x_tmp,y_tmp]   = pol2cart(alpha,tmp_data');
 [mu,rho]        = cart2pol(mean(x_tmp,2),mean(y_tmp,2)); %find mu and rho
