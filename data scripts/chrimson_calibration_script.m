@@ -147,7 +147,7 @@ end
 
 chrim_idx = contains({all_data.meta},'cschrimson');
 figure(4); clf;  hold on
-tmp = find(chrim_idx);
+tmp = find(~chrim_idx);
 for i = 1:length(tmp)
     if any(all_data(tmp(i)).ft.stims)
     plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + 2*i,'w')

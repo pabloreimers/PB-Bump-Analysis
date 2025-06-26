@@ -91,7 +91,7 @@ end
 tmp_win = 30;
 fr = 1;
 r_thresh = .1;
-rho_thresh = 0;
+rho_thresh = 0.2;
 
 gain_vel = nan(length(all_data),60);
 gain_pos = cell(length(all_data),2);
@@ -114,7 +114,7 @@ for i = 1:length(all_data)
     end
 
     dc = gradient(unwrap(all_data(i).ft.cue)) * 60;
-    dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)),all_data(i).ft.xf) * 60;
+    dm = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf)) * 60;
     dr = all_data(i).ft.r_speed;
     rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
@@ -164,7 +164,7 @@ empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 
 %% show dff with flashes
 tmp_str = '20250321\fly 1';
-trial_num = 3;
+trial_num = 8;
 dark_mode = true;
 
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
@@ -191,11 +191,11 @@ subplot(6,1,2)
 plot(all_data(i).ft.xf,stims)
 hold on
 tmp_gain = all_data(i).gain.g;
-tmp_gain(all_data(i).gain.f > 100) = nan;
+%tmp_gain(all_data(i).gain.f > 100) = nan;
 scatter(1:length(tmp_gain),tmp_gain,'.')
 plot(xlim,[.8,.8],':','Color',dark_mode*[1,1,1])
 ylim([-5,10])
-ylabel('instantaneous gain')
+ylabel('integrative gain')
 
 subplot(3,1,2); hold on
 tmp = all_data(i).im.z;
@@ -222,15 +222,18 @@ m  = interp1(all_data(i).ft.xb,m,all_data(i).ft.xf);
 dm = gradient(m) * 60;
 
 idx = abs(all_data(i).ft.r_speed) > r_thresh & interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf) > rho_thresh & ~isnan(dm);
+g = all_data(i).ft.r_speed(idx) \ dm(idx);
 scatter(all_data(i).ft.r_speed(idx),dm(idx),10,m(idx),'filled','MarkerFaceAlpha',.2); colormap(gca,'hsv')
 axis tight
 hold on
-gl = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed>0),dm(idx & all_data(i).ft.r_speed>0),1);
-gr = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed<0), dm(idx & all_data(i).ft.r_speed<0),1);
-x = xlim;
-plot([0,x(2)],gl(1)*[0,x(2)] + gl(2),'r','linewidth',2)
-plot([x(1),0],gr(1)*[x(1),0] + gr(2),'g','linewidth',2)
-text(max(xlim),max(ylim),sprintf('gain L: %.2f\n gain R: %.2f',gl(1),gr(1)),'Color',(dark_mode)*[1,1,1])
+plot(xlim,xlim*g,'r')
+% gl = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed>0),dm(idx & all_data(i).ft.r_speed>0),1);
+% gr = polyfit(all_data(i).ft.r_speed(idx & all_data(i).ft.r_speed<0), dm(idx & all_data(i).ft.r_speed<0),1);
+% x = xlim;
+% plot([0,x(2)],gl(1)*[0,x(2)] + gl(2),'r','linewidth',2)
+% plot([x(1),0],gr(1)*[x(1),0] + gr(2),'g','linewidth',2)
+
+text(max(xlim),max(ylim),sprintf('gain: %.2f',g(1)),'Color',(dark_mode)*[1,1,1])
 xlabel('fly speed'); ylabel('bump speed')
 title('instantaeous gain')
 
