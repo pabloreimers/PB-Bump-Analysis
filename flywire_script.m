@@ -90,7 +90,7 @@ idx1 = ismember(data.synapses.pre_root_id,lpsp_id) & ismember(data.synapses.post
 
 h(1) = subplot(2,3,1); hold on; set(gca,'YDir','reverse')
 scatter(data.synapses.x(idx1),data.synapses.y(idx1),'filled','k')
-idx2 = ismember(data.synapses.pre_root_id,epg_id);% & ismember(data.synapses.post_root_id,d7_id);
+idx2 = ismember(data.synapses.pre_root_id,epg_id) & ismember(data.synapses.post_root_id,d7_id);
 scatter(data.synapses.x(idx2),data.synapses.y(idx2),'filled')
 title('EPG > Delta7')
 subplot(2,1,2); hold on
@@ -130,3 +130,4 @@ idx1 = ismember(data.synapses.pre_root_id,lpsp_id) & ismember(data.synapses.post
 idx2 = ismember(data.synapses.pre_root_id,epg_id) & ismember(data.synapses.post_root_id,d7_id);
 dist = min(pdist2([data.synapses.x(idx1),data.synapses.y(idx1),data.synapses.z(idx1)],...
               [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],2); %find distance from each synapse in idx1 to the nearest synapse in idx2
+

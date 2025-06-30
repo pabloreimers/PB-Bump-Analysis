@@ -1,21 +1,30 @@
-%% clear all
-clear all
-close all
-
-%% find path to all relevant files
-base_dir = ('Z:\pablo\lpsp_cl\to analyze\20*\');
+%% load in data
+base_dir = ('Z:\pablo\chrimson_calibration\to do\'); %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
-
+all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
 for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
-    if ~isfile([all_files(i).folder,'\mask.mat'])
+    clear img regProduct 
+
+    if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
-        imgData = mean(regProduct,[3,4]);
-        imgData = imgData - min(imgData,[],'all');
-        imgData = imgData/max(imgData,[],'all')*256;
-        figure(1); clf; imagesc(imgData); colormap(bone); drawnow;
-        mask = roipoly(uint8(imgData));
+        
+        if ~exist('regProduct','var')
+            regProduct = img{1};
+        end
+
+        imgData = squeeze(sum(regProduct,3));
+
+
+        top_pct = prctile(imgData,98,'all');
+        bot_pct = prctile(imgData,5,'all');
+        
+        imgData(imgData>top_pct) = top_pct;
+        imgData(imgData<bot_pct) = bot_pct;        
+
+        figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
+        mask = roipoly();
         save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
     end
 end
@@ -24,187 +33,129 @@ end
 ft_type= 'gaussian'; %the type of smoothing for fictrac data
 ft_win = 60; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'gaussian','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {5,5};
-
+im_win = {10,10};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
-for i = 84:length(all_files)
-    tmp = strsplit(all_files(i).folder,'\');
-    fprintf('processing: %s ',tmp{end})
-    load([all_files(i).folder,'\',all_files(i).name])
-    load([all_files(i).folder,'\mask.mat'])
-    tmp2 = dir([all_files(i).folder,'\*ficTracData_DAQ*']);
-    load([tmp2.folder,'\',tmp2.name])
+for i = length(all_data):length(all_files)
+    clear img regProduct 
 
-    all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
-    all_data(i).im = process_im(regProduct, im_win, im_type, mask, n_centroid, f0_pct);
+    tmp = strsplit(all_files(i).folder,'\');
+    fprintf('processing: %s ',tmp{end-1})
+    load([all_files(i).folder,'\',all_files(i).name])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    load([tmp2.folder,'\',tmp2.name])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
+    load([tmp2.folder,'\',tmp2.name])
+    
+    if ~exist('regProduct','var')
+        regProduct = img{1};
+    end
+
+    imgData = squeeze(sum(regProduct,3));
+
+    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).meta = all_files(i).folder;
 
+    if ~ismember('xb',fieldnames(all_data(i).ft))
+        xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
+    end
+
+    try
+    all_data(i).ft.stims = ftData_DAQ.stim{1};
+    end
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
-%% remove empties
-empty_idx = nan(length(all_data),1);
 
-for i = 1:length(all_data)
-empty_idx(i) = isempty(all_data(i).ft);
-end
+%% show
+tmp_str = '20250114\fly 4';
+trial_num = 2;
 
-all_data = all_data(~empty_idx);
-
-%% linear model dff against r_speed
-lag = 10; %apply a 10 frame lag in ft time, so 160ms, between fly speed and fluorescence
-vel_thresh = .5;
-bump_thresh = 10;
-rho_thresh = .1;
-
-lpsp_idx = nan(length(all_data),1);
-dark_idx = nan(length(all_data),1);
-r_R2 = nan(length(all_data),1);
-f_R2 = nan(length(all_data),1);
-j_R2 = nan(length(all_data),1);
-vel_corr = nan(length(all_data),1);
-fly_id = cell(length(all_data),1);
-
-
-for i = 1:length(all_data)
-    try
-    lpsp_idx(i) = contains(all_data(i).meta,'_lpsp_','IgnoreCase',true);
-    dark_idx(i) = contains(all_data(i).meta,'_dark','IgnoreCase',true);
-    tmp = strsplit(all_data(i).meta,'\');
-    tmp2 = regexp(tmp{end},'\d*','Match');
-    fly_id{i} = [tmp2{1},'_',tmp2{end}];
-
-    xf = all_data(i).ft.xf;
-    xb = linspace(min(xf),max(xf),size(all_data(i).im.mu,1));
-    fr = mean(diff(xf));
-
-    fly_vel  = all_data(i).ft.r_speed;
-    for_vel  = all_data(i).ft.f_speed;
-    bump_vel = gradient(interp1(xb,unwrap(all_data(i).im.mu),xf))/fr;
-    rho      = interp1(xb,all_data(i).im.rho,xf);
-    amp      = interp1(xb,mean(all_data(i).im.d,1),xf);
-
-    fly_vel  = fly_vel(1:end-lag);
-    for_vel  = for_vel(1:end-lag);
-    bump_vel = bump_vel(lag+1:end);
-    rho      = rho(lag+1:end);
-    amp      = amp(lag+1:end);
-
-    mdl = fitlm(abs(fly_vel),amp);
-    r_R2(i)    = mdl.Rsquared.Adjusted;
-    mdl = fitlm(for_vel,amp);
-    f_R2(i)    = mdl.Rsquared.Adjusted;
-    mdl = fitlm([abs(fly_vel),for_vel],amp);
-    j_R2(i)    = mdl.Rsquared.Adjusted;
-
-    idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
-    vel_corr(i)    = corr(fly_vel(idx),bump_vel(idx));
-
-    end
-end
-
-[~,~,fly_num] = unique(fly_id);
-
-%% plot example fly
-for i = 1:length(all_data)
-all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.d));
-end
-
-i = 10;
-figure(8); clf
+tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
+i = tmp_ind(trial_num);
+figure(1); clf
 subplot(3,1,1)
-a = plot(all_data(i).ft.xf,-all_data(i).ft.cue);
-a.YData(abs(diff(a.YData))>pi) = nan;
-yticks([-pi,0,pi])
-yticklabels({'\-pi',0,'\pi'})
-yticklabels({'-\pi',0,'\pi'})
-ylim([-pi,pi])
-set(gca,'Ydir','reverse')
-
+plot(all_data(i).ft.xb,mean(all_data(i).im.z,1)); ylabel('dFF')
+title(all_data(i).meta)
 subplot(3,1,2)
-tmp = all_data(i).im.d;
-tmp(:,sum(tmp,1)>10) = nan;
-imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
-
+plot(all_data(i).ft.xf,all_data(i).ft.stims/10); ylabel('stim light')
 subplot(3,1,3)
-a = plot(all_data(i).ft.xb,all_data(i).im.mu);
-a.YData(abs(diff(a.YData))>pi) = nan;
-yticks([-pi,0,pi])
-yticklabels({'\-pi',0,'\pi'})
-yticklabels({'-\pi',0,'\pi'})
-ylim([-pi,pi])
-set(gca,'Ydir','reverse')
+plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); ylabel('rot speed (rad/s)')
 
 linkaxes(get(gcf,'Children'),'x')
 
-%% Plot results
-group_order = {'EPG > GRAB(DA2m) (CL)','EPG > GRAB(DA2m) (dark)','LPsP > syt7f (CL)','LPsP > syt7f (dark)'};
-ind = dark_idx + 2*lpsp_idx + 1;
-c = hsv(4);
+%% show baseline traces for each fly
 
-figure(1); clf
-subplot(1,2,1)
-X = [f_R2,r_R2,j_R2];
-plot(X(ind==3,:)','.-k')
-ylabel('R-squared')
-xticks(1:3); xticklabels({'forward','rotational','joint'});xlim([.5,3.5])
-title({'LPsP > syt7f','Closed Loop'})
+figure(2); clf; 
 
-subplot(1,2,2)
-X = [f_R2,r_R2,j_R2];
-plot(X(ind==4,:)','.-k')
-ylabel('R-squared')
-xticks(1:3); xticklabels({'forward','rotational','joint'});xlim([.5,3.5])
-title({'LPsP > syt7f','Dark'})
+subplot(2,1,1); hold on; ylabel('dff'); ylabel('$\frac{F_{mask} - F_{nonmask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',20); axis tight
+subplot(2,2,3); hold on; ylabel('$\frac{F_{5,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('baseline Ca++')
+subplot(2,2,4); hold on; ylabel('$\frac{F_{95,mask}}{F_{5,nonmask}}$','Interpreter','Latex','Rotation',0,'fontsize',30); xticks([0,1]); xticklabels({'+','CsChrimson'}); title('peak Ca++ (non-stim)')
+for i = 1:length(all_data)
 
-linkaxes(get(gcf,'Children'),'y')
-ylim([0,.5])
-fontsize(gcf,20,'pixels')
+    tmp_idx = contains(all_data(i).meta,'cschrimson');
+    idx = logical(interp1(all_data(i).ft.xf,double(~all_data(i).ft.stims),all_data(i).ft.xb,'linear','extrap'));
 
-figure(2)
-subplot(2,2,1);
-scatter(ind,vel_corr);
-xticks(1:4); xticklabels(group_order); xlim([.5,4.5])
-ylabel({'Correlation Coefficent', '(fly vs bump vel)'})
-hold on; plot(xlim,[0,0],'k:')
+    h0 = prctile(all_data(i).im.f_nmask(idx),5);
+    h1 = prctile(all_data(i).im.f_mask(idx),5);
+    h2 = prctile(all_data(i).im.f_mask(idx),90);
 
-subplot(2,2,2)
-scatter(ind,r_R2); hold on
-scatter(ind+.1,f_R2)
+    subplot(2,1,1)
+    plot(all_data(i).ft.xb,(all_data(i).im.f_mask - all_data(i).im.f_nmask)/h0,'Color',[tmp_idx,.5,1-tmp_idx])
 
+    subplot(2,2,3)
+    scatter3(tmp_idx+(rand(1)-.5)/10,(h1)/h0,i,100,'MarkerEdgeColor',[tmp_idx,.5,1-tmp_idx])
 
-subplot(2,1,2)
-scatter(fly_num,vel_corr,[],c(ind,:))
+    subplot(2,2,4)
+    scatter(tmp_idx+(rand(1)-.5)/10,(h2)/h0,100,'MarkerEdgeColor',[tmp_idx,.5,1-tmp_idx])
 
+end
+xlim([-.5,1.5])
 
-%% assess how bump amplitude compare to calibration error
+%% show effect of light stimulation on both groups
 
-i = 79;
+figure(3); clf;
+subplot(2,1,1); hold on; axis tight; ylabel('dF/F (+)')
+subplot(2,1,2); hold on; axis tight; ylabel('dF/F (CsChrimson)')
+for i = 1:length(all_data)
+    if any(all_data(i).ft.stims)
+        tmp_idx = contains(all_data(i).meta,'cschrimson');
+        subplot(2,1,1+tmp_idx)
+        plot(all_data(i).ft.xb,mean(all_data(i).im.d,1),'Color',[tmp_idx,.5,1-tmp_idx])
+    end
+end
 
-fr = mean(diff(all_data(i).ft.xf));
-mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf);
-mu_speed = gradient(mu_tmp) / fr;
-dff_tmp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf);
+chrim_idx = contains({all_data.meta},'cschrimson');
+figure(4); clf;  hold on
+tmp = find(chrim_idx);
+for i = 1:length(chrim_idx)
+    plot(mean(all_data(tmp(i)).im.d, + i)
+end
 
-figure(1); clf
-scatter(mu_speed,all_data(i).ft.r_speed,[],dff_tmp,'filled','MarkerFaceAlpha',.2
 %% Functions
 
-function s = process_ft(ftData_DAQ, ft_win, ft_type)
+function s = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type)
 
-    f_speed = ftData_DAQ.velFor{:};                       %store each speed
+    f_speed = ftData_dat.velFor{:};                       %store each speed
+    f_speed = interp1(ftData_dat.trialTime{1},f_speed,seconds(ftData_DAQ.trialTime{1}),'linear','extrap');
     r_speed = ftData_DAQ.velYaw{:};
-    cue     = ftData_DAQ.cuePos{:}';
-    cue     = smoothdata(unwrap(cue / 192 *2 * pi - pi),1,ft_type,ft_win);
+    cue     = ftData_DAQ.cuePos{:}' / 192 * 2 * pi - pi;
+    cue(abs(gradient(cue)) > 2) = nan;
+    cue     = unwrap(cue);
+    cue     = smoothdata(cue,1,ft_type,ft_win,'omitnan');
     cue   = mod(cue,2*pi);                                %rewrap heading data, and put between -pi and pi.
     cue(cue > pi) = cue(cue > pi) - 2*pi;
     
     s.xf      = seconds(ftData_DAQ.trialTime{:});
+    if ismember('volClock',ftData_DAQ.Properties.VariableNames);
+        s.xb      = seconds(ftData_DAQ.volClock{:});
+    end
     s.f_speed = smoothdata(f_speed,1,ft_type,ft_win); 
     s.r_speed = smoothdata(r_speed,1,ft_type,ft_win);
     s.cue     = cue;
@@ -219,9 +170,9 @@ function x_white = whiten(x,dim)
     x_white = (x - mean(x,dim)) ./ range(x,dim);
 end
 
-function s = process_im(regProduct, im_win, im_type, mask, n_centroid, f0_pct)
+function s = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct)
     
-    imgData = squeeze(sum(smoothdata(regProduct,4,im_type{1},im_win{1}),3));
+    imgData = smoothdata(imgData,3,im_type{1},im_win{1});
     imgData = imgData - min(imgData,[],'all');
 
     [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
@@ -270,12 +221,19 @@ centroids   = centroids(2:2:end-1,:);                                           
     % imgData = squeeze(sum(imgData,3));
     % imgData = 256*(imgData-min(imgData,[],'all'))/(max(imgData,[],'all')-min(imgData,[],'all'));
 
+    mask_2d = reshape(mask,[],1);
+    f_mask = mean(imgData_2d(mask_2d,:),1);
+    f_nmask= mean(imgData_2d(~mask_2d,:),1);
+
     s.mu = mu;
     s.rho= rho;
     s.z  = zscore_cluster;
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.f_mask = f_mask;
+    s.f_nmask= f_nmask;
+
     %s.imgData = imgData;
 end
 
@@ -285,11 +243,53 @@ function out = resample_pablo(N,x)
 end
 
 
-function cc = find_cc(lag,fly_vel,bump_vel,rho,vel_thresh,bump_thresh,rho_thresh)
+function [cc,gain,bias] = find_cc(lag,fly_vel,bump_vel,rho,vel_thresh,bump_thresh,rho_thresh)
     fly_vel  = fly_vel(1:end-lag);
     bump_vel = bump_vel(lag+1:end);
     rho      = rho(lag+1:end);
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
-    cc = corr(fly_vel(idx),bump_vel(idx));
+
+    cc  = corr(fly_vel(idx),bump_vel(idx));
+    b = [ones(sum(idx),1),fly_vel(idx)]\bump_vel(idx); 
+    gain = b(2);
+    bias = b(1);
+end
+
+function [gain,bias] = find_gain(fly_vel,mu,fr)
+
+    int_pos = cumsum(fly_vel * fr);
+
+    tmp1 = mu(~isnan(mu));
+    tmp2 = int_pos(~isnan(mu));
+    obj_fun = @(x) circ_var(circ_dist(tmp1,tmp2*x(1) + x(2)));
+    x0 = [.7,0];
+    lb = [-10,-10];
+    ub = [10,10];
+   
+    x = fmincon(obj_fun,x0,[],[],[],[],lb,ub);
+    gain = x(1);
+    bias = x(2);
+end
+
+function h = plot_sem(ax,t,x)
+
+m1 = mean(x,1,'omitnan');
+s1 = std(x,1,'omitnan')./sqrt(sum(~isnan(x),1));
+
+idx = ~isnan(m1);
+m1 = m1(idx);
+s1 = s1(idx);
+t  = t(idx);
+
+
+h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
+end
+
+function rgb_image = mat2rgb(v,map)
+    minv = min(v(:));
+    maxv = max(v(:));
+    ncol = size(map,1);
+    s = round(1+(ncol-1)*(v-minv)/(maxv-minv));
+    rgb_image = ind2rgb(s,map);
 end

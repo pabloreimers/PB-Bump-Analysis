@@ -1,4 +1,5 @@
 .data*
+.flywire_data*
 .example videos*
 .data/data_20221230.mat
 .data/data_20230103.mat

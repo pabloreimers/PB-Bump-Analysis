@@ -90,13 +90,13 @@ idx1 = ismember(data.synapses.pre_root_id,lpsp_id) & ismember(data.synapses.post
 
 h(1) = subplot(2,3,1); hold on; set(gca,'YDir','reverse')
 scatter(data.synapses.x(idx1),data.synapses.y(idx1),'filled','k')
-idx2 = ismember(data.synapses.pre_root_id,epg_id);% & ismember(data.synapses.post_root_id,d7_id);
+idx2 = ismember(data.synapses.pre_root_id,epg_id) & ismember(data.synapses.post_root_id,d7_id);
 scatter(data.synapses.x(idx2),data.synapses.y(idx2),'filled')
 title('EPG > Delta7')
 subplot(2,1,2); hold on
 dist = min(pdist2([data.synapses.x(idx1),data.synapses.y(idx1),data.synapses.z(idx1)],...
-              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],1); %find distance from each synapse in idx1 to the nearest synapse in idx2
-histogram(dist(dist<5000),'binwidth',100,'Normalization','probability')
+              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],2); %find distance from each synapse in idx1 to the nearest synapse in idx2
+histogram(dist,'binwidth',100)
 
 
 
@@ -107,8 +107,8 @@ scatter(data.synapses.x(idx2),data.synapses.y(idx2),'filled')
 title('EPG > PEN1')
 subplot(2,1,2); hold on
 dist = min(pdist2([data.synapses.x(idx1),data.synapses.y(idx1),data.synapses.z(idx1)],...
-              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],1); %find distance from each synapse in idx1 to the nearest synapse in idx2
-histogram(dist(dist<5000),'binwidth',100,'Normalization','probability')
+              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],2); %find distance from each synapse in idx1 to the nearest synapse in idx2
+histogram(dist,'binwidth',100)
 
 h(3) = subplot(2,3,3); hold on; set(gca,'YDir','reverse')
 scatter(data.synapses.x(idx1),data.synapses.y(idx1),'filled','k')
@@ -117,12 +117,11 @@ scatter(data.synapses.x(idx2),data.synapses.y(idx2),'filled')
 title('EPG > PEG')
 subplot(2,1,2); hold on
 dist = min(pdist2([data.synapses.x(idx1),data.synapses.y(idx1),data.synapses.z(idx1)],...
-              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],1); %find distance from each synapse in idx1 to the nearest synapse in idx2
-histogram(dist(dist<5000),'binwidth',100,'Normalization','probability')
+              [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],2); %find distance from each synapse in idx1 to the nearest synapse in idx2
+histogram(dist,'binwidth',100)
 legend('EPG > Delta7','EPG > PEN1','EPG > PEG')
-title('LPsP > EPG distance to')
 
-linkaxes(h)
+linkaes(h)
 
 %% plot nearest neighbor distance histograms
 
@@ -130,3 +129,4 @@ idx1 = ismember(data.synapses.pre_root_id,lpsp_id) & ismember(data.synapses.post
 idx2 = ismember(data.synapses.pre_root_id,epg_id) & ismember(data.synapses.post_root_id,d7_id);
 dist = min(pdist2([data.synapses.x(idx1),data.synapses.y(idx1),data.synapses.z(idx1)],...
               [data.synapses.x(idx2),data.synapses.y(idx2),data.synapses.z(idx2)]),[],2); %find distance from each synapse in idx1 to the nearest synapse in idx2
+
