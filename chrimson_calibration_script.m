@@ -138,13 +138,92 @@ figure(4); clf;  hold on
 tmp = find(chrim_idx);
 for i = 1:length(tmp)
     if any(all_data(tmp(i)).ft.stims)
-    plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + i)
+    plot(all_data(tmp(i)).ft.xb,mean(all_data(tmp(i)).im.d,1) + 2*i,'k')
+    a = plot(all_data(tmp(i)).ft.xf,0*all_data(tmp(i)).ft.xf + 2*i,'Color',[1,.6,.6],'linewidth',1.5); a.YData(~all_data(tmp(i)).ft.stims)=nan;
     end
 end
+title('mean dff traces for control flies')
+label('time (s)')
 
-%% show timeseries of baseline levels
-figure(5); clf
+%% show average dff during stim and off stim for both groups
+in_stim = nan(length(all_data),1);
+out_stim= nan(length(all_data),1);
+stim_idx = false(length(all_data),1);
+chrim_idx = contains({all_data.meta},'cschrimson')';
 
+for i = 1:length(all_data)
+
+    idx = logical(interp1(all_data(i).ft.xf,double(~all_data(i).ft.stims),all_data(i).ft.xb,'linear','extrap'));
+
+    f0 = prctile(all_data(i).im.f_mask(idx),5);
+    
+
+    stim_idx(i) = any(all_data(i).ft.stims);
+    in_stim(i) = (mean(all_data(i).im.f_mask(~idx)) - f0) / f0;
+    out_stim(i)= (mean(all_data(i).im.f_mask(idx)) - f0) / f0;
+end
+
+figure(1); clf; hold on
+plot([1,2],[out_stim(chrim_idx&stim_idx),in_stim(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim(~chrim_idx&stim_idx),in_stim(~chrim_idx&stim_idx)],'.-k')
+
+
+xlim([.5,4.5])
+ylabel('average dff')
+xticks([])
+text(.5,0,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
+text(.5,-.1,'light','HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],[0,0,0,0]-.1,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
+
+%% look at behavioral effects of chrimson vs control
+
+figure(4); clf;  hold on
+tmp = find(chrim_idx & stim_idx);
+for i = 1:length(tmp)
+    a = plot(all_data(tmp(i)).ft.xf,abs(all_data(tmp(i)).ft.r_speed) + 4*i,'k'); a.YData(a.YData > 5+4*i) = nan;
+    a = plot(all_data(tmp(i)).ft.xf,0*all_data(tmp(i)).ft.xf + 4*i,'Color',[1,.6,.6],'linewidth',1.5); a.YData(~all_data(tmp(i)).ft.stims)=nan;
+end
+title('mean f speed traces for chrimson flies')
+xlabel('time (s)')
+
+
+in_stim_r = nan(length(all_data),1);
+out_stim_r= nan(length(all_data),1);
+in_stim_f = nan(length(all_data),1);
+out_stim_f= nan(length(all_data),1);
+stim_idx = false(length(all_data),1);
+chrim_idx = contains({all_data.meta},'cschrimson')';
+
+for i = 1:length(all_data)    
+
+    stim_idx(i) = any(all_data(i).ft.stims);
+    in_stim_r(i) = mean(abs(all_data(i).ft.r_speed(logical(all_data(i).ft.stims))));
+    out_stim_r(i)= mean(abs(all_data(i).ft.r_speed(~logical(all_data(i).ft.stims))));
+    in_stim_f(i) = mean(all_data(i).ft.f_speed(logical(all_data(i).ft.stims)));
+    out_stim_f(i)= mean(all_data(i).ft.f_speed(~logical(all_data(i).ft.stims)));
+
+end
+
+figure(5); clf; subplot(2,1,1); hold on
+plot([1,2],[out_stim_r(chrim_idx&stim_idx),in_stim_r(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim_r(~chrim_idx&stim_idx),in_stim_r(~chrim_idx&stim_idx)],'.-k')
+ylabel('average r speed')
+xlim([.5,4.5])
+xticks([])
+
+subplot(2,1,2); hold on
+plot([1,2],[out_stim_f(chrim_idx&stim_idx),in_stim_f(chrim_idx&stim_idx)],'.-k')
+plot([3,4],[out_stim_f(~chrim_idx&stim_idx),in_stim_f(~chrim_idx&stim_idx)],'.-k')
+
+b = min(ylim);
+xlim([.5,4.5])
+ylabel('average f speed')
+xticks([])
+text(.5,b,'cschrimson','HorizontalAlignment','right','VerticalAlignment','top')
+text(.5,b-range(ylim)/10,'light','HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],b+[0,0,0,0],{'+','+','-','-'},'HorizontalAlignment','right','VerticalAlignment','top')
+text([1,2,3,4],b+[0,0,0,0]-range(ylim)/10,{'-','+','-','+'},'HorizontalAlignment','right','VerticalAlignment','top')
 
 %% Functions
 
