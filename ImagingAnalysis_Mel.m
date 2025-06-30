@@ -1,6 +1,6 @@
 %% reset the workspace and set script parameters
-clear all
-close all
+% clear all
+% close all
 movie_flag          = false;                                                %set whether to play movies or just run straight through the script
 pause_time          = 0;                                                    %set the pause time if playing movies
 data_dir            = 'C:\Users\ReimersPabloAlejandr\Documents\Data\2p data\'; %set main data directory for ease of selecting files
@@ -19,6 +19,9 @@ var_thresh          = 0;
 vel_thresh          = 10;                                                   %exclude points in bump to fly vel correlation that are faster than 10rad/s
 vel_min             = 1e-1;                                                 %exclude points in bump to fly vel correlation where fly is slower than .01rad/s (effectively just fictrac noise)
 rho_thresh          = 5e-3;
+
+regProduct = img{1};
+
 %% ask user for image data
 [filename,filepath] = uigetfile('.mat','Select Registered Movie',data_dir);
 load([filepath,'\',filename])

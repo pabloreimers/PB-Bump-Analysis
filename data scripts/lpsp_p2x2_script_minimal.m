@@ -36,12 +36,12 @@ end
 ft_type= 'gaussian'; %the type of smoothing for fictrac data
 ft_win = 30; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'movmean','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {3,5};
+im_win = {1,1};
 
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
@@ -123,7 +123,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240618\fly 2')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20240708\fly 3')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -134,6 +134,7 @@ for i = 1:length(idx)
     imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).atp.d,'AlphaData',1);
     colormap(a2,c2)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
+    if contains(all_data(idx(i)).meta,'dark'); ylabel('dark'); else ylabel('CL'); end
 
     a1 = axes('Position',get(gca,  'Position')); 
     imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
@@ -795,9 +796,12 @@ end
 
 %% find gain over a rolling window
 lag = 10;
-win = 10;
+win = 30;
 gains_inst = cell(length(all_data),1);
+gains_inst_l = cell(length(all_data),1);
+gains_inst_r = cell(length(all_data),1);
 disp_inst = cell(length(all_data),1);
+stims_inst = cell(length(all_data),1);
 rho_thresh  = 0.1;
 cue_thresh  = .1;
 cs_max      = 10;
@@ -808,33 +812,128 @@ for i = 1:length(all_data)
     mu_tmp = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf,'linear','extrap');
     rho_tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf,'linear','extrap');
     atp_tmp = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf,'linear','extrap');
-    cue_tmp = all_data(i).ft.cue;
+    cue_tmp = unwrap(all_data(i).ft.cue);
     m_speed = gradient(mu_tmp)/fr;
     c_speed = gradient(cue_tmp)/fr;
+    r_speed = all_data(i).ft.r_speed;
 
     m_speed = m_speed(lag+1:end);
     c_speed = c_speed(1:end-lag);
+    r_speed = r_speed(1:end-lag);
     rho_tmp = rho_tmp(lag+1:end);
+    stims   = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf);
+    stims   = stims(lag+1:end);
     idx  = abs(c_speed) < cs_max & abs(c_speed) > cue_thresh & rho_tmp > rho_thresh;
     
     m_speed(~idx) = nan;
-    c_speed(~idx) = nan;
+    r_speed(~idx) = nan;
     num_frames = ceil(win/fr);
     max_frames = length(m_speed);
     tmp_gains  = nan(1,max_frames);
+    tmp_gains_l  = nan(1,max_frames);
+    tmp_gains_r  = nan(1,max_frames);
     tmp_disp  = nan(1,max_frames);
     for j = 1:max_frames
         tmp1 = m_speed(j:min(j+num_frames,max_frames));
-        tmp2 = c_speed(j:min(j+num_frames,max_frames));
+        tmp2 = r_speed(j:min(j+num_frames,max_frames));
         idx2 = ~isnan(tmp1);
         if sum(idx2)>2
-            tmp_gains(j) = tmp1(idx2) \ -tmp2(idx2);
+            tmp_gains(j) = tmp2(idx2) \ tmp1(idx2); %cue speed times what  = mu speed
+            tmp_gains_l(j) = tmp2(idx2 & tmp2>0) \ tmp1(idx2& tmp2>0);
+            tmp_gains_r(j) = tmp2(idx2 & tmp2<0) \ tmp1(idx2& tmp2<0);
         end
-        tmp_disp(j) = sum(tmp2,'omitnan');
+        tmp_disp(j) = sum(abs(tmp2),'omitnan');
     end
     gains_inst{i} = tmp_gains;
+    gains_inst_l{i} = tmp_gains_l;
+    gains_inst_r{i} = tmp_gains_r;
     disp_inst{i} = tmp_disp;
+    stims_inst{i} = stims;
 end
+
+%% show gain histograms
+dist_min = -inf;
+stims_max = 4;
+bin_width = .1;
+
+figure(5); clf
+idx = dark_idx & con_idx & left_idx';
+tmp1 = cell2mat(gains_inst_r(idx)');
+tmp2 = cell2mat(disp_inst(idx)');
+tmp3 = cell2mat(stims_inst(idx))';
+histogram(tmp1(tmp2>dist_min & tmp3<stims_max),'BinEdges',-10:bin_width:10,'Normalization','probability');
+
+hold on
+idx = dark_idx & ~con_idx & left_idx';
+tmp1 = cell2mat(gains_inst_r(idx)');
+tmp2 = cell2mat(disp_inst(idx)');
+tmp3 = cell2mat(stims_inst(idx))';
+histogram(tmp1(tmp2>dist_min & tmp3<stims_max),'BinEdges',-10:bin_width:10,'Normalization','probability');
+legend('+>p2x2','lpsp>p2x2')
+xlim([-2,5])
+%% show gain aligned to p2x2 pulse
+win = [-10,300];
+dt = .1;
+t = win(1):dt:win(2);
+
+num_pulse = 0;
+for i = 1:length(all_data)
+    stims = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf);
+    [~,loc_start] = findpeaks(stims,'MinPeakProminence',9);
+    num_pulse = num_pulse+length(loc_start);
+end
+
+pulses = nan(num_pulse,length(t));
+mus = nan(num_pulse,length(t));
+pulse_length = nan(num_pulse,1);
+pulse_left = nan(num_pulse,1);
+
+counter = 0;
+for i = 1:length(all_data)
+    tmp_t = all_data(i).ft.xf(1):dt:all_data(i).ft.xf(end);
+    g = interp1(all_data(i).ft.xf(1:end-lag),gains_inst{i},tmp_t);
+
+    stims = interp1(all_data(i).ft.xb,sum(all_data(i).atp.d,1),all_data(i).ft.xf);
+    [~,loc_start] = findpeaks(stims,'MinPeakProminence',9);
+    if isempty(loc_start); continue; end
+    
+    for j = 1:length(loc_start)
+        counter = counter+1;
+        idx = tmp_t > all_data(i).ft.xf(loc_start(j)) + win(1) & tmp_t < all_data(i).ft.xf(loc_start(j)) + win(2);
+        pulses(counter,1:sum(idx)) = g(idx);
+        pulse_left(counter) = sum(all_data(i).atp.d(1:end/2,:),[1,2]) < sum(all_data(i).atp.d(end/2:end,:),[1,2]);
+    end
+
+end
+
+figure(5); clf
+idx = all(isnan(pulses),1);
+pulses(:,idx) = [];
+t(idx) = [];
+
+tmp = pulses(dark_idx&con_idx,:);
+m = mean(tmp,1,'omitnan');
+s = std(tmp,1,'omitnan')./sqrt(sum(~isnan(tmp),1));
+patch([t,fliplr(t)],[m+s,fliplr(m-s)],'r','FaceAlpha',.5)
+
+
+tmp = pulses(dark_idx&~con_idx,:);
+m = mean(tmp,1,'omitnan');
+s = std(tmp,1,'omitnan')./sqrt(sum(~isnan(tmp),1));
+patch([t,fliplr(t)],[m+s,fliplr(m-s)],'b','FaceAlpha',.5)
+%%
+tmp_t = linspace()
+figure(4); clf; hold on
+tmp = pulse_gains(dark_idx & ~con_idx);
+tmp = cell2mat(tmp(~cellfun(@isempty,tmp)));
+m = mean(tmp,1,'omitnan');
+s = std(tmp,1,'omitnan')/sqrt(sum(~isnan(tmp),1));
+patch(m+s,'k')
+
+tmp = pulse_gains(dark_idx & con_idx);
+tmp = cell2mat(tmp(~cellfun(@isempty,tmp)));
+plot(mean(tmp,1,'omitnan') + std(tmp,1,'omitnan')./sum(~isnan(tmp),1),'r')
+plot(mean(tmp,1,'omitnan') - std(tmp,1,'omitnan')./sum(~isnan(tmp),1),'r')
 
 %% show fly
 fly_str = '20240523\fly 3';
