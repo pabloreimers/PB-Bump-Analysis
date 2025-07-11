@@ -143,7 +143,7 @@ for i = 1:length(all_data)
     
     for j = 1:length(g_tmp)
         f = j*fr;
-        h_tmp = h(f:f+win_frames);
+        h_tmp = h(f:f+win_frames) - h(f);
         if circ_var(h_tmp) > .1
         m_tmp = m(f:f+win_frames) - m(f);
         fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
@@ -168,7 +168,7 @@ end
 
 
 %% create figure to show example
-i = 37;
+i = 3;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -205,7 +205,7 @@ ylabel('func value')
 
 %% show all 3 together
 figure(3); clf
-for i = 4 %unique(gain_val)'
+for i = unique(gain_val)'
     subplot(1,2,1); hold on
     tmp = reshape(cell2mat(g(gain_val == i & ~dark_idx)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')

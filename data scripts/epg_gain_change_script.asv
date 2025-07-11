@@ -108,8 +108,8 @@ end
 
 
 %% calculate integrative gain
-win_sec = 20;
-lag = 20;
+win_sec = 30;
+lag = 10;
 fr = 60;
 win_frames = win_sec*fr;
 r_thresh = .1;
@@ -168,7 +168,7 @@ end
 
 
 %% create figure to show example
-i = 30;
+i = 3;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -190,7 +190,7 @@ plot(all_data(i).ft.xf,all_data(i).ft.f_speed); hold on; plot(xlim,[.8,.8],':k')
 ylabel('forward vel')
 
 linkaxes([a1,a2,a3],'x')
-xlim(min(all_data(i).ft.xf),max(all_data(i).ft.xf))
+xlim([min(all_data(i).ft.xf),max(all_data(i).ft.xf)])
 
 subplot(3,2,5); hold on
 h = histogram(g{i},'BinEdges',binedges,'FaceAlpha',.1);
@@ -205,7 +205,7 @@ ylabel('func value')
 
 %% show all 3 together
 figure(3); clf
-for i = 4 %unique(gain_val)'
+for i = unique(gain_val)'
     subplot(1,2,1); hold on
     tmp = reshape(cell2mat(g(gain_val == i & ~dark_idx)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
@@ -230,19 +230,22 @@ for i = 1:6
 end
 
 %%
-tmp_ind = find(dark_idx);
+tmp_ind = find(~dark_idx);
 rows = ceil(sqrt(length(tmp_ind)));
 cols = ceil(length(tmp_ind)/rows);
 
 
 figure(5); clf
 for i = 1:length(tmp_ind)
-    subplot(rows,cols,i); hold on
-    %polarhistogram(all_data(tmp_ind(i)).ft.cue)
-    a=plot(all_data(tmp_ind(i)).ft.xf,unwrap(-all_data(tmp_ind(i)).ft.cue));
-    a.YData(abs(diff(a.YData))>pi) = nan;
-    a=plot(all_data(tmp_ind(i)).ft.xb,unwrap(all_data(tmp_ind(i)).im.mu));
-    a.YData(abs(diff(a.YData))>pi) = nan;
+    subplot(rows,cols,i)
+    polarhistogram(all_data(tmp_ind(i)).ft.cue,'Normalization','probability')
+    hold on
+    polarhistogram(all_data(tmp_ind(i)).im.mu,'Normalization','probability')
+    
+    % a=plot(all_data(tmp_ind(i)).ft.xf,unwrap(-all_data(tmp_ind(i)).ft.cue));
+    % a.YData(abs(diff(a.YData))>pi) = nan;
+    % a=plot(all_data(tmp_ind(i)).ft.xb,unwrap(all_data(tmp_ind(i)).im.mu));
+    % a.YData(abs(diff(a.YData))>pi) = nan;
 end
 %% Functions
 
