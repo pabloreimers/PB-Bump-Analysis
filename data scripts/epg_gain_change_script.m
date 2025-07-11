@@ -109,11 +109,12 @@ end
 
 %% calculate integrative gain
 win_sec = 20;
-lag = 20;
+lag = 10;
 fr = 60;
 win_frames = win_sec*fr;
 r_thresh = .1;
 rho_thresh = .1;
+vel_thresh = .1;
 g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 
@@ -143,7 +144,7 @@ for i = 1:length(all_data)
     
     for j = 1:length(g_tmp)
         f = j*fr;
-        h_tmp = h(f:f+win_frames);
+        h_tmp = h(f:f+win_frames) - h(f);
         if circ_var(h_tmp) > .1
         m_tmp = m(f:f+win_frames) - m(f);
         fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
@@ -168,7 +169,7 @@ end
 
 
 %% create figure to show example
-i = 37;
+i = 56;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -205,16 +206,17 @@ ylabel('func value')
 
 %% show all 3 together
 figure(3); clf
-for i = 4 %unique(gain_val)'
+for i = [8,12] %unique(gain_val)'
     subplot(1,2,1); hold on
     tmp = reshape(cell2mat(g(gain_val == i & ~dark_idx)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
 
-    subplot(1,2,2); hold on
-    tmp = reshape(cell2mat(g(gain_val == i & dark_idx)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
+    % subplot(1,2,2); hold on
+    % tmp = reshape(cell2mat(g(gain_val == i & dark_idx)),1,[]);
+    % histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
 end
-
+legend('.8','1.2')
+xlabel('integrative gain')
 %%
 
 [~,group_num] = unique(gain_val)
@@ -230,7 +232,7 @@ for i = 1:6
 end
 
 %%
-tmp_ind = find(~dark_idx);
+tmp_ind = find(~dark_idx & gain_val == 8);
 rows = ceil(sqrt(length(tmp_ind)));
 cols = ceil(length(tmp_ind)/rows);
 
@@ -247,6 +249,52 @@ for i = 1:length(tmp_ind)
     % a=plot(all_data(tmp_ind(i)).ft.xb,unwrap(all_data(tmp_ind(i)).im.mu));
     % a.YData(abs(diff(a.YData))>pi) = nan;
 end
+
+%% look at instantaneous velocity scatter plots
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
+g_ins = nan(length(all_data));
+
+figure(6); clf; t = tiledlayout(rows,cols);
+for i = 1:length(all_data)
+    %extract the best unwrapped estimate of mu by nan-ing low confidence
+    %values and unwrapping and re-interp onto fictrac timescale
+    m = all_data(i).im.mu;
+    m(all_data(i).im.rho<rho_thresh) = nan;
+    m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
+    dm = gradient(m) * 60;
+    dm = smoothdata(dm,1,"gaussian",60); 
+    dr = smoothdata(all_data(i).ft.r_speed,1,"gaussian",60);
+   
+
+    dm = dm(lag+1:end); dm = dm - mean(dm,'omitnan');
+    dr = dr(1:end-lag); dr = dr - mean(dr,'omitnan');
+    idx = ~isnan(dm) & abs(dr) > vel_thresh;
+
+    all_data(i).gain.g_ins = dr(idx) \ dm(idx);
+    g_ins(i) = dr(idx) \ dm(idx);
+    nexttile; hold on
+    scatter(dr(idx),dm(idx),'.'); plot(xlim,[0,0],'k:'); plot([0,0],ylim,'k:')
+    text(max(xlim),min(ylim),sprintf('%.2f',all_data(i).gain.g_ins),'horizontalalignment','right','verticalalignment','bottom')
+end
+xlabel(t,'fly vel')
+ylabel(t,'bump vel')
+
+%%
+figure(7); clf
+hold on
+for i = 1:length(all_data)
+scatter(gain_val(i)/10 + (dark_idx(i)-.5)/10,all_data(i).gain.g_ins,50,'k','filled','MarkerFaceAlpha',.2)
+end
+
+for i = unique(gain_val)'
+    m = mean(g_ins(gain_val == i));
+    s = std(g_ins(gain_val == i)) / sqrt(sum(gain_val==i));
+    errorbar(i/10,m,s,'r','Marker','o')
+end
+xlim([0,1.6])
+xlabel('trained gain')
+ylabel('instantaneous gain')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
