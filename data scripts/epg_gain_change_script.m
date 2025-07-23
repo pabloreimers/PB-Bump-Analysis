@@ -108,15 +108,18 @@ end
 
 
 %% calculate integrative gain
-win_sec = 20;
+win_sec = 10;
 lag = 10;
 fr = 60;
 win_frames = win_sec*fr;
 r_thresh = .1;
 rho_thresh = .1;
 vel_thresh = .1;
+gain_search = [0:.05:2];
+
 g = cell(length(all_data),1);
 v = cell(length(all_data),1);
+h_var = cell(length(all_data),1);
 
 tic
 for i = 1:length(all_data)
@@ -131,45 +134,48 @@ for i = 1:length(all_data)
     amp = interp1(all_data(i).ft.xb,sum(all_data(i).im.d,1),all_data(i).ft.xf);
 
     %extract the fly's heading (no gain applied) and apply all lags
-    h = all_data(i).ft.heading;
+    h = cumsum(all_data(i).ft.r_speed)/60;
     h = smoothdata(h,1,"gaussian",60);
 
     m = m(lag+1:end);
     h = h(1:end-lag);
 
+    fwd = all_data(i).ft.f_speed;
 
     % for each second
-    g_tmp = nan(floor((length(m) - win_frames)/fr),1);
-    v_tmp = nan(floor((length(m) - win_frames)/fr),1);
-    
+    g_tmp = nan(floor((length(m) - win_frames)/fr),length(gain_search));
+    v_tmp = nan(floor((length(m) - win_frames)/fr),length(gain_search));
+    hvar_tmp = nan(floor((length(m) - win_frames)/fr),1);
     for j = 1:length(g_tmp)
         f = j*fr;
         h_tmp = h(f:f+win_frames) - h(f);
-        if circ_var(h_tmp) > .1
         m_tmp = m(f:f+win_frames) - m(f);
-        fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
+        fwd_tmp = fwd(f:f+win_frames);
+        %fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
         tmp = inf;
-        for k = 0:.05:5 %evaluate the loss function at many possible gains, and save gain that gives the minimum value
-            if fun(k) < tmp
-                g_tmp(j) = k;
-                tmp = fun(k);
-            end
+        for k = 1:length(gain_search) %evaluate the loss function at many possible gains, and save gain that gives the minimum value
+            % tmp_loss = gain_fun(m_tmp,h_tmp,fwd_tmp,gain_search(k));
+            % if tmp_loss < tmp
+            %     g_tmp(j) = gain_search(k);
+            %     tmp = tmp_loss;
+            % end
+            v_tmp(j,k) = gain_fun(m_tmp,h_tmp,fwd_tmp,gain_search(k));
         end
-        if g_tmp(j) == 0 
-            a = 1;
-        end
-        v_tmp(j) = tmp;
-        end
+        %v_tmp(j) = tmp;
+        hvar_tmp(j) = circ_var(h_tmp);
+        
     end
 
-    g{i} = g_tmp;
+    [~,ind] = min(v_tmp,[],2);   
+    g{i} = gain_search(ind);
     v{i} = v_tmp;
+    h_var{i} = hvar_tmp;
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 
 
 %% create figure to show example
-i = 56;
+i = 57;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -185,9 +191,10 @@ xlabel('time (s)')
 a2 = subplot(6,1,3);
 plot(g{i}); hold on; plot(xlim,[.8,.8],':k')
 ylabel('integrative gain')
+%yyaxis right; plot(h_var{i})
 
 a3 = subplot(6,1,4);
-plot(all_data(i).ft.xf,all_data(i).ft.f_speed); hold on; plot(xlim,[.8,.8],':k')
+plot(all_data(i).ft.xf,all_data(i).ft.f_speed); hold on; plot(xlim,[0,0],':k')
 ylabel('forward vel')
 
 linkaxes([a1,a2,a3],'x')
@@ -200,7 +207,7 @@ xlabel('integrative gain')
 ylabel('counts')
 
 subplot(3,2,6); 
-scatter(g{i},v{i},'filled','MarkerFaceAlpha',.5)
+scatter(g{i},min(v{i},[],2),'filled','MarkerFaceAlpha',.5)
 xlabel('integrative gain')
 ylabel('func value')
 
@@ -208,8 +215,12 @@ ylabel('func value')
 figure(3); clf
 for i = [8,12] %unique(gain_val)'
     subplot(1,2,1); hold on
-    tmp = reshape(cell2mat(g(gain_val == i & ~dark_idx)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
+    tmp_idx = gain_val == i & dark_idx;
+
+    tmp = reshape(cell2mat(g(tmp_idx)),1,[]);
+    tmp2 = reshape(cell2mat(v(tmp_idx)),1,[]);
+    tmp3 = reshape(cell2mat(h_var(tmp_idx)),1,[]);
+    histogram(tmp(~isnan(tmp) & tmp2 < .1 & tmp3 > 5e-3),'BinEdges',[0:.1:5]); %,'Normalization','Probability')
 
     % subplot(1,2,2); hold on
     % tmp = reshape(cell2mat(g(gain_val == i & dark_idx)),1,[]);
@@ -232,24 +243,26 @@ for i = 1:6
 end
 
 %%
-tmp_ind = find(~dark_idx & gain_val == 8);
+tmp_ind = find(~dark_idx & gain_val==12);
 rows = ceil(sqrt(length(tmp_ind)));
 cols = ceil(length(tmp_ind)/rows);
 
 
-figure(5); clf
+figure(5); clf; tiledlayout(rows,cols)
 for i = 1:length(tmp_ind)
-    subplot(rows,cols,i)
-    polarhistogram(all_data(tmp_ind(i)).ft.cue,'Normalization','probability')
-    hold on
-    polarhistogram(all_data(tmp_ind(i)).im.mu,'Normalization','probability')
+    nexttile
+    idx = all_data(tmp_ind(i)).ft.f_speed > .5;
+    polarhistogram(all_data(tmp_ind(i)).ft.cue(idx),'Normalization','probability')
+    title(tmp_ind(i))
+    rticklabels([])
+    thetaticklabels([])
+    %hold on
+    %polarhistogram(all_data(tmp_ind(i)).im.mu,'Normalization','probability')
     
-    % a=plot(all_data(tmp_ind(i)).ft.xf,unwrap(-all_data(tmp_ind(i)).ft.cue));
-    % a.YData(abs(diff(a.YData))>pi) = nan;
-    % a=plot(all_data(tmp_ind(i)).ft.xb,unwrap(all_data(tmp_ind(i)).im.mu));
-    % a.YData(abs(diff(a.YData))>pi) = nan;
 end
 
+annotation('textbox',[.5,.05,.1,.1],'String','heading histograms, closed loop (gain = 0.4)','HorizontalAlignment','center','VerticalAlignment','bottom')
+set(gcf,'color','w')
 %% look at instantaneous velocity scatter plots
 rows = ceil(sqrt(length(all_data)));
 cols = ceil(length(all_data)/rows);
@@ -295,6 +308,19 @@ end
 xlim([0,1.6])
 xlabel('trained gain')
 ylabel('instantaneous gain')
+
+%% Show forward speed of all flies
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
+figure(8); clf; t = tiledlayout(rows,cols);
+for i = 1:length(all_data)
+    nexttile
+    plot(all_data(i).ft.f_speed)
+    ylim([-1,20]); xticks([])
+    %scatter(i,mean(all_data(i).ft.f_speed),'k')
+end
+ylabel(t,'forward velocity (mm/s)')
+xlabel(t,'time')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
@@ -378,4 +404,9 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.f  = f_cluster;
     s.alpha = alpha;
     %s.imgData = imgData;
+end
+
+function loss = gain_fun(mu,heading,fwd,k)
+    x = circ_dist(mu,heading*k);
+    loss = circ_var(x(abs(fwd)>.5),[], [], [],'omitnan');
 end
