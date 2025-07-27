@@ -240,7 +240,7 @@ for ii = 1:rows
     a1= subplot(rows,1,ii);
     i = tmp_ind(ii);
 
-    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
     hold on
     if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
     a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
@@ -345,7 +345,7 @@ for ii = 1:rows
 end
 
 %% plot peak fluorescence as a function of fly speed and bump speed
-i = 7;
+i = 20;
 lag = 10;
 figure(3); clf
 m = all_data(i).im.mu;
@@ -367,13 +367,13 @@ amp = amp(lag+1:end);
 rho = rho(lag+1:end);
 
 idx = rho > rho_thresh & abs(dr) > r_thresh & ~isnan(dm);
-subplot(2,2,1)
+subplot(3,2,1)
 scatter(abs(dr(idx)),abs(dm(idx)),[],amp(idx),'filled','MarkerFaceAlpha',.1)
 xlabel('fly speed')
 ylabel('bump speed')
 axis equal
 
-subplot(2,2,2)
+subplot(3,2,2)
 scatter(abs(dr(idx)),abs(dc(idx)),[],amp(idx),'filled','MarkerFaceAlpha',.1)
 xlabel('fly speed')
 ylabel('cue speed')
@@ -390,14 +390,60 @@ for j = 1:length(t)
     if sum(idx) == 0; g(j) = nan; end
 end
 
-subplot(2,1,2); hold on
+ax1= subplot(3,1,2); hold on
 plot(all_data(i).ft.xb,max(all_data(i).im.d,[],1))
 scatter(t,g,'.')
+legend('dff (peak)','vr gain','autoupdate','off')
 %plot(-gradient(all_data(1).ft.cue(3:end))*60 ./ all_data(1).ft.r_speed(1:end-2))
 ylim([0,1.5])
-yyaxis right; plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
+yyaxis right; plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); ylabel('r speed (mm/s)')
 title(all_data(i).meta)
 
+ax2 = subplot(3,1,3);
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
+
+linkaxes([ax1,ax2])
+axis tight
+%% plot amp vel relationship separated by gain
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
+
+figure(5); clf
+tax = tiledlayout(rows,cols);
+for i= 1:length(all_data)
+    dr = all_data(i).ft.r_speed;
+    amp= interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf);
+    dr = dr(1:end-lag);
+    amp = amp(lag+1:end);
+
+    t = 1:round(max(all_data(i).ft.xf));
+    g = nan(size(t));
+    r = all_data(i).ft.r_speed(1:end-2);
+    c = -gradient(all_data(i).ft.cue(3:end))*60;
+    c(abs(c)>50) = nan;
+    for j = 1:length(t)
+        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5 & abs(c) > .5;
+        
+        g(j) = r(idx) \ c(idx);
+        if sum(idx) == 0; g(j) = nan; end
+    end
+    g = interp1(t,g,all_data(i).ft.xf);
+    g = g(lag+1:end);
+
+    nexttile; hold on
+    scatter(abs(dr(g>1)),amp(g>1),'filled','r','MarkerFaceAlpha',.2)
+    scatter(abs(dr(g>.5 & g<1)),amp(g>.5 & g<1),'filled','b','MarkerFaceAlpha',.2)
+    scatter(abs(dr(g<.5)),amp(g<.5),'filled','g','MarkerFaceAlpha',.2)
+    title(all_data(i).meta(34:47))
+end
+legend('high','normal','low')
+xlabel(tax,'fly speed (mm/s)')
+ylabel(tax,'bump amp (peak dff)')
+fontsize(gcf,20,'pixels')
 %% cross-correlate max fluorescence with compass gain
 i = 18;
 rho_thresh = .2;

@@ -1,6 +1,6 @@
 %% start fresh
- % close all
- % clear all
+ close all
+ clear all
 
 %% load in data
 base_dir = uigetdir(); %('Z:\pablo\lpsp_cschrimson\to do\curr\good_behave'); %uigetdir(); %
