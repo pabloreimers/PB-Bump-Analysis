@@ -40,39 +40,75 @@ f0_pct = 7;
 %all_data = struct();
 
 tic
-for i = length(all_data):length(all_files)
+for i = 1:length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
-    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
-    load([tmp2.folder,'\',tmp2.name])
-    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
-    load([tmp2.folder,'\',tmp2.name])
+    % load([all_files(i).folder,'\',all_files(i).name])
+    % load([fileparts(all_files(i).folder),'\mask.mat'])
+    % tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    % load([tmp2.folder,'\',tmp2.name])
+    % tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
+    % load([tmp2.folder,'\',tmp2.name])
+    tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
+    tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
 
-    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    all_data(i).im = process_im(squeeze(sum(img{1},3)), im_win, im_type, mask, n_centroid, f0_pct);
-    if length(img) > 1; all_data(i).atp = process_im(squeeze(sum(img{2},3)), im_win, im_type, mask, n_centroid, f0_pct); end
-    all_data(i).meta = all_files(i).folder;
+    % all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    % all_data(i).im = process_im(squeeze(sum(img{1},3)), im_win, im_type, mask, n_centroid, f0_pct);
+    % if length(img) > 1; all_data(i).atp = process_im(squeeze(sum(img{2},3)), im_win, im_type, mask, n_centroid, f0_pct); end
+    % all_data(i).meta = all_files(i).folder;
+    all_data(i).ft.pattern = tmp2.patternPath{1};
 
     % if ~ismember('xb',fieldnames(all_data(i).ft))
     %     xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     % end
 
-    try
-     all_data(i).ft.stims = ftData_DAQ.stim{1};
-    end
+    % try
+    %  all_data(i).ft.stims = ftData_DAQ.stim{1};
+    % end
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
+%% create metadata indices
+grab_idx = contains({all_data(:).meta},'grab')';
+ach_idx = contains({all_data(:).meta},'ach')';
+da_idx = contains({all_data(:).meta},'da')' | contains({all_data(:).meta},'_dopamine_')';
+dangle_idx = false(length(all_data),1);
+
+trial_num = zeros(length(all_data),1);
+dark_idx  = false(length(all_data),1);
+walk_idx  = false(length(all_data),1);
+last_str = '';
+
+for i = 1:length(all_data)
+    tmp_str = all_data(i).meta(1:45);
+
+    if ~strcmp(tmp_str,last_str)
+        counter = 0;
+        last_str = tmp_str;
+    end
+    counter = counter+1;
+    trial_num(i) = counter;
+    last_str = tmp_str;
+    
+    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+        walk_idx(i) = true;
+    end
+    
+    if contains(all_data(i).ft.pattern,'background')
+        dark_idx(i) = true;
+    end
+
+    dangle_idx(i) = sum(all_data(i).ft.f_speed > .5)/length(all_data(i).ft.f_speed) < .1;
+end
+
 %%
-i  = 147;
+i  = 20;
 
 tmp = zeros([size(all_data(i).im.d),3]);
 tmp(:,:,1) = all_data(i).atp.d*5;
-tmp(:,:,2) = all_data(i).im.d*5;
+tmp(:,:,2) = all_data(i).im.d*3;
 
 figure(1); clf
 subplot(4,1,1); hold on
@@ -124,6 +160,30 @@ pos=  get(gca,'Position');
 legend('dopamine','gcamp','location','NortheastOutside')
 set(gca,'Position',pos)
 
+%% look at trials for a specific condition
+idx = grab_idx & ~dangle_idx & dark_idx & da_idx & ~ach_idx;
+ind = find(idx);
+
+rows = ceil(sqrt(sum(idx)));
+cols = ceil(sum(idx)/rows);
+
+figure(4); clf; tiledlayout(rows,cols)
+for i = 1:length(ind)
+    nexttile
+    imagesc(all_data(ind(i)).ft.xf,unwrap(all_data(ind(i)).im.alpha),all_data(ind(i)).im.f); hold on
+    if contains(all_data(ind(i)).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+    a = plot(all_data(ind(i)).ft.xf,-all_data(ind(i)).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
+    title(all_data(ind(i)).meta(47:80))
+end
+
+figure(5); clf; tiledlayout(rows,cols)
+for i = 1:length(ind)
+    nexttile
+    imagesc(all_data(ind(i)).ft.xf,unwrap(all_data(ind(i)).im.alpha),all_data(ind(i)).atp.z); hold on
+    if contains(all_data(ind(i)).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+    a = plot(all_data(ind(i)).ft.xf,-all_data(ind(i)).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
+    title(all_data(ind(i)).meta(47:80))
+end
 %% create an averaged trace
 win = [-10,60];
 dt = .1;

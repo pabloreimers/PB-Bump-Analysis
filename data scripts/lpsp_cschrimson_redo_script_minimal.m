@@ -1,6 +1,6 @@
 %% 
 close all
-%clear all
+clear all
 
 %% load in data
 base_dir = uigetdir(); %('Z:\pablo\gain_change\to do\'); %uigetdir(); %
@@ -39,10 +39,10 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-%all_data = struct();
+all_data = struct();
 
 tic
-for i = length(all_data):length(all_files)
+for i = 1:length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
@@ -168,7 +168,7 @@ end
 
 
 %% create figure to show example
-i = 120;
+i = 6;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -183,6 +183,7 @@ xlabel('time (s)')
 
 a2 = subplot(3,1,2);
 plot(g{i}); hold on; plot(xlim,[.8,.8],':k')
+plot(all_data(i).ft.xf,all_data(i).ft.stims)
 ylabel('integrative gain')
 
 linkaxes([a1,a2],'x')
@@ -321,7 +322,7 @@ end
 
 empty_idx = cellfun(@(x)(contains(x,'empty')),{all_data.meta});
 %% show each
-tmp_str = '20250617\fly 1';
+tmp_str = '20250725\fly 1';
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 
 rows = length(tmp_ind);

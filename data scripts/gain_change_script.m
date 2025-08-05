@@ -1,9 +1,9 @@
 %% 
 close all
-clear all
+%clear all
 
 %% load in data
-base_dir = uigetdir(); %('Z:\pablo\gain_change\to do\'); %uigetdir(); %
+base_dir = 'Z:\pablo\hackathon_gain_change\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -39,10 +39,10 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = length(all_data):length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
@@ -76,6 +76,72 @@ for i = 1:length(all_files)
 
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
+
+%% calculate integrative gain (new)
+% win_sec = 20;
+% lag = 20;
+% fr = 60;
+% win_frames = win_sec*fr;
+% r_thresh = .1;
+% rho_thresh = .1;
+% vel_thresh = .1;
+% gain_search = [0:.05:2];
+% 
+% g = cell(length(all_data),1);
+% v = cell(length(all_data),1);
+% h_var = cell(length(all_data),1);
+% 
+% tic
+% for i = 1:length(all_data)
+%     fprintf('processing: %i ',i)
+% 
+%     %extract the best unwrapped estimate of mu by nan-ing low confidence
+%     %values and unwrapping and re-interp onto fictrac timescale
+%     m = all_data(i).im.mu;
+%     m(all_data(i).im.rho<rho_thresh) = nan;
+%     m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
+%     m = smoothdata(m,1,"gaussian",60);
+%     amp = interp1(all_data(i).ft.xb,sum(all_data(i).im.d,1),all_data(i).ft.xf);
+% 
+%     %extract the fly's heading (no gain applied) and apply all lags
+%     h = cumsum(all_data(i).ft.r_speed)/60;
+%     h = smoothdata(h,1,"gaussian",60);
+% 
+%     m = m(lag+1:end);
+%     h = h(1:end-lag);
+% 
+%     fwd = all_data(i).ft.f_speed;
+% 
+%     % for each second
+%     g_tmp = nan(floor((length(m) - win_frames)/fr),length(gain_search));
+%     v_tmp = nan(floor((length(m) - win_frames)/fr),length(gain_search));
+%     hvar_tmp = nan(floor((length(m) - win_frames)/fr),1);
+%     for j = 1:length(g_tmp)
+%         f = j*fr;
+%         h_tmp = h(f:f+win_frames) - h(f);
+%         m_tmp = m(f:f+win_frames) - m(f);
+%         fwd_tmp = fwd(f:f+win_frames);
+%         %fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
+%         tmp = inf;
+%         for k = 1:length(gain_search) %evaluate the loss function at many possible gains, and save gain that gives the minimum value
+%             % tmp_loss = gain_fun(m_tmp,h_tmp,fwd_tmp,gain_search(k));
+%             % if tmp_loss < tmp
+%             %     g_tmp(j) = gain_search(k);
+%             %     tmp = tmp_loss;
+%             % end
+%             v_tmp(j,k) = gain_fun(m_tmp,h_tmp,fwd_tmp,gain_search(k));
+%         end
+%         %v_tmp(j) = tmp;
+%         hvar_tmp(j) = circ_var(h_tmp);
+% 
+%     end
+% 
+%     [~,ind] = min(v_tmp,[],2);   
+%     g{i} = gain_search(ind);
+%     v{i} = v_tmp;
+%     h_var{i} = hvar_tmp;
+%     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
+% end
 
 %% calculate integrative gain
 win_sec = 20;
@@ -133,7 +199,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 2;
+i = 4;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -148,6 +214,7 @@ xlabel('time (s)')
 
 a2 = subplot(3,1,2);
 plot(g{i}); hold on; plot(xlim,[.8,.8],':k')
+%a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf))); a.YData(abs(diff(a.YData))>pi) =nan;
 ylabel('integrative gain')
 
 linkaxes([a1,a2],'x')
@@ -164,7 +231,7 @@ xlabel('integrative gain')
 ylabel('func value')
 
 %% show each
-tmp_str = '20250611\fly 1';
+tmp_str = '20250417\fly 2';
 tmp_ind = find(cellfun(@(x)(contains(x,tmp_str)),{all_data.meta}'));
 
 rows = length(tmp_ind);
@@ -174,7 +241,7 @@ for ii = 1:rows
     a1= subplot(rows,1,ii);
     i = tmp_ind(ii);
 
-    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
     hold on
     if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
     a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
@@ -279,12 +346,18 @@ for ii = 1:rows
 end
 
 %% plot peak fluorescence as a function of fly speed and bump speed
-i = 16;
+i = 20;
 lag = 10;
 figure(3); clf
-dm = gradient(interp1(all_data(i).ft.xb,smoothdata(unwrap(all_data(i).im.mu),3,'movmean',3),all_data(i).ft.xf)) * fr;
+m = all_data(i).im.mu;
+rho= all_data(i).im.rho;
+m(rho<rho_thresh) = nan;
+m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
+m = medfilt1(m,60);
+dm = gradient(m) * fr;
 dr = all_data(i).ft.r_speed;
-dc = -gradient(unwrap(all_data(i).ft.cue)) * fr;
+c = -unwrap(all_data(i).ft.cue);
+dc = gradient(c) * fr;
 amp= interp1(all_data(i).ft.xb,sum(all_data(i).im.d,1),all_data(i).ft.xf);
 rho= interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
@@ -294,14 +367,14 @@ dc = dc(1:end-lag);
 amp = amp(lag+1:end);
 rho = rho(lag+1:end);
 
-idx = rho > rho_thresh & abs(dr) > r_thresh;
-subplot(2,2,1)
+idx = rho > rho_thresh & abs(dr) > r_thresh & ~isnan(dm);
+subplot(3,2,1)
 scatter(abs(dr(idx)),abs(dm(idx)),[],amp(idx),'filled','MarkerFaceAlpha',.1)
 xlabel('fly speed')
 ylabel('bump speed')
 axis equal
 
-subplot(2,2,2)
+subplot(3,2,2)
 scatter(abs(dr(idx)),abs(dc(idx)),[],amp(idx),'filled','MarkerFaceAlpha',.1)
 xlabel('fly speed')
 ylabel('cue speed')
@@ -309,18 +382,69 @@ axis equal
 
 t = 1:round(max(all_data(i).ft.xf));
 g = nan(size(t));
+r = all_data(i).ft.r_speed(1:end-2);
+c = -gradient(all_data(i).ft.cue(3:end))*60;
 for j = 1:length(t)
-    idx = all_data(i).ft.xf > j-1 & all_data(i).ft.xf < j;
+    idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5;
     
-    g(j) = all_data(i).ft.r_speed(idx) \ -gradient(all_data(i).ft.cue(idx))*60;
+    g(j) = r(idx) \ c(idx);
+    if sum(idx) == 0; g(j) = nan; end
 end
 
-subplot(2,1,2); hold on
+ax1= subplot(3,1,2); hold on
 plot(all_data(i).ft.xb,max(all_data(i).im.d,[],1))
 scatter(t,g,'.')
+legend('dff (peak)','vr gain','autoupdate','off')
+%plot(-gradient(all_data(1).ft.cue(3:end))*60 ./ all_data(1).ft.r_speed(1:end-2))
 ylim([0,1.5])
-yyaxis right; plot(all_data(i).ft.xf,all_data(i).ft.r_speed)
+yyaxis right; plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); ylabel('r speed (mm/s)')
+title(all_data(i).meta)
 
+ax2 = subplot(3,1,3);
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
+
+linkaxes([ax1,ax2])
+axis tight
+%% plot amp vel relationship separated by gain
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
+
+figure(5); clf
+tax = tiledlayout(rows,cols);
+for i= 1:length(all_data)
+    dr = all_data(i).ft.r_speed;
+    amp= interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf);
+    dr = dr(1:end-lag);
+    amp = amp(lag+1:end);
+
+    t = 1:round(max(all_data(i).ft.xf));
+    g = nan(size(t));
+    r = all_data(i).ft.r_speed(1:end-2);
+    c = -gradient(all_data(i).ft.cue(3:end))*60;
+    c(abs(c)>50) = nan;
+    for j = 1:length(t)
+        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5 & abs(c) > .5;
+        
+        g(j) = r(idx) \ c(idx);
+        if sum(idx) == 0; g(j) = nan; end
+    end
+    g = interp1(t,g,all_data(i).ft.xf);
+    g = g(lag+1:end);
+
+    nexttile; hold on
+    scatter(abs(dr(g>1)),amp(g>1),'filled','r','MarkerFaceAlpha',.2)
+    scatter(abs(dr(g>.5 & g<1)),amp(g>.5 & g<1),'filled','b','MarkerFaceAlpha',.2)
+    scatter(abs(dr(g<.5)),amp(g<.5),'filled','g','MarkerFaceAlpha',.2)
+    title(all_data(i).meta(34:47))
+end
+legend('high','normal','low')
+xlabel(tax,'fly speed (mm/s)')
+ylabel(tax,'bump amp (peak dff)')
+fontsize(gcf,20,'pixels')
 %% cross-correlate max fluorescence with compass gain
 i = 18;
 rho_thresh = .2;
@@ -548,4 +672,9 @@ function rgb_image = mat2rgb(v,map)
     ncol = size(map,1);
     s = round(1+(ncol-1)*(v-minv)/(maxv-minv));
     rgb_image = ind2rgb(s,map);
+end
+
+function loss = gain_fun(mu,heading,fwd,k)
+    x = circ_dist(mu,heading*k);
+    loss = circ_var(x(abs(fwd)>.5),[], [], [],'omitnan');
 end
