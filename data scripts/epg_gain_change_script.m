@@ -108,7 +108,7 @@ end
 
 
 %% calculate integrative gain
-win_sec = 20;
+win_sec = 3;
 lag = 10;
 fr = 60;
 win_frames = win_sec*fr;
@@ -136,6 +136,7 @@ for i = 1:length(all_data)
 
     m = m(lag+1:end);
     h = h(1:end-lag);
+    fwd = all_data(i).ft.f_speed(1:end-lag);
 
 
     % for each second
@@ -144,8 +145,9 @@ for i = 1:length(all_data)
     
     for j = 1:length(g_tmp)
         f = j*fr;
+        f_tmp = fwd(f:f+win_frames);
         h_tmp = h(f:f+win_frames) - h(f);
-        if circ_var(h_tmp) > .1
+        if mean(f_tmp) > .1 %circ_var(h_tmp) > .05
         m_tmp = m(f:f+win_frames) - m(f);
         fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
         tmp = inf;
@@ -206,14 +208,14 @@ ylabel('func value')
 
 %% show all 3 together
 figure(3); clf
-for i = [8,12] %unique(gain_val)'
+for i = [8,4] %unique(gain_val)'
     subplot(1,2,1); hold on
     tmp = reshape(cell2mat(g(gain_val == i & ~dark_idx)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
 
-    % subplot(1,2,2); hold on
-    % tmp = reshape(cell2mat(g(gain_val == i & dark_idx)),1,[]);
-    % histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
+    subplot(1,2,2); hold on
+    tmp = reshape(cell2mat(g(gain_val == i & dark_idx)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
 end
 legend('.8','1.2')
 xlabel('integrative gain')
