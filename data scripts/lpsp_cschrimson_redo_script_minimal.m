@@ -168,7 +168,7 @@ end
 
 
 %% create figure to show example
-i = 6;
+i = 100;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -183,7 +183,7 @@ xlabel('time (s)')
 
 a2 = subplot(3,1,2);
 plot(g{i}); hold on; plot(xlim,[.8,.8],':k')
-plot(all_data(i).ft.xf,all_data(i).ft.stims)
+%plot(all_data(i).ft.xf,all_data(i).ft.stims)
 ylabel('integrative gain')
 
 linkaxes([a1,a2],'x')
@@ -200,28 +200,70 @@ xlabel('integrative gain')
 ylabel('func value')
 
 
-%%
+%% show histograms of gain for each trial number
+dark_order = [0,1,0,1,1,0];
 figure(3); clf
 for i = 1:6
-    subplot(3,2,i); hold on
-    tmp = reshape(cell2mat(g(empty_idx & trial_num==i)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
-    tmp = reshape(cell2mat(g(~empty_idx & trial_num==i)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability')
-    legend(sprintf('empty>cschrimson (%i)',sum(empty_idx & trial_num==i)),...
-           sprintf('lpsp>cschrimson (%i)',sum(~empty_idx & trial_num==i)))
+    subplot(3,2,i); hold on; set(gca,'color','none','ycolor','w','xcolor','w')
+    tmp = reshape(cell2mat(g(empty_idx & trial_num==i & dark_order(i) == dark_idx)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
+    tmp = reshape(cell2mat(g(~empty_idx & trial_num==i & dark_order(i) == dark_idx)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
+    legend(sprintf('empty>cschrimson (%i)',sum(empty_idx & trial_num==i & dark_order(i) == dark_idx)),...
+           sprintf('lpsp>cschrimson (%i)',sum(~empty_idx & trial_num==i & dark_order(i) == dark_idx)),...
+           'textcolor','w')
 end
 
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
 figure(4); clf
+vals = nan(length(all_data),length(binedges)-1);
 for i = 1:6
     subplot(3,2,i); hold on
     for j = find(trial_num == i)'
+        if empty_idx(j); c = [0,.5,1]; else; c = [1,.5,0]; end
         tmp = g{j};
         h = histogram(tmp(~isnan(tmp)), 'BinEdges',binedges, 'Normalization','probability','Visible','off');
-        plot(binedges(1:end-1),h.Values,'Color',(1-empty_idx(j))*[1,0,0])
+        plot(binedges(1:end-1),h.Values,'Color',c)
+        vals(j,:) = h.Values;
     end
+    set(gca,'color','none','ycolor','w','xcolor','w')
+end
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
+figure(5); clf
+for i = 1:6
+    subplot(3,2,i); hold on
+    h = plot_sem(gca,binedges(1:end-1),vals(trial_num == i & empty_idx,:)); h.FaceColor = [0,.5,1]; h.FaceAlpha = .8;
+    h = plot_sem(gca,binedges(1:end-1),vals(trial_num == i & ~empty_idx,:)); h.FaceColor = [1,.5,0]; h.FaceAlpha = .8;
+    set(gca,'color','none','ycolor','w','xcolor','w')
+end
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
+%% show the fluorescence across the bump before and after light stim
+
+mean_dff = nan(length(all_data),length(all_data(1).im.alpha));
+
+for i = 1:length(all_data)
+    mean_dff(i,:) = mean(all_data(i).im.d,2);
 end
 
+figure(6); clf
+t = tiledlayout(3,2);
+for i = 1:6
+    nexttile; hold on
+    h = plot_sem(gca,unwrap(all_data(1).im.alpha),mean_dff(trial_num == i & empty_idx,:)); h.FaceColor = [0,.5,1]; h.FaceAlpha = .8;
+    h = plot_sem(gca,unwrap(all_data(1).im.alpha),mean_dff(trial_num == i & ~empty_idx,:)); h.FaceColor = [1,.5,0]; h.FaceAlpha = .8;
+    set(gca,'color','none','xcolor','w','ycolor','w')
+end
+linkaxes(t.Children(2:end),'y')
+legend('empty','lpsp','textcolor','w')
+title(t,'Mean dF/F across PB','color','w')
+fontsize(gcf,20,'pixels')
+set(gcf,'color','none','InvertHardcopy','off')
 %% calculate the single best fit between fly speed and bump speed for each fly
 win_sec = 20;
 lag = 10;
@@ -491,7 +533,7 @@ s1 = s1(idx);
 t  = t(idx);
 
 
-h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
+h = patch(ax,[t,fliplr(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
 end
 
 function rgb_image = mat2rgb(v,map)

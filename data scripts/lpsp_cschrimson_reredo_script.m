@@ -39,7 +39,7 @@ rho_thresh = .1;
 all_data = struct();
 
 tic
-for i = 14:length(all_files)
+for i = 1:length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -144,9 +144,81 @@ for i = 1:length(all_data)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 
+%% calculate integrative gain
+win_sec = 20;
+lag = 20;
+fr = 60;
+win_frames = win_sec*fr;
+win = [-10,10];
+r_thresh = .1;
+rho_thresh = .1;
+g = cell(length(all_data),1);
+v = cell(length(all_data),1);
+
+tic
+for i = 1:length(all_data)
+    if isempty(all_data(i).ft); continue; end
+    fprintf('processing: %i ',i)
+
+    %extract the best unwrapped estimate of mu by nan-ing low confidence
+    %values and unwrapping and re-interp onto fictrac timescale
+    m = all_data(i).im.mu;
+    m(all_data(i).im.rho<rho_thresh) = nan;
+    n_frames = 1:length(m);
+    m = interp1(all_data(i).ft.xb(n_frames),unwrap(m),all_data(i).ft.xf);
+    m = smoothdata(m,1,"gaussian",60);
+    amp = interp1(all_data(i).ft.xb(n_frames),sum(all_data(i).im.d,1),all_data(i).ft.xf);
+
+    %extract the fly's heading (no gain applied) and apply all lags
+    h = reshape(all_data(i).ft.heading,[],1);
+    m = reshape(m,[],1);
+
+    m = m(lag+1:end);
+    h = h(1:end-lag);
+    xf= all_data(i).ft.xf(1:end-lag);
+
+
+    % for each second
+    % g_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    % v_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    
+    xt = 0:ceil(max(all_data(i).ft.xf));
+    g_tmp = nan(length(xt),1);
+    v_tmp = nan(length(xt),1);
+
+    for j = 1:length(g_tmp)
+        % f = j*fr;
+        % h_tmp = h(f:f+win_frames);
+        idx = xf > j+win(1) & xf < j+win(2);
+        h_tmp = h(idx);
+        m_tmp = m(idx);
+        if circ_var(h_tmp) > .1
+        % m_tmp = m(f:f+win_frames) - m(f);
+        m_tmp = m_tmp - m_tmp(1);
+        fun = @(x)(entropy(circ_dist(m_tmp,h_tmp*x))); %find the gain and bias that best fits bump position to fly position over a window
+        tmp = inf;
+        for k = 0:.05:5 %evaluate the loss function at many possible gains, and save gain that gives the minimum value
+            if fun(k) < tmp
+                g_tmp(j) = k;
+                tmp = fun(k);
+            end
+        end
+        v_tmp(j) = tmp;
+        end
+    end
+
+    g{i} = g_tmp;
+    v{i} = v_tmp;
+
+    all_data(i).gain.g_ent = g_tmp;
+    all_data(i).gain.v_ent = v_tmp;
+    all_data(i).gain.xt = xt;
+    fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
+end
+
 %% calculate sliding gain
 win = [-10,10];
-lag = 5;
+lag = 10;
 fr = 60;
 r_thresh = .1;
 rho_thresh = .1;
@@ -174,9 +246,9 @@ for i = 1:length(all_data)
 
     g_tmp = nan(length(xb),1);
 
-    dm = dm(1:end-lag);
-    dr = dr(lag:end);
-    df = df(lag:end);
+    dm = dm(lag:end);
+    dr = dr(1:end-lag);
+    df = df(1:end-lag);
     xf = xf(1:end-lag);
 
     for t = 1:length(xb)
@@ -215,9 +287,41 @@ for i = 1:length(all_data)
     all_data(i).gain.inst_g = g_tmp;
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
+
+%% create meta data indexes
+trial_num = zeros(length(all_data),1);
+dark_idx  = false(length(all_data),1);
+empty_idx = false(length(all_data),1);
+walk_idx  = false(length(all_data),1);
+last_str = '';
+for i = 1:length(all_data)
+    tmp_str = all_data(i).meta(1:45);
+
+    if ~strcmp(tmp_str,last_str)
+        counter = 0;
+        last_str = tmp_str;
+    end
+    counter = counter+1;
+    trial_num(i) = counter;
+    last_str = tmp_str;
+    
+    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+        walk_idx(i) = true;
+    end
+    
+    if contains(all_data(i).ft.pattern,'background')
+        dark_idx(i) = true;
+    end
+
+    if contains(all_data(i).meta,'empty')
+        empty_idx(i) = true;
+    end
+end
+
 %% create figure to show example
-i = 30;
+i = 37;
 binedges = 0:.05:5;
+dark_mode = false;
 
 figure(1); clf
 a1 = subplot(3,1,1);
@@ -226,8 +330,8 @@ hold on
 %if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
 idx = round(all_data(i).ft.cue,4) == -.2945;
-h = mod(all_data(i).ft.heading,2*pi) - pi;
-a = plot(all_data(i).ft.xf,h,'r'); a.YData([abs(diff(a.YData))'>pi ; 0] | ~idx) = nan;
+%h = mod(all_data(i).ft.heading,2*pi) - pi;
+%a = plot(all_data(i).ft.xf,h,'r'); a.YData([abs(diff(a.YData))'>pi ; 0] | ~idx) = nan;
 
 a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
 title(all_data(i).meta)
@@ -242,31 +346,43 @@ a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb
 ylabel('offset')
 
 a3 = subplot(6,1,4); hold on
-plot(all_data(i).gain.xt,all_data(i).gain.g); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
-plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
+%plot(all_data(i).ft.xb,all_data(i).gain.inst_g);
+%plot(all_data(i).gain.xt,all_data(i).gain.g_ent);
+%plot(all_data(i).gain.xt,all_data(i).gain.g)
 ylabel('integrative gain')
 
-
 linkaxes([a1,a2,a3],'x')
-axis tight
+xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
 ylim([0,5])
+plot(xlim,[.8,.8],':w'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
-h = histogram(all_data(i).gain.inst_g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
-h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
+%h = histogram(all_data(i).gain.inst_g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
+%h = histogram(all_data(i).gain.g_ent,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
+h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
 %plot(binedges(1:end-1),h.Values,'k','Linewidth',2)
 %h = histogram(all_data(i).gain.g(end/2:end),'BinEdges',binedges,'FaceAlpha',.5);
 %plot(binedges(1:end-1),h.Values,'k','Linewidth',2)
 
-xlabel('integrative gain')
+xlabel('gain')
 ylabel('counts')
-legend('linear comb','integrative')
+legend('integrative','color','none','textcolor','w')
 %legend('early trial','late trial')
 
 subplot(3,2,6); 
 scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
 xlabel('integrative gain')
 ylabel('func value')
+
+if dark_mode
+    ax = findall(gcf,'type','axes');
+    for j = 1:length(ax)
+        set(ax,'color','none','ycolor','w','xcolor','w')
+        ax(j).Title.Color = 'w';
+    end
+    set(gcf,'Color','none','InvertHardcopy','off')
+    fontsize(gcf,20,'pixels')
+end
 
 %% plot activity during and outside of stims
 empty_idx = cellfun(@(x)(contains(x,'empty') | contains(x,'+')),{all_data.meta}');
@@ -276,10 +392,10 @@ nstim_bumps = cell(length(all_data),1);
 prestim_bumps = cell(length(all_data),1);
 for i = 1:length(all_data)
 idx = logical(interp1(all_data(i).ft.xf,all_data(i).ft.stims,all_data(i).ft.xb,'linear','extrap'));
-stim_bumps{i} = mean(all_data(i).im.d(:,idx),2);
-nstim_bumps{i} = mean(all_data(i).im.d(:,~idx),2);
+stim_bumps{i} = all_data(i).im.f(:,idx);
+nstim_bumps{i} = all_data(i).im.f(:,~idx);
 ind = find(idx,1);
-prestim_bumps{i} = mean(all_data(i).im.d(:,1:ind),2);
+prestim_bumps{i} = all_data(i).im.f(:,1:ind);
 end
 
 

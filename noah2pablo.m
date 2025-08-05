@@ -13,7 +13,7 @@ for i = 1:length(all_files)
 end
 
 %%
-all_files = dir('Z:\pablo\lpsp_cschrimson_reredo\**\imagingData_reg*.mat');
+all_files = dir('Z:\pablo\lpsp_cschrimson_redo\**\imagingData_reg*.mat');
 all_files = natsortfiles(all_files);
 
 for i = 1:length(all_files)
