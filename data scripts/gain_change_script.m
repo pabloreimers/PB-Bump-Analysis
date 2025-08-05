@@ -1,9 +1,9 @@
 %% 
 close all
-clear all
+%clear all
 
 %% load in data
-base_dir = 'Z:\pablo\epg_grabda2m_gainchange\'; %uigetdir(); %
+base_dir = 'Z:\pablo\hackathon_gain_change\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -39,10 +39,10 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = length(all_data):length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
@@ -199,7 +199,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 2;
+i = 4;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -214,6 +214,7 @@ xlabel('time (s)')
 
 a2 = subplot(3,1,2);
 plot(g{i}); hold on; plot(xlim,[.8,.8],':k')
+%a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf))); a.YData(abs(diff(a.YData))>pi) =nan;
 ylabel('integrative gain')
 
 linkaxes([a1,a2],'x')
