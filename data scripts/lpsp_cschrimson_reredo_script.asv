@@ -39,7 +39,7 @@ rho_thresh = .1;
 all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = 14:length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -57,12 +57,11 @@ for i = 1:length(all_files)
    
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
-    all_data(i).ft.pattern = tmp2.patternPath{1};
     
-
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).ft.stims = ftData_DAQ.stim{1};
+    all_data(i).ft.pattern = tmp2.patternPath{1};
 
     
     
@@ -217,14 +216,14 @@ for i = 1:length(all_data)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 %% create figure to show example
-i = 40;
+i = 30;
 binedges = 0:.05:5;
 
 figure(1); clf
 a1 = subplot(3,1,1);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
-if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+%if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
 idx = round(all_data(i).ft.cue,4) == -.2945;
 h = mod(all_data(i).ft.heading,2*pi) - pi;
@@ -239,20 +238,12 @@ a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb
 % try patch([all_data(i).ft.xf,flipud(all_data(i).ft.xf)],...
 %         [(max(ylim)-min(ylim))*(1-all_data(i).ft.cue_brightness/max(all_data(i).ft.cue_brightness))+min(ylim)),...
 %         min(ylim)*ones(size(all_data(i).ft.xf))]); end
-
-try tmp = 2*pi*(all_data(i).ft.cue_brightness==0)-pi;tmp(1) = -pi; tmp(end) = -pi; patch(all_data(i).ft.xf,tmp,'k','FaceAlpha',.1,'EdgeColor','none');end
+ patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 ylabel('offset')
 
 a3 = subplot(6,1,4); hold on
-%plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 plot(all_data(i).gain.xt,all_data(i).gain.g); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
-%plot(all_data(i).ft.xb,all_data(i).gain.hv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
-%plot(all_data(i).ft.xb,all_data(i).gain.mv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
 plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
-try plot(all_data(i).ft.xf,all_data(i).ft.gain); catch; plot(all_data(i).ft.xf(1:length(all_data(i).gain.vr)),all_data(i).gain.vr); end
-%try plot(all_data(i).ft.xf,all_data(i).ft.cue_brightness/150); end
-%plot(all_data(i).ft.xf,all_data(i).ft.gain)
-%a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf))); a.YData(abs(diff(a.YData))>pi) =nan;
 ylabel('integrative gain')
 
 
@@ -277,6 +268,34 @@ scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
 xlabel('integrative gain')
 ylabel('func value')
 
+%% plot activity during and outside of stims
+empty_idx = cellfun(@(x)(contains(x,'empty') | contains(x,'+')),{all_data.meta}');
+
+stim_bumps = cell(length(all_data),1);
+nstim_bumps = cell(length(all_data),1);
+prestim_bumps = cell(length(all_data),1);
+for i = 1:length(all_data)
+idx = logical(interp1(all_data(i).ft.xf,all_data(i).ft.stims,all_data(i).ft.xb,'linear','extrap'));
+stim_bumps{i} = mean(all_data(i).im.z(:,idx),2);
+nstim_bumps{i} = mean(all_data(i).im.z(:,~idx),2);
+ind = find(idx,1);
+prestim_bumps{i} = mean(all_data(i).im.z(:,1:ind),2);
+end
+
+
+stim_bumps = cell2mat(stim_bumps');
+nstim_bumps = cell2mat(nstim_bumps');
+figure(2); clf; tiledlayout(1,2);
+a1 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,empty_idx)','b'); h.FaceAlpha = .5;
+title('empty')
+a2 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,~empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,~empty_idx)','b'); h.FaceAlpha = .5;
+title('lpsp')
+legend('during stim','outside stim')
+linkaxes([a1,a2],'y')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
@@ -368,4 +387,12 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.f  = f_cluster;
     s.alpha = alpha;
     %s.imgData = imgData;
+end
+
+function h = plotsem(t,x,c)
+    m = mean(x,1,"omitnan");
+    s = std(x,[],1,'omitnan') ./ sqrt(sum(~isnan(x),1));
+    t = reshape(t,1,[]);
+    
+    h = patch([t,fliplr(t)],[m+s,m-s],c);
 end

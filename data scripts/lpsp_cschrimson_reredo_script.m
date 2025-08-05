@@ -216,14 +216,14 @@ for i = 1:length(all_data)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 %% create figure to show example
-i = 17;
+i = 30;
 binedges = 0:.05:5;
 
 figure(1); clf
 a1 = subplot(3,1,1);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
-if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+%if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
 idx = round(all_data(i).ft.cue,4) == -.2945;
 h = mod(all_data(i).ft.heading,2*pi) - pi;
@@ -268,6 +268,37 @@ scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
 xlabel('integrative gain')
 ylabel('func value')
 
+%% plot activity during and outside of stims
+empty_idx = cellfun(@(x)(contains(x,'empty') | contains(x,'+')),{all_data.meta}');
+
+stim_bumps = cell(length(all_data),1);
+nstim_bumps = cell(length(all_data),1);
+prestim_bumps = cell(length(all_data),1);
+for i = 1:length(all_data)
+idx = logical(interp1(all_data(i).ft.xf,all_data(i).ft.stims,all_data(i).ft.xb,'linear','extrap'));
+stim_bumps{i} = mean(all_data(i).im.d(:,idx),2);
+nstim_bumps{i} = mean(all_data(i).im.d(:,~idx),2);
+ind = find(idx,1);
+prestim_bumps{i} = mean(all_data(i).im.d(:,1:ind),2);
+end
+
+
+stim_bumps = cell2mat(stim_bumps');
+nstim_bumps = cell2mat(nstim_bumps');
+prestim_bumps = cell2mat(prestim_bumps');
+figure(2); clf; tiledlayout(1,2);
+a1 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,empty_idx)','b'); h.FaceAlpha = .5;
+h = plotsem(1:size(prestim_bumps,1),prestim_bumps(:,empty_idx)','g'); h.FaceAlpha = .5;
+title('empty')
+a2 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,~empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,~empty_idx)','b'); h.FaceAlpha = .5;
+h = plotsem(1:size(prestim_bumps,1),prestim_bumps(:,~empty_idx)','g'); h.FaceAlpha = .5;
+title('lpsp')
+legend('during stim','outside stim')
+linkaxes([a1,a2],'y')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
@@ -359,4 +390,12 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.f  = f_cluster;
     s.alpha = alpha;
     %s.imgData = imgData;
+end
+
+function h = plotsem(t,x,c)
+    m = mean(x,1,"omitnan");
+    s = std(x,[],1,'omitnan') ./ sqrt(sum(~isnan(x),1));
+    t = reshape(t,1,[]);
+    
+    h = patch([t,fliplr(t)],[m+s,m-s],c);
 end
