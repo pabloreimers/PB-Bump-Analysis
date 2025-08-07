@@ -319,7 +319,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 37;
+i = 22;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -327,7 +327,7 @@ figure(1); clf
 a1 = subplot(3,1,1);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
-%if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
 idx = round(all_data(i).ft.cue,4) == -.2945;
 %h = mod(all_data(i).ft.heading,2*pi) - pi;
@@ -348,13 +348,13 @@ ylabel('offset')
 a3 = subplot(6,1,4); hold on
 %plot(all_data(i).ft.xb,all_data(i).gain.inst_g);
 %plot(all_data(i).gain.xt,all_data(i).gain.g_ent);
-%plot(all_data(i).gain.xt,all_data(i).gain.g)
+plot(all_data(i).gain.xt,all_data(i).gain.g)
 ylabel('integrative gain')
 
 linkaxes([a1,a2,a3],'x')
 xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
 ylim([0,5])
-plot(xlim,[.8,.8],':w'); %plot(xlim,[1.6,1.6],':k')
+plot(xlim,[.8,.8],':'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
 %h = histogram(all_data(i).gain.inst_g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
