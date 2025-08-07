@@ -164,18 +164,19 @@ dark_fig(gcf)
 
 
 %% create a heatmap with fly speed on x, bump speed on y colored by amplitude
-dr_edge = 0:.1:8;
-dm_edge = 0:.1:8;
+dr_edge = 0:.4:8;
+dm_edge = 0:.4:8;
 
-bigmat = nan(length(dm_edge),length(dr_edge),length(all_data));
+bigmat = nan(length(dm_edge),length(dr_edge),length(all_data),90);
 bigidx = bigmat;
+
+lag = 15;
 
 for i = 1:length(all_data)
 
     % [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
     % ind(isnan(all_data(i).gain.vr)) = nan;
-    
-    
+
     m = all_data(i).im.mu;
     rho= all_data(i).im.rho;
     m(rho<rho_thresh) = nan;
@@ -185,29 +186,55 @@ for i = 1:length(all_data)
     amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
     dr = all_data(i).ft.r_speed;
 
-    dm = discretize(dm,dm_edge);
-    dr = discretize(dr,dr_edge);
+    dm = discretize(abs(dm),dm_edge);
+    dr = discretize(abs(dr),dr_edge);
+    dm = dm(30+1:end-lag);
+    dr = dr(30+1+lag:end);
+
+    for j = 1:90
+    amp_tmp = amp(j:end-30-lag);
+    dm_tmp  = dm(1:end-j+1);
+    dr_tmp  = dr(1:end-j+1);
+    
     for b1 = 1:length(dm_edge)
         for b2 = 1:length(dr_edge)
-            bigmat(b1,b2,i) = mean(amp(dm == b1 & dr == b2));
+            bigmat(b1,b2,i,j) = mean(amp_tmp(dm_tmp == b1 & dr_tmp == b2));
         end
+    end
     end
 end
 
+%%
+v = VideoWriter('dopamine_buildup_heatmap.avi');
+v.FrameRate = 10;
+open(v);
 figure(11); clf
-imagesc(dr_edge,dm_edge,log(mean(bigmat,3,'omitnan')))
-set(gca,'YDir','normal')
-xlabel('fly speed (rad/s)')
-ylabel('bump speed (rad/s)')
-title('Amplitude by speeds (log mean)')
-dark_fig(gcf)
+for i = 45
+    
+    imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')),[-3,-.25])
+    set(gca,'YDir','normal')
+    xlabel('fly speed (rad/s)')
+    ylabel('bump speed (rad/s)')
+    title({'Amplitude by speeds (log mean)',sprintf('lag: %.0f ms',(i-45)/60*1000)})
+    dark_fig(gcf)
+    c= colorbar; c.Color = 'w';
+    drawnow
+    
+    frame = getframe(gcf);
+    writeVideo(v,frame)
+
+end
+    
+close(v)
 
 %% create a heatmap with fly speed on x, bump speed on y colored by amplitude
-dr_edge = 0:.1:8;
-dm_edge = 0:.1:8;
+
+dr_edge = 0:.25:8;
+dm_edge = 0:.25:8;
 
 bigmat = nan(length(dm_edge),length(dr_edge),length(all_data),3);
 bigidx = bigmat;
+gain_vals = [.4,.8,1.2];
 
 for i = 1:length(all_data)
 
@@ -224,8 +251,8 @@ for i = 1:length(all_data)
     amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
     dr = all_data(i).ft.r_speed;
 
-    dm = discretize(dm,dm_edge);
-    dr = discretize(dr,dr_edge);
+    dm = discretize(abs(dm),dm_edge);
+    dr = discretize(abs(dr),dr_edge);
     for b1 = 1:length(dm_edge)
         for b2 = 1:length(dr_edge)
             for g = 1:3
@@ -235,16 +262,18 @@ for i = 1:length(all_data)
     end
 end
 
+%%
 figure(12); clf
 for i = 1:3
     nexttile
-imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')))
+imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')),[-3,-.25])
 set(gca,'YDir','normal')
 xlabel('fly speed (rad/s)')
 ylabel('bump speed (rad/s)')
+title(sprintf('gain = %.2f',gain_vals(i)))
+c = colorbar; c.Color = 'w';
 end
 
-title('Amplitude by speeds (log mean)')
 dark_fig(gcf)
 %% plot peak fluorescence as a function of fly speed and bump speed
 i = 20;
