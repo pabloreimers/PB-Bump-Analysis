@@ -3,7 +3,7 @@ close all
 clear all
 
 %% load in data
-base_dir = 'Z:\pablo\lpsp_cschrimson_reredo\'; %uigetdir(); %
+base_dir = uigetdir(); %'Z:\pablo\lpsp_cschrimson_reredo\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -319,7 +319,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 22;
+i = 44;
 binedges = 0:.05:5;
 dark_mode = false;
 
