@@ -84,7 +84,7 @@ empty_idx = false(length(all_data),1);
 walk_idx  = false(length(all_data),1);
 last_str = '';
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:45);
+    tmp_str = all_data(i).meta(1:33);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -217,6 +217,7 @@ end
 set(gcf,'color','none','InvertHardcopy','off')
 fontsize(gcf,20,'pixels')
 
+%%
 figure(4); clf
 vals = nan(length(all_data),length(binedges)-1);
 for i = 1:6

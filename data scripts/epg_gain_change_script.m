@@ -3,7 +3,7 @@ close all
 %clear all
 
 %% load in data
-base_dir = ('Z:\pablo\epg_gain_change\'); %uigetdir(); %
+base_dir = ('Z:\pablo\epg_gain_change\20250828\'); %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -14,7 +14,7 @@ for i = 1:length(all_files)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
 
-        imgData = squeeze(sum(regProduct,3));
+        %imgData = squeeze(sum(regProduct,3));
 
 
         top_pct = prctile(imgData,98,'all');
@@ -39,10 +39,10 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-%all_data = struct();
+all_data = struct();
 
 tic
-for i = length(all_data):length(all_files)
+for i = 1:length(all_files)
     clear img regProduct 
 
     tmp = strsplit(all_files(i).folder,'\');
@@ -54,7 +54,7 @@ for i = length(all_data):length(all_files)
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
 
-    imgData = squeeze(sum(regProduct,3));
+    %imgData = squeeze(sum(regProduct,3));
 
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
@@ -237,7 +237,7 @@ end
 
 
 %% create figure to show example
-i = 46;
+i = 8;
 binedges = 0:.05:5;
 
 figure(1); clf

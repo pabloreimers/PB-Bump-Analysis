@@ -1,9 +1,9 @@
 %% 
-%close all
-%clear all
+close all
+clear all
 
 %% load in data
-base_dir = 'Z:\pablo\hackathon_gain_change\'; %uigetdir(); %
+base_dir = uigetdir();% 'Z:\pablo\hackathon_gain_change\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -41,13 +41,13 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
-    if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
-    if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
-    % clear img regProduct 
+    %if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
+    %if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
+    clear img regProduct 
     
     all_data(i).meta = all_files(i).folder;
 
@@ -67,15 +67,28 @@ for i = 1:length(all_files)
         end
         all_data(i).ft.pattern = 'berg4';
         dr = -all_data(i).ft.r_speed;
+        all_data(i).ft.heading = cumsum(dr)/60;
         
     else %ten this is a Pablo Trial
+        try
         load([tmp2.folder,'\',tmp2.name])
         all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
+        all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
+        if ~isfield(all_data(i).ft,'xb')
+            all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.mu));
+        end
         tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
         tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
         all_data(i).ft.pattern = tmp2.patternPath{1};
         dr = all_data(i).ft.r_speed;
-        % imgData = squeeze(sum(regProduct,3));
+        all_data(i).ft.heading = cumsum(dr)/60;
+
+
+
+                % imgData = squeeze(sum(regProduct,3));
+        catch
+            fprintf('Error!!!\n')
+        end
     end
     
     
@@ -85,7 +98,7 @@ for i = 1:length(all_files)
     % load([tmp2.folder,'\',tmp2.name])
    
     
-    all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
+    
     
 
     
@@ -97,7 +110,7 @@ for i = 1:length(all_files)
     
     
     %dr(abs(dr)>r_thresh) = dr(abs(dr)>r_thresh) - mean(dr(abs(dr)>r_thresh));
-    all_data(i).ft.heading = cumsum(dr)/60;
+    
     
 
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
@@ -114,7 +127,7 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 
 tic
-for i = 33:length(all_data)
+for i = 1:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -184,7 +197,7 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 
 tic
-for i = 33:length(all_data)
+for i = 1:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -289,7 +302,7 @@ for i = 1:length(all_data)
             m_tmp = m_tmp(1:end-lag+1);
         else
             h_tmp = h_tmp(1:end+lag);
-           c_tmp = c_tmp(1:end+lag);
+            c_tmp = c_tmp(1:end+lag);
             m_tmp = m_tmp(1-lag:end);
         end
         if ~isempty(m_tmp)
@@ -306,8 +319,27 @@ for i = 1:length(all_data)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 
+%% save the VR gain for each trial
+
+for i = 1:length(all_data)
+    i
+    t = 1:round(max(all_data(i).ft.xf));
+    g = nan(size(t));
+    r = all_data(i).ft.r_speed(1:end-2);
+    c = -gradient(all_data(i).ft.cue(3:end))*60;
+    c(abs(c)>50) = nan;
+    for j = 1:length(t)
+        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5 & abs(c) > .5;
+        
+        
+        if sum(idx) == 0; g(j) = nan;else; g(j) = r(idx) \ c(idx); end
+    end
+    g = interp1(t,g,all_data(i).ft.xf);
+    all_data(i).gain.vr = g;
+end
+
 %% create figure to show example
-i = 140;
+i = 21;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -335,7 +367,9 @@ ylabel('offset')
 
 a3 = subplot(6,1,4); hold on
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
-plot(all_data(i).gain.xt,all_data(i).gain.g); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
+%plot(all_data(i).gain.xt,all_data(i).gain.g); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
+plot(all_data(i).ft.xb,10*mean(all_data(i).im.d,1))
+plot(all_data(i).ft.xf,all_data(i).gain.vr)
 %plot(all_data(i).ft.xb,all_data(i).gain.hv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
 %plot(all_data(i).ft.xb,all_data(i).gain.mv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
 %plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
@@ -359,7 +393,7 @@ h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.5,'Normalizati
 
 xlabel('integrative gain')
 ylabel('counts')
-legend('linear comb','integrative')
+legend('integrative')
 %legend('early trial','late trial')
 
 subplot(3,2,6); 
@@ -458,24 +492,7 @@ polarscatter(pop_off(~berg_idx,1),pop_off(~berg_idx,2),400,'bo')
 title('Cue-Bump Offset Vector Strength (pva)')
 legend('berg1','berg4')
 fontsize(gcf,40,'pixels')
-%% save the VR gain for each trial
 
-for i = 1:length(all_data)
-    i
-    t = 1:round(max(all_data(i).ft.xf));
-    g = nan(size(t));
-    r = all_data(i).ft.r_speed(1:end-2);
-    c = -gradient(all_data(i).ft.cue(3:end))*60;
-    c(abs(c)>50) = nan;
-    for j = 1:length(t)
-        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5 & abs(c) > .5;
-        
-        
-        if sum(idx) == 0; g(j) = nan;else; g(j) = r(idx) \ c(idx); end
-    end
-    g = interp1(t,g,all_data(i).ft.xf);
-    all_data(i).gain.vr = g;
-end
 
 %% look at gain quality as a function of step vs ramp
 step_idx = false(length(all_data),1);

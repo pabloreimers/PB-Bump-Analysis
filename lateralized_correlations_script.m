@@ -6,12 +6,11 @@ load([filepath,'\',filename])
 load([filepath2,'\',filename2])
 
 %% Process and find correlations
-clearvars imgData
 if exist('regProduct','var')
     imgData = squeeze(sum(regProduct,3));
 elseif exist('img','var')
     imgData = squeeze(sum(img{1},3));
-else
+elseif exist('imgData_reg','var')
     imgData = imgData_reg;
 end
 
