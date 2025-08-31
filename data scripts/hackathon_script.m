@@ -289,7 +289,7 @@ for i = 1:length(all_data)
             m_tmp = m_tmp(1:end-lag+1);
         else
             h_tmp = h_tmp(1:end+lag);
-            c_tmp = c_tmp(1:end+lag);
+           c_tmp = c_tmp(1:end+lag);
             m_tmp = m_tmp(1-lag:end);
         end
         if ~isempty(m_tmp)
@@ -307,7 +307,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 40;
+i = 140;
 binedges = 0:.05:5;
 
 figure(1); clf
@@ -338,7 +338,7 @@ a3 = subplot(6,1,4); hold on
 plot(all_data(i).gain.xt,all_data(i).gain.g); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
 %plot(all_data(i).ft.xb,all_data(i).gain.hv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
 %plot(all_data(i).ft.xb,all_data(i).gain.mv); hold on; plot(xlim,[.8,.8],':k'); plot(xlim,[1.6,1.6],':k')
-plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
+%plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
 try plot(all_data(i).ft.xf,all_data(i).ft.gain); catch; plot(all_data(i).ft.xf(1:length(all_data(i).gain.vr)),all_data(i).gain.vr); end
 %try plot(all_data(i).ft.xf,all_data(i).ft.cue_brightness/150); end
 %plot(all_data(i).ft.xf,all_data(i).ft.gain)
@@ -351,7 +351,7 @@ axis tight
 ylim([0,5])
 
 subplot(3,2,5); hold on
-h = histogram(all_data(i).gain.inst_g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
+%h = histogram(all_data(i).gain.inst_g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
 h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.5,'Normalization','probability');
 %plot(binedges(1:end-1),h.Values,'k','Linewidth',2)
 %h = histogram(all_data(i).gain.g(end/2:end),'BinEdges',binedges,'FaceAlpha',.5);
@@ -460,7 +460,7 @@ legend('berg1','berg4')
 fontsize(gcf,40,'pixels')
 %% save the VR gain for each trial
 
-for i = 34:length(all_data)
+for i = 1:length(all_data)
     i
     t = 1:round(max(all_data(i).ft.xf));
     g = nan(size(t));

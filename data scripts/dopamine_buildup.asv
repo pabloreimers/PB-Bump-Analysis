@@ -70,6 +70,8 @@ xlabel('gain condition'); ylabel('median max dF/F')
 dark_fig(gcf)
 
 %% see see whether bump movement precedes or succeeds DA buildup
+rho_thresh = .1;
+fr = 60;
 figure(9); clf; hold on
 for i = 1:length(all_data)
     amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
@@ -90,7 +92,8 @@ for i = 1:length(all_data)
     amp_lag = lags(r == max(r));
     
     plot([1,2],[speed_lag,amp_lag]/60,'-','color',.9*[1,1,1,.9])
-    scatter([1,2],[speed_lag,amp_lag]/60,100,.9*[1,1,1],'filled','MarkerFaceAlpha',.5)
+    if sum(all_data(i).gain.vr > 1) > sum(all_data(i).gain.vr < .6); c = 'r'; else; c='b'; end
+    scatter([1,2],[speed_lag,amp_lag]/60,100,c,'filled','MarkerFaceAlpha',.5)
 end
 xlim([0,3]); plot([0,3],[0,0],':w')
 xticks([1,2]); xticklabels({'fly speed','bump amp (peak)'})
@@ -102,6 +105,10 @@ dark_fig(gcf)
 win = [-10,10];
 
 figure(10); clf; hold on
+
+speed_slope = cell(length(all_data),1);
+amp_slope = cell(length(all_data),1);
+gain_key = cell(length(all_data),1);
 for i = 1:length(all_data)
     [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
     ind(isnan(all_data(i).gain.vr)) = nan;
@@ -119,6 +126,8 @@ for i = 1:length(all_data)
     
 
     xt = 0:ceil(max(all_data(i).ft.xf));
+    speed_slope{i} = nan(size(xt));
+    amp_slope{i} = nan(size(xt));
 
     for j = 1:length(xt)
         
@@ -143,24 +152,56 @@ for i = 1:length(all_data)
         amp_tmp = amp_tmp(1:end+lag);
         dm_tmp  = dm_tmp(1:end+lag);
     end
-
-    idx = abs(dr_tmp)>.1 & abs(dm_tmp)>.1;
-    speed_slope(j) = dr_tmp(idx) \ dm_tmp(idx);
-    amp_slope(j) = dr_tmp(idx) \ amp_tmp(idx);
+    
+    idx1 = abs(dr_tmp)>.1 & abs(dm_tmp)>.1 & ~isnan(dm_tmp);
+            
+    gain_key{i}(j) = median(ind_tmp,'omitnan');
+    speed_slope{i}(j) = dr_tmp(idx1) \ dm_tmp(idx1);
+    amp_slope{i}(j) = abs(dr_tmp(idx1)) \ amp_tmp(idx1);
     end
-    for j = 1:3
-        if sum(ind==j)/length(ind) > .1
-            tmp(j) = dr(ind==j & abs(dr)>.1 & abs(dm) > .1) \ dm(ind==j & abs(dr)>.1 & abs(dm) > .1); 
-        end
-    end
-    plot(gain_vals,tmp,'-','color',.9*[1,1,1,.9])
-    scatter(gain_vals,tmp,100,.9*[1,1,1],'filled','MarkerFaceAlpha',.5)
 end
 
-xlim([0,1.6]); xticks(gain_vals)
-xlabel('gain condition'); ylabel('median max dF/F')
+%% show histogram of relationships broken up by gain condition
+figure(10); clf; 
 
-dark_fig(gcf)
+nexttile; hold on
+for j = 1:3
+    tmp_amp = cell2mat(amp_slope');
+    tmp_key = cell2mat(gain_key');
+    histogram(tmp_amp(tmp_key==j & ~isnan(tmp_amp)),'binedges',0:.02:.6,'Normalization','prob');
+end
+xlabel('slope dopamine peak per fly speed')
+legend('.4','.8','1.2')
+
+nexttile; hold on
+tmp = nan(length(all_data),3);
+for i = 1:length(all_data)
+    for j = 1:3
+        m = mean(amp_slope{i}(gain_key{i}==j),'omitnan');
+        s = std(amp_slope{i}(gain_key{i}==j),'omitnan')/sqrt(sum(~isnan(amp_slope{i}(gain_key{i}==j))));
+        errorbar(j,m,s)
+        tmp(i,j) = m;
+    end
+end
+plot(tmp','Color',[0,0,0,.1])
+xlim([0,4])
+xlabel('gain condition')
+ylabel('amp slope')
+
+nexttile; hold on
+tmp = nan(length(all_data),3);
+for i = 1:length(all_data)
+    for j = 1:3
+        m = mean(amp_slope{i}(gain_key{i}==j),'omitnan');
+        s = std(amp_slope{i}(gain_key{i}==j),'omitnan')/sqrt(sum(~isnan(amp_slope{i}(gain_key{i}==j))));
+        errorbar(j,m,s)
+        tmp(i,j) = m;
+    end
+end
+plot(tmp','Color',[0,0,0,.1])
+xlim([0,4])
+xlabel('bump slope')
+ylabel('amp slope')
 
 
 %% create a heatmap with fly speed on x, bump speed on y colored by amplitude
@@ -209,9 +250,9 @@ v = VideoWriter('dopamine_buildup_heatmap.avi');
 v.FrameRate = 10;
 open(v);
 figure(11); clf
-for i = 45
+for i = 1:90
     
-    imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')),[-3,-.25])
+    imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')),[-3,-.5])
     set(gca,'YDir','normal')
     xlabel('fly speed (rad/s)')
     ylabel('bump speed (rad/s)')
@@ -253,6 +294,12 @@ for i = 1:length(all_data)
 
     dm = discretize(abs(dm),dm_edge);
     dr = discretize(abs(dr),dr_edge);
+
+    dm = dm(1:end-lag-10);
+    dr = dr(1+lag:end-10);
+    amp = amp(11:end-lag);
+    ind = ind(1+lag:end-10);
+
     for b1 = 1:length(dm_edge)
         for b2 = 1:length(dr_edge)
             for g = 1:3

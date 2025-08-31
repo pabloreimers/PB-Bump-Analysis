@@ -319,7 +319,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-i = 2;
+i = 27;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -343,7 +343,7 @@ plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 % try patch([all_data(i).ft.xf,flipud(all_data(i).ft.xf)],...
 %         [(max(ylim)-min(ylim))*(1-all_data(i).ft.cue_brightness/max(all_data(i).ft.cue_brightness))+min(ylim)),...
 %         min(ylim)*ones(size(all_data(i).ft.xf))]); end
-% patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+ patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 ylabel('offset')
 
 a3 = subplot(6,1,4); hold on

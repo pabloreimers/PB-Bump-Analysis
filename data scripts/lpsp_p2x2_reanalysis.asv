@@ -1,0 +1,167 @@
+%% create meta data indexes
+trial_num = zeros(length(all_data),1);
+dark_idx  = false(length(all_data),1);
+empty_idx = false(length(all_data),1);
+walk_idx  = false(length(all_data),1);
+last_str = '';
+for i = 1:length(all_data)
+    tmp_str = all_data(i).meta(1:45);
+
+    if ~strcmp(tmp_str,last_str)
+        counter = 0;
+        last_str = tmp_str;
+    end
+    counter = counter+1;
+    trial_num(i) = counter;
+    last_str = tmp_str;
+    
+    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+        walk_idx(i) = true;
+    end
+    
+    if contains(all_data(i).meta,'dark')
+        dark_idx(i) = true;
+    end
+
+    if contains(all_data(i).meta,'control')
+        empty_idx(i) = true;
+    end
+end
+
+%% 
+for i = 1:length(all_data)
+    all_data(i).ft.heading = cumsum(all_data(i).ft.r_speed)/60;
+end
+
+
+%% calculate integrative gain
+win_sec = 20;
+lag = 20;
+fr = 60;
+win_frames = win_sec*fr;
+win = [-10,10];
+r_thresh = .1;
+rho_thresh = .1;
+g = cell(length(all_data),1);
+v = cell(length(all_data),1);
+
+tic
+for i = 1:length(all_data)
+    if isempty(all_data(i).ft); continue; end
+    fprintf('processing: %i ',i)
+
+    %extract the best unwrapped estimate of mu by nan-ing low confidence
+    %values and unwrapping and re-interp onto fictrac timescale
+    m = all_data(i).im.mu;
+    m(all_data(i).im.rho<rho_thresh) = nan;
+    n_frames = 1:length(m);
+    m = interp1(all_data(i).ft.xb(n_frames),unwrap(m),all_data(i).ft.xf);
+    m = smoothdata(m,1,"gaussian",60);
+    amp = interp1(all_data(i).ft.xb(n_frames),sum(all_data(i).im.d,1),all_data(i).ft.xf);
+
+    %extract the fly's heading (no gain applied) and apply all lags
+    h = reshape(all_data(i).ft.heading,[],1);
+    m = reshape(m,[],1);
+
+    m = m(lag+1:end);
+    h = h(1:end-lag);
+    xf= all_data(i).ft.xf(1:end-lag);
+
+
+    % for each second
+    % g_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    % v_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    
+    xt = 0:ceil(max(all_data(i).ft.xf));
+    g_tmp = nan(length(xt),1);
+    v_tmp = nan(length(xt),1);
+
+    for j = 1:length(g_tmp)
+        % f = j*fr;
+        % h_tmp = h(f:f+win_frames);
+        idx = xf > j+win(1) & xf < j+win(2);
+        h_tmp = h(idx);
+        m_tmp = m(idx);
+        if circ_var(h_tmp) > .1
+        % m_tmp = m(f:f+win_frames) - m(f);
+        m_tmp = m_tmp - m_tmp(1);
+        fun = @(x)(circ_var(circ_dist(m_tmp,h_tmp*x),[], [], [],'omitnan')); %find the gain and bias that best fits bump position to fly position over a window
+        tmp = inf;
+        for k = 0:.05:5 %evaluate the loss function at many possible gains, and save gain that gives the minimum value
+            if fun(k) < tmp
+                g_tmp(j) = k;
+                tmp = fun(k);
+            end
+        end
+        v_tmp(j) = tmp;
+        end
+    end
+
+    g{i} = g_tmp;
+    v{i} = v_tmp;
+
+    all_data(i).gain.g = g_tmp;
+    all_data(i).gain.v = v_tmp;
+    all_data(i).gain.xt = xt;
+    fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
+end
+
+
+%% show histograms of gain for each trial number
+dark_order = [0,1,0,1,1,0];
+figure(3); clf
+for i = 1:6
+    subplot(3,2,i); hold on; set(gca,'color','none','ycolor','w','xcolor','w')
+    tmp = reshape(cell2mat(g(empty_idx & trial_num==i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
+    tmp = reshape(cell2mat(g(~empty_idx & trial_num==i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
+    legend(sprintf('empty>cschrimson (%i)',sum(empty_idx & trial_num==i)),...
+           sprintf('lpsp>cschrimson (%i)',sum(~empty_idx & trial_num==i)),...
+           'textcolor','w')
+end
+
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
+figure(4); clf
+vals = nan(length(all_data),length(binedges)-1);
+for i = 1:6
+    subplot(3,2,i); hold on
+    for j = find(trial_num == i)'
+        if empty_idx(j); c = [0,.5,1]; else; c = [1,.5,0]; end
+        tmp = g{j};
+        h = histogram(tmp(~isnan(tmp)), 'BinEdges',binedges, 'Normalization','probability','Visible','off');
+        plot(binedges(1:end-1),h.Values,'Color',c)
+        vals(j,:) = h.Values;
+    end
+    set(gca,'color','none','ycolor','w','xcolor','w')
+end
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
+figure(5); clf
+for i = 1:6
+    subplot(3,2,i); hold on
+    h = plot_sem(gca,binedges(1:end-1),vals(trial_num == i & empty_idx,:)); h.FaceColor = [0,.5,1]; h.FaceAlpha = .8;
+    h = plot_sem(gca,binedges(1:end-1),vals(trial_num == i & ~empty_idx,:)); h.FaceColor = [1,.5,0]; h.FaceAlpha = .8;
+    set(gca,'color','none','ycolor','w','xcolor','w')
+end
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
+
+
+%% functions
+function h = plot_sem(ax,t,x)
+
+m1 = mean(x,1,'omitnan');
+s1 = std(x,1,'omitnan')./sqrt(sum(~isnan(x),1));
+
+idx = ~isnan(m1);
+m1 = m1(idx);
+s1 = s1(idx);
+t  = t(idx);
+
+
+h = patch(ax,[t,fliplr(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
+end
