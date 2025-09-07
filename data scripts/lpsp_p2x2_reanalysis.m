@@ -1,19 +1,23 @@
 %% create meta data indexes
 trial_num = zeros(length(all_data),1);
+fly_num = zeros(length(all_data),1);
 dark_idx  = false(length(all_data),1);
 empty_idx = false(length(all_data),1);
 walk_idx  = false(length(all_data),1);
 last_str = '';
+fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:45);
+    tmp_str = all_data(i).meta(1:33);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
+        fly_counter = fly_counter + 1;
         last_str = tmp_str;
     end
     counter = counter+1;
     trial_num(i) = counter;
     last_str = tmp_str;
+    fly_num(i) = fly_counter;
     
     if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
         walk_idx(i) = true;
