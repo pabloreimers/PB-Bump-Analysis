@@ -429,7 +429,7 @@ end
 % 
 % end
 % 
-close(v)
+% close(v)
 
 %% create a heatmap with fly speed on x, bump speed on y colored by amplitude
 
@@ -476,7 +476,7 @@ end
 figure(12); clf
 for i = 1:3
     nexttile
-imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,23:end,i),3,'omitnan')),[-1,0.5])
+imagesc(dr_edge,dm_edge,mean(bigmat(:,:,1:end,i),3,'omitnan'),[0,1])
 set(gca,'YDir','normal')
 xlabel('fly speed (rad/s)')
 ylabel('bump speed (rad/s)')
@@ -486,7 +486,7 @@ end
 
 dark_fig(gcf)
 %% plot peak fluorescence as a function of fly speed and bump speed
-i = 32;
+i = 46;
 lag = 20;
 figure(3); clf
 m = all_data(i).im.mu;
