@@ -3,7 +3,7 @@ close all
 clear all
 
 %% load in data
-base_dir = 'Z:\pablo\lpsp_gain_change\'; %uigetdir(); %
+base_dir = 'Z:\pablo\lpsp_cschrimson_reredo\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
@@ -143,27 +143,183 @@ for i = 1:length(all_data)
     all_data(i).gain.xt = xt;
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
-%%
 
+%% calculate integrative gain
+win_sec = 20;
+lag = 20;
+fr = 60;
+win_frames = win_sec*fr;
+win = [-10,10];
+r_thresh = .1;
+rho_thresh = .1;
+g = cell(length(all_data),1);
+v = cell(length(all_data),1);
+
+tic
 for i = 1:length(all_data)
-    i
-    t = 1:round(max(all_data(i).ft.xf));
-    g = nan(size(t));
-    r = all_data(i).ft.r_speed(1:end-2);
-    c = -gradient(all_data(i).ft.cue(3:end))*60;
-    c(abs(c)>50) = nan;
-    for j = 1:length(t)
-        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5;
-        
-        
-        if sum(idx) == 0; g(j) = nan;else; g(j) = r(idx) \ c(idx); end
+    if isempty(all_data(i).ft); continue; end
+    fprintf('processing: %i ',i)
+
+    %extract the best unwrapped estimate of mu by nan-ing low confidence
+    %values and unwrapping and re-interp onto fictrac timescale
+    m = all_data(i).im.mu;
+    m(all_data(i).im.rho<rho_thresh) = nan;
+    n_frames = 1:length(m);
+    m = interp1(all_data(i).ft.xb(n_frames),unwrap(m),all_data(i).ft.xf);
+    m = smoothdata(m,1,"gaussian",60);
+    amp = interp1(all_data(i).ft.xb(n_frames),sum(all_data(i).im.d,1),all_data(i).ft.xf);
+
+    %extract the fly's heading (no gain applied) and apply all lags
+    h = reshape(all_data(i).ft.heading,[],1);
+    m = reshape(m,[],1);
+
+    m = m(lag+1:end);
+    h = h(1:end-lag);
+    xf= all_data(i).ft.xf(1:end-lag);
+
+
+    % for each second
+    % g_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    % v_tmp = nan(floor((length(m) - win_frames)/fr),1);
+    
+    xt = 0:ceil(max(all_data(i).ft.xf));
+    g_tmp = nan(length(xt),1);
+    v_tmp = nan(length(xt),1);
+
+    for j = 1:length(g_tmp)
+        % f = j*fr;
+        % h_tmp = h(f:f+win_frames);
+        idx = xf > j+win(1) & xf < j+win(2);
+        h_tmp = h(idx);
+        m_tmp = m(idx);
+        if circ_var(h_tmp) > .1
+        % m_tmp = m(f:f+win_frames) - m(f);
+        m_tmp = m_tmp - m_tmp(1);
+        fun = @(x)(entropy(circ_dist(m_tmp,h_tmp*x))); %find the gain and bias that best fits bump position to fly position over a window
+        tmp = inf;
+        for k = 0:.05:5 %evaluate the loss function at many possible gains, and save gain that gives the minimum value
+            if fun(k) < tmp
+                g_tmp(j) = k;
+                tmp = fun(k);
+            end
+        end
+        v_tmp(j) = tmp;
+        end
     end
-    g = interp1(t,g,all_data(i).ft.xf);
-    all_data(i).gain.vr = g;
+
+    g{i} = g_tmp;
+    v{i} = v_tmp;
+
+    all_data(i).gain.g_ent = g_tmp;
+    all_data(i).gain.v_ent = v_tmp;
+    all_data(i).gain.xt = xt;
+    fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
+end
+
+%% calculate sliding gain
+win = [-10,10];
+lag = 10;
+fr = 60;
+r_thresh = .1;
+rho_thresh = .1;
+g = cell(length(all_data),1);
+v = cell(length(all_data),1);
+
+tic
+for i = 1:length(all_data)
+    if isempty(all_data(i).ft); continue; end
+    fprintf('processing: %i ',i)
+
+    %extract the best unwrapped estimate of mu by nan-ing low confidence
+    %values and unwrapping and re-interp onto fictrac timescale
+    m = all_data(i).im.mu;
+    %m(all_data(i).im.rho<rho_thresh) = nan;
+    n_frames = 1:length(m);
+    m = interp1(all_data(i).ft.xb(n_frames),unwrap(m),all_data(i).ft.xf);
+    
+    dm = gradient(m) * 60;
+    dr = all_data(i).ft.r_speed;
+    df = all_data(i).ft.f_speed;
+
+    xf = all_data(i).ft.xf;
+    xb = all_data(i).ft.xb;
+
+    g_tmp = nan(length(xb),1);
+
+    dm = dm(lag:end);
+    dr = dr(1:end-lag);
+    df = df(1:end-lag);
+    xf = xf(1:end-lag);
+
+    for t = 1:length(xb)
+        idx = (xf > xb(t)+win(1)) & (xf < xb(t)+win(2));
+        dr_tmp = dr(idx);
+        df_tmp = df(idx);
+        dm_tmp = dm(idx);
+
+        % if all(all_data(i).ft.cue_brightness(idx)==0)
+        %     a=1;
+        % end
+        %speed_corr = (dr_tmp) \ (df_tmp);
+        %dr_tmp = dr_tmp - df_tmp'*speed_corr;
+        
+
+        % [r,lags]  = xcorr(dr_tmp,dm_tmp,30);
+        % lag = lags(r==max(r));
+        % 
+        % if lag > 0
+        %     dr_tmp = dr_tmp(lag:end);
+        %     df_tmp = df_tmp(lag:end);
+        %     dm_tmp = dm_tmp(1:end-lag+1);
+        % else
+        %     dr_tmp = dr_tmp(1:end+lag);
+        %     df_tmp = df_tmp(1:end+lag);
+        %     dm_tmp = dm_tmp(1-lag:end);
+        % end
+
+        a = [dr_tmp,df_tmp] \ dm_tmp;
+        if ~isempty(dm_tmp) 
+            %g_tmp(t) =  dr_tmp(~isnan(dm_tmp)) \ dm_tmp(~isnan(dm_tmp));
+            g_tmp(t) = a(1);
+        end
+    end
+    
+    all_data(i).gain.inst_g = g_tmp;
+    fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
+end
+
+%% create meta data indexes
+trial_num = zeros(length(all_data),1);
+dark_idx  = false(length(all_data),1);
+empty_idx = false(length(all_data),1);
+walk_idx  = false(length(all_data),1);
+last_str = '';
+for i = 1:length(all_data)
+    tmp_str = all_data(i).meta(1:45);
+
+    if ~strcmp(tmp_str,last_str)
+        counter = 0;
+        last_str = tmp_str;
+    end
+    counter = counter+1;
+    trial_num(i) = counter;
+    last_str = tmp_str;
+    
+    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+        walk_idx(i) = true;
+    end
+    
+    if contains(all_data(i).ft.pattern,'background')
+        dark_idx(i) = true;
+    end
+
+    if contains(all_data(i).meta,'empty')
+        empty_idx(i) = true;
+    end
 end
 
 %% create figure to show example
-i = 32;
+i = 27;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -182,7 +338,8 @@ title(all_data(i).meta)
 xlabel('time (s)')
 
 a2 = subplot(6,1,3); hold on
-a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))); a.YData(abs(diff(a.YData))>pi) =nan;
+plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
+%a=plot(all_data(i).ft.xf,circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))); a.YData(abs(diff(a.YData))>pi) =nan;
 % try patch([all_data(i).ft.xf,flipud(all_data(i).ft.xf)],...
 %         [(max(ylim)-min(ylim))*(1-all_data(i).ft.cue_brightness/max(all_data(i).ft.cue_brightness))+min(ylim)),...
 %         min(ylim)*ones(size(all_data(i).ft.xf))]); end
@@ -218,411 +375,47 @@ scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
 xlabel('integrative gain')
 ylabel('func value')
 
-%% start by plotting the rotations in each gain category
-gain_vals = [.4,.8,1.2];
+if dark_mode
+    ax = findall(gcf,'type','axes');
+    for j = 1:length(ax)
+        set(ax,'color','none','ycolor','w','xcolor','w')
+        ax(j).Title.Color = 'w';
+    end
+    set(gcf,'Color','none','InvertHardcopy','off')
+    fontsize(gcf,20,'pixels')
+end
 
-figure(1); clf; hold on
-tmp = nan(1,3);
+%% plot activity during and outside of stims
+empty_idx = cellfun(@(x)(contains(x,'empty') | contains(x,'+')),{all_data.meta}');
+
+stim_bumps = cell(length(all_data),1);
+nstim_bumps = cell(length(all_data),1);
+prestim_bumps = cell(length(all_data),1);
 for i = 1:length(all_data)
-    [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
-    ind(isnan(all_data(i).gain.vr)) = nan;
-    for j = 1:3; 
-        if sum(ind==j)/length(ind) > .1
-            tmp(j) = median(abs(all_data(i).ft.r_speed(ind==j & abs(all_data(i).ft.r_speed)>.1))); 
-        end
-    end
-    plot(gain_vals,tmp,'-','color',.9*[1,1,1,.9])
-    scatter(gain_vals,tmp,100,.9*[1,1,1],'filled','MarkerFaceAlpha',.5)
+idx = logical(interp1(all_data(i).ft.xf,all_data(i).ft.stims,all_data(i).ft.xb,'linear','extrap'));
+stim_bumps{i} = all_data(i).im.f(:,idx);
+nstim_bumps{i} = all_data(i).im.f(:,~idx);
+ind = find(idx,1);
+prestim_bumps{i} = all_data(i).im.f(:,1:ind);
 end
 
-xlim([0,1.6]); xticks(gain_vals)
-xlabel('gain condition'); ylabel('median R Speed (rad/s)')
 
-dark_fig(gcf)
-
-%% next plot the mean fluorescence in each category
-gain_vals = [.4,.8,1.2];
-
-figure(1); clf; hold on
-tmp = nan(1,3);
-for i = 1:length(all_data)
-    [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
-    ind(isnan(all_data(i).gain.vr)) = nan;
-    amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
-    r_speed = abs(all_data(i).ft.r_speed);
-    
-    [r,lags] = xcorr(amp,r_speed,60);
-    lag = lags(r == max(r));
-    
-    amp = amp(lag:end);
-    r_speed = r_speed(1:end-lag+1);
-    ind = ind(1:end-lag+1);
-
-    for j = 1:3
-        if sum(ind==j)/length(ind) > .1
-            tmp(j) = median(amp(ind==j & r_speed>.1)); 
-        end
-    end
-    plot(gain_vals,tmp,'-','color',.9*[1,1,1,.9])
-    scatter(gain_vals,tmp,100,.9*[1,1,1],'filled','MarkerFaceAlpha',.5)
-end
-
-xlim([0,1.6]); xticks(gain_vals)
-xlabel('gain condition'); ylabel('median max dF/F')
-
-dark_fig(gcf)
-
-%% see see whether bump movement precedes or succeeds DA buildup
-rho_thresh = .1;
-fr = 60;
-figure(9); clf; hold on
-for i = 1:length(all_data)
-    amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
-    dr = all_data(i).ft.r_speed;
-    m = all_data(i).im.mu;
-    rho= all_data(i).im.rho;
-    m(rho<rho_thresh) = nan;
-    m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
-    m = medfilt1(m,20);
-    
-    dm = [diff(m);0] * fr;
-    dm(isnan(dm)) = 0;
-    
-    [r,lags] = xcorr(dr,dm,30);
-    speed_lag = lags(r == max(r));
-    
-    [r,lags] = xcorr(amp,dm,60);
-    amp_lag = lags(r == max(r));
-    
-    plot([1,2],[speed_lag,amp_lag]/60,'-','color',.9*[1,1,1,.9])
-    if sum(all_data(i).gain.vr > 1) > sum(all_data(i).gain.vr < .6); c = 'r'; else; c='b'; end
-    scatter([1,2],[speed_lag,amp_lag]/60,100,c,'filled','MarkerFaceAlpha',.5)
-end
-xlim([0,3]); plot([0,3],[0,0],':w')
-xticks([1,2]); xticklabels({'fly speed','bump amp (peak)'})
-ylabel('lag (s)')
-title('optimal lag to bump speed')
-dark_fig(gcf)
-
-%% see how much dopamine you get per fly speed depending on the bump speed
-win = [-10,10];
-
-figure(10); clf; hold on
-
-speed_slope = cell(length(all_data),1);
-amp_slope = cell(length(all_data),1);
-gain_key = cell(length(all_data),1);
-for i = 1:length(all_data)
-    [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
-    ind(isnan(all_data(i).gain.vr)) = nan;
-    
-    amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
-    dr = all_data(i).ft.r_speed;
-    m = all_data(i).im.mu;
-    rho= all_data(i).im.rho;
-    m(rho<rho_thresh) = nan;
-    m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
-    m = medfilt1(m,20);
-    
-    dm = [0;diff(m)] * fr;
-    dm(isnan(dm)) = 0;
-    
-
-    xt = 0:ceil(max(all_data(i).ft.xf));
-    speed_slope{i} = nan(size(xt));
-    amp_slope{i} = nan(size(xt));
-
-    for j = 1:length(xt)
-        
-        idx = all_data(i).ft.xf > xt(j)+win(1) & all_data(i).ft.xf < xt(j)+win(2);
-        dr_tmp = dr(idx);
-        dm_tmp = dm(idx);
-        ind_tmp= ind(idx);
-        amp_tmp= amp(idx);
-
-        [r,lags] = xcorr(dr_tmp,dm_tmp,30);
-        lag = lags(r == max(r));
-    
-    if lag > 0
-        ind_tmp = ind_tmp(1:end-lag);
-        dr_tmp  = dr_tmp(1:end-lag);
-        amp_tmp = amp_tmp(1+lag:end);
-        dm_tmp  = dm_tmp(1+lag:end);
-    elseif lag<0
-        
-        ind_tmp = ind_tmp(1-lag:end);
-        dr_tmp  = dr_tmp(1-lag:end);
-        amp_tmp = amp_tmp(1:end+lag);
-        dm_tmp  = dm_tmp(1:end+lag);
-    end
-    
-    idx1 = abs(dr_tmp)>.1 & abs(dm_tmp)>.1 & ~isnan(dm_tmp);
-            
-    gain_key{i}(j) = median(ind_tmp,'omitnan');
-    speed_slope{i}(j) = dr_tmp(idx1) \ dm_tmp(idx1);
-    amp_slope{i}(j) = abs(dr_tmp(idx1)) \ amp_tmp(idx1);
-    end
-end
-
-%% show histogram of relationships broken up by gain condition
-figure(10); clf; 
-
-nexttile; hold on
-for j = 1:3
-    tmp_amp = cell2mat(amp_slope');
-    tmp_key = cell2mat(gain_key');
-    histogram(tmp_amp(tmp_key==j & ~isnan(tmp_amp)),'binedges',0:.02:.6,'Normalization','prob');
-end
-xlabel('slope dopamine peak per fly speed')
-legend('.4','.8','1.2')
-
-nexttile; hold on
-tmp = nan(length(all_data),3);
-for i = 1:length(all_data)
-    for j = 1:3
-        m = mean(amp_slope{i}(gain_key{i}==j),'omitnan');
-        s = std(amp_slope{i}(gain_key{i}==j),'omitnan')/sqrt(sum(~isnan(amp_slope{i}(gain_key{i}==j))));
-        errorbar(j,m,s)
-        tmp(i,j) = m;
-    end
-end
-plot(tmp','Color',[0,0,0,.1])
-xlim([0,4])
-xlabel('gain condition')
-ylabel('amp slope')
-
-nexttile; hold on
-tmp = nan(length(all_data),1);
-for i = 1:length(all_data)
-
-        scatter(speed_slope{i},amp_slope{i});
-        idx = ~isnan(speed_slope{i}) & ~isnan(amp_slope{i});
-        tmp(i) = speed_slope{i}(idx)' \ amp_slope{i}(idx)';
-end
-plot(tmp','Color',[0,0,0,.1])
-xlim([0,4])
-xlabel('speed slope')
-ylabel('amp slope')
-
-
-%% create a heatmap with fly speed on x, bump speed on y colored by amplitude
-dr_edge = 0:.4:8;
-dm_edge = 0:.4:8;
-
-bigmat = nan(length(dm_edge),length(dr_edge),length(all_data),90);
-bigidx = bigmat;
-
-lag = 15;
-
-for i = 1:length(all_data)
-
-    % [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
-    % ind(isnan(all_data(i).gain.vr)) = nan;
-
-    m = all_data(i).im.mu;
-    rho= all_data(i).im.rho;
-    m(rho<rho_thresh) = nan;
-    m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
-    m = medfilt1(m,20);
-    dm = [0;diff(m)] * fr;
-    amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
-    dr = all_data(i).ft.r_speed;
-
-    dm = discretize(abs(dm),dm_edge);
-    dr = discretize(abs(dr),dr_edge);
-    dm = dm(30+1:end-lag);
-    dr = dr(30+1+lag:end);
-
-    for j = 1:90
-    amp_tmp = amp(j:end-30-lag);
-    dm_tmp  = dm(1:end-j+1);
-    dr_tmp  = dr(1:end-j+1);
-    
-    for b1 = 1:length(dm_edge)
-        for b2 = 1:length(dr_edge)
-            bigmat(b1,b2,i,j) = mean(amp_tmp(dm_tmp == b1 & dr_tmp == b2));
-        end
-    end
-    end
-end
-
-%%
-% v = VideoWriter('dopamine_buildup_heatmap.avi');
-% v.FrameRate = 10;
-% open(v);
-% figure(11); clf
-% for i = 1:90
-% 
-%     imagesc(dr_edge,dm_edge,log(mean(bigmat(:,:,:,i),3,'omitnan')),[-3,-.5])
-%     set(gca,'YDir','normal')
-%     xlabel('fly speed (rad/s)')
-%     ylabel('bump speed (rad/s)')
-%     title({'Amplitude by speeds (log mean)',sprintf('lag: %.0f ms',(i-45)/60*1000)})
-%     dark_fig(gcf)
-%     c= colorbar; c.Color = 'w';
-%     drawnow
-% 
-%     frame = getframe(gcf);
-%     writeVideo(v,frame)
-% 
-% end
-% 
-% close(v)
-
-%% create a heatmap with fly speed on x, bump speed on y colored by amplitude
-
-dr_edge = 0:.25:8;
-dm_edge = 0:.25:8;
-
-bigmat = nan(length(dm_edge),length(dr_edge),length(all_data),3);
-bigidx = bigmat;
-gain_vals = [.4,.8,1.2];
-
-for i = 1:length(all_data)
-
-    [~,ind] = min(abs(all_data(i).gain.vr - gain_vals),[],2);
-    ind(isnan(all_data(i).gain.vr)) = nan;
-    
-    
-    m = all_data(i).im.mu;
-    rho= all_data(i).im.rho;
-    m(rho<rho_thresh) = nan;
-    m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
-    m = medfilt1(m,20);
-    dm = [0;diff(m)] * fr;
-    amp = interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf,'linear','extrap');
-    dr = all_data(i).ft.r_speed;
-
-    dm = discretize(abs(dm),dm_edge);
-    dr = discretize(abs(dr),dr_edge);
-
-    dm = dm(1:end-lag-10);
-    dr = dr(1+lag:end-10);
-    amp = amp(11:end-lag);
-    ind = ind(1+lag:end-10);
-
-    for b1 = 1:length(dm_edge)
-        for b2 = 1:length(dr_edge)
-            for g = 1:3
-                bigmat(b1,b2,i,g) = mean(amp(dm == b1 & dr == b2 & ind==g));
-            end
-        end
-    end
-end
-
-%%
-figure(12); clf
-for i = 1:3
-    nexttile
-imagesc(dr_edge,dm_edge,mean(bigmat(:,:,1:end,i),3,'omitnan'),[0,1])
-set(gca,'YDir','normal')
-xlabel('fly speed (rad/s)')
-ylabel('bump speed (rad/s)')
-title(sprintf('gain = %.2f',gain_vals(i)))
-c = colorbar; c.Color = 'w';
-end
-
-dark_fig(gcf)
-%% plot peak fluorescence as a function of fly speed and bump speed
-i = 46;
-lag = 20;
-figure(3); clf
-m = all_data(i).im.mu;
-rho= all_data(i).im.rho;
-m(rho<rho_thresh) = nan;
-m = interp1(all_data(i).ft.xb,unwrap(m),all_data(i).ft.xf);
-m = medfilt1(m,20);
-
-dm = [diff(m);0] * fr;
-dr = all_data(i).ft.r_speed;
-c = -unwrap(all_data(i).ft.cue);
-dc = [diff(c);0] * fr;
-amp= interp1(all_data(i).ft.xb,sum(all_data(i).im.d,1),all_data(i).ft.xf);
-rho= interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
-
-dm = dm(lag+1:end);
-dr = dr(1:end-lag);
-dc = dc(1:end-lag);
-amp = amp(lag+1:end);
-rho = rho(lag+1:end);
-g = all_data(i).gain.vr(1:end-lag) > .5;
-
-idx = rho > rho_thresh & abs(dr) > r_thresh & ~isnan(dm);
-subplot(3,2,1)
-scatter(dr(idx),dm(idx),[],g(idx),'filled','MarkerFaceAlpha',.1)
-xlabel('fly speed')
-ylabel('bump speed')
-axis equal
-
-subplot(3,2,2)
-scatter(abs(dr(idx)),abs(dc(idx)),[],amp(idx),'filled','MarkerFaceAlpha',.1)
-xlabel('fly speed')
-ylabel('cue speed')
-axis equal
-
-ax1= subplot(6,1,3); hold on
-plot(all_data(i).ft.xb,max(all_data(i).im.z,[],1))
-scatter(all_data(i).ft.xf,all_data(i).gain.vr,'.')
-legend('z-dff (peak)','vr gain','autoupdate','off','color','none','textcolor','w')
-%plot(-gradient(all_data(1).ft.cue(3:end))*60 ./ all_data(1).ft.r_speed(1:end-2))
-%ylim([0,1.5])
-title(all_data(i).meta)
-
-ax2 = subplot(6,1,4);
-plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed)); ylabel('r speed (mm/s)')
-
-ax3 = subplot(3,1,3);
-imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
-hold on
-if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
-a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
-a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
-xlabel('time (s)')
-linkaxes([ax1,ax2,ax3],'x')
-axis tight
-
-dark_fig(gcf)
-
-%% analyze the relationship between DA and bump turn
-
-%% plot amp vel relationship separated by gain
-rows = ceil(sqrt(length(all_data)));
-cols = ceil(length(all_data)/rows);
-
-figure(5); clf
-tax = tiledlayout(rows,cols);
-for i= 1:length(all_data)
-    dr = all_data(i).ft.r_speed;
-    amp= interp1(all_data(i).ft.xb,max(all_data(i).im.d,[],1),all_data(i).ft.xf);
-    dr = dr(1:end-lag);
-    amp = amp(lag+1:end);
-
-    t = 1:round(max(all_data(i).ft.xf));
-    g = nan(size(t));
-    r = all_data(i).ft.r_speed(1:end-2);
-    c = -gradient(all_data(i).ft.cue(3:end))*60;
-    c(abs(c)>50) = nan;
-    for j = 1:length(t)
-        idx = all_data(i).ft.xf(1:end-2) > j-1 & all_data(i).ft.xf(1:end-2) < j+5 & abs(r) > .5 & abs(c) > .5;
-        
-        g(j) = r(idx) \ c(idx);
-        if sum(idx) == 0; g(j) = nan; end
-    end
-    g = interp1(t,g,all_data(i).ft.xf);
-    g = g(lag+1:end);
-
-    nexttile; hold on
-    scatter(abs(dr(g>1)),amp(g>1),'filled','r','MarkerFaceAlpha',.2)
-    scatter(abs(dr(g>.5 & g<1)),amp(g>.5 & g<1),'filled','b','MarkerFaceAlpha',.2)
-    scatter(abs(dr(g<.5)),amp(g<.5),'filled','g','MarkerFaceAlpha',.2)
-    title(all_data(i).meta(34:47))
-end
-legend('high','normal','low')
-xlabel(tax,'fly speed (mm/s)')
-ylabel(tax,'bump amp (peak dff)')
-fontsize(gcf,20,'pixels')
-
-%% Functions
+stim_bumps = cell2mat(stim_bumps');
+nstim_bumps = cell2mat(nstim_bumps');
+prestim_bumps = cell2mat(prestim_bumps');
+figure(2); clf; tiledlayout(1,2);
+a1 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,empty_idx)','b'); h.FaceAlpha = .5;
+h = plotsem(1:size(prestim_bumps,1),prestim_bumps(:,empty_idx)','g'); h.FaceAlpha = .5;
+title('empty')
+a2 = nexttile; hold on
+h = plotsem(1:size(stim_bumps,1),stim_bumps(:,~empty_idx)','r'); h.FaceAlpha = .5;
+h = plotsem(1:size(nstim_bumps,1),nstim_bumps(:,~empty_idx)','b'); h.FaceAlpha = .5;
+h = plotsem(1:size(prestim_bumps,1),prestim_bumps(:,~empty_idx)','g'); h.FaceAlpha = .5;
+title('lpsp')
+legend('during stim','outside stim')
+linkaxes([a1,a2],'y')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
@@ -722,13 +515,4 @@ function h = plotsem(t,x,c)
     t = reshape(t,1,[]);
     
     h = patch([t,fliplr(t)],[m+s,m-s],c);
-end
-function h = dark_fig(f)
-    ax = findall(f,'type','axes');
-    for j = 1:length(ax)
-        set(ax,'color','none','ycolor','w','xcolor','w')
-        ax(j).Title.Color = 'w';
-    end
-    set(f,'Color','none','InvertHardcopy','off')
-    fontsize(gcf,20,'pixels')
 end
