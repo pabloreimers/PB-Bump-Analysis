@@ -221,19 +221,24 @@ trial_num = zeros(length(all_data),1);
 dark_idx  = false(length(all_data),1);
 empty_idx = false(length(all_data),1);
 walk_idx  = false(length(all_data),1);
+fly_num   = nan(length(all_data),1);
 last_str = '';
+fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:45);
+    tmp_str = all_data(i).meta(1:34);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
-        last_str = tmp_str;
+        last_str = tmp_str;        
+        fly_counter = fly_counter+1;
     end
+
     counter = counter+1;
     trial_num(i) = counter;
+    fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+    if sum(all_data(i).ft.f_speed>1) > length(all_data(i).ft.f_speed)/10
         walk_idx(i) = true;
     end
     
@@ -248,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 49;
+i = 131;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -279,12 +284,13 @@ ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTick
 
 a3 = subplot(6,1,4); hold on
 plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
-ylabel('integrative gain')
+plot(all_data(i).gain.xt,all_data(i).gain.g)
+ylabel('gain'); legend('instant','integ','autoupdate','off')
 
 linkaxes([a1,a2,a3],'x')
 xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
 ylim([0,5])
-plot(xlim,[.8,.8],':'); %plot(xlim,[1.6,1.6],':k')
+plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
 h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
@@ -294,9 +300,8 @@ ylabel('counts')
 legend('integrative','color','none','textcolor','w')
 
 subplot(3,2,6); 
-scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
-xlabel('integrative gain')
-ylabel('func value')
+histogram(all_data(i).ft.f_speed,'edgecolor','none')
+xlabel('f speed')
 
 %% show historams in the CL and the dark (integrative gain)
 g = {};
@@ -310,12 +315,12 @@ t = tiledlayout(1,2);
 for i = 0:1
     nexttile; hold on
     set(gca,'color','none','ycolor','w','xcolor','w')
-    tmp = reshape(cell2mat(g(empty_idx & dark_idx == i)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:2],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
-    tmp = reshape(cell2mat(g(~empty_idx & dark_idx == i)),1,[]);
-    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:2],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
-    legend(sprintf('empty>TH-RNAi (%i)',sum(empty_idx & dark_idx == i)),...
-           sprintf('lpsp>TH-RNAi (%i)',sum(~empty_idx & dark_idx == i)),...
+    tmp = reshape(cell2mat(g(walk_idx & empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
+    tmp = reshape(cell2mat(g(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
+    legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
+           sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
            'textcolor','w')
     title(sprintf('Dark = %i',i),'Color','w')
 end
@@ -331,6 +336,7 @@ for i = 1:length(all_data)
     tmp_mean = atan2(mean(sin(tmp),'omitnan'),mean(cos(tmp),'omitnan'));
     tmp = tmp - tmp_mean;
     tmp(tmp<-pi) = tmp(tmp<-pi) + 2*pi;
+    tmp = tmp(abs(all_data(i).ft.r_speed)>0);
     o{i} = tmp(~isnan(tmp));
 end
 o = reshape(o,[],1);
@@ -340,12 +346,12 @@ t = tiledlayout(1,2);
 for i = 0:1
     nexttile; hold on
     set(gca,'color','none','ycolor','w','xcolor','w')
-    tmp = reshape(cell2mat(o(empty_idx & dark_idx == i)),1,[]);
+    tmp = reshape(cell2mat(o(walk_idx & empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
-    tmp = reshape(cell2mat(o(~empty_idx & dark_idx == i)),1,[]);
+    tmp = reshape(cell2mat(o(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
-    legend(sprintf('empty>TH-RNAi (%i)',sum(empty_idx & dark_idx == i)),...
-           sprintf('lpsp>TH-RNAi (%i)',sum(~empty_idx & dark_idx == i)),...
+    legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
+           sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
            'textcolor','w')
     title(sprintf('Dark = %i',i),'Color','w')
 end
@@ -374,13 +380,26 @@ c = reshape(c,[],1);
 m = reshape(m,[],1);
 
 figure(3); clf
-t = tiledlayout(1,2);
+t = tiledlayout(2,2);
 for i = 0:1
     nexttile; hold on
     set(gca,'color','none','ycolor','w','xcolor','w')
-    tmp = reshape(cell2mat(m(empty_idx & dark_idx == i)),1,[]);
+    tmp = reshape(cell2mat(c(walk_idx & empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
-    tmp = reshape(cell2mat(m(~empty_idx & dark_idx == i)),1,[]);
+    tmp = reshape(cell2mat(c(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
+    legend(sprintf('empty>TH-RNAi (%i)',sum(walk_idx & empty_idx & dark_idx == i)),...
+           sprintf('lpsp>TH-RNAi (%i)',sum(walk_idx & ~empty_idx & dark_idx == i)),...
+           'textcolor','w')
+    title(sprintf('Dark = %i',i),'Color','w')
+end
+
+for i = 0:1
+    nexttile; hold on
+    set(gca,'color','none','ycolor','w','xcolor','w')
+    tmp = reshape(cell2mat(m(walk_idx & empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
+    tmp = reshape(cell2mat(m(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
     legend(sprintf('empty>TH-RNAi (%i)',sum(empty_idx & dark_idx == i)),...
            sprintf('lpsp>TH-RNAi (%i)',sum(~empty_idx & dark_idx == i)),...
@@ -412,12 +431,14 @@ ent = [ent_cue,ent_mu];
 figure(4); clf
 t = tiledlayout(1,2);
 nexttile; hold on
-plot(ent(empty_idx & ~dark_idx,:)','Color',[0,.5,1])
-plot(ent(~empty_idx & ~dark_idx,:)','Color',[1,.5,0])
+plot(ent(walk_idx & empty_idx & ~dark_idx,:)','Color',[0,.5,1])
+plot(ent(walk_idx & ~empty_idx & ~dark_idx,:)','Color',[1,.5,0])
+axis padded
 
 nexttile; hold on
-scatter(1*ones(sum(empty_idx),1),ent_mu(empty_idx) ./ ent_cue(empty_idx),[],[0,.5,1])
-scatter(2*ones(sum(~empty_idx),1),ent_mu(~empty_idx) ./ ent_cue(~empty_idx),[],[1,.5,0])
+scatter(1*ones(sum(empty_idx(walk_idx)),1),ent_mu(empty_idx(walk_idx)) ./ ent_cue(empty_idx(walk_idx)),[],[0,.5,1])
+scatter(2*ones(sum(~empty_idx(walk_idx)),1),ent_mu(~empty_idx(walk_idx)) ./ ent_cue(~empty_idx(walk_idx)),[],[1,.5,0])
+axis padded
 
 t.Children(2).XTick = [1,2]; t.Children(2).XTickLabel = {'Cue','Mu'}; title(t.Children(2), 'Entropy');
 t.Children(1).XTick = [1,2]; t.Children(1).XTickLabel = {'Empty','LPsP'}; title(t.Children(1), 'Difference');
@@ -458,7 +479,7 @@ xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
 nexttile
 c = [1,.5,0; 0,.5,1];
 group_idx = empty_idx + 2*dark_idx;
-scatter(group_idx,g,[],c(empty_idx+1,:));ylabel({'instantaneous gain','lag = 160ms'},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
+scatter(group_idx(walk_idx),g(walk_idx),[],c(empty_idx(walk_idx)+1,:));ylabel({'instantaneous gain','lag = 160ms'},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
 
 %% Functions
 
