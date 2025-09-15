@@ -248,7 +248,7 @@ end
 
 
 %% create figure to show example
-i = 49;
+i = 63;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -294,9 +294,10 @@ ylabel('counts')
 legend('integrative','color','none','textcolor','w')
 
 subplot(3,2,6); 
-scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
-xlabel('integrative gain')
-ylabel('func value')
+%scatter(all_data(i).gain.g,all_data(i).gain.v,'filled','MarkerFaceAlpha',.5)
+histogram(all_data(i).ft.f_speed)
+xlabel('f speed')
+ylabel('counts')
 
 %% show historams in the CL and the dark (integrative gain)
 g = {};
