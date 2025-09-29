@@ -338,8 +338,8 @@ end
 close(writerObj);
 
 %% show population effects
-win_start = -10;
-win_end   = 20; %in seconds
+win_start = -5;
+win_end   = 10; %in seconds
 z_pulses = {};
 d_pulses = {};
 m_pulses = {};
@@ -352,10 +352,13 @@ exp_idx  = {};
 figure(10)
 counter = 1;
 for i = 1:length(all_data)
-    [~,loc] = findpeaks(sum(all_data(i).atp.d,1),'MinPeakProminence',9);
+    sig = smoothdata(sum(all_data(i).atp.d,1),'movmean',[0,20]);
+    [~,loc] = findpeaks(sig,'MinPeakProminence',9);
     tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
     tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
-
+    if length(tmp_win) ~= 160
+        a=1;
+    end
     for j = loc        
         [~,k] = min(abs(all_data(i).ft.xf - all_data(i).ft.xb(j)));
         z_pulses{counter} = all_data(i).im.z(:,max(j+tmp_win,1));
@@ -430,7 +433,8 @@ l_sweeps = {};
 
 counter = 1;
 for i = 1:length(all_data)
-    [~,loc] = findpeaks(smoothdata(diff(unwrap(all_data(i).ft.cue)),1,'movmedian',500),'MinPeakDistance',1000,'MinPeakHeight',.015);
+    sig = smoothdata(sum(all_data(i).atp.d,1),'movmean',[0,20]);
+    [~,loc] = findpeaks(sig,'MinPeakProminence',9);
     tmp_win = floor(win_start/mean(diff(all_data(i).ft.xb))):ceil(win_end/mean(diff(all_data(i).ft.xb)));
     tmp_win2= floor(win_start/mean(diff(all_data(i).ft.xf))):ceil(win_end/mean(diff(all_data(i).ft.xf)));
 
@@ -450,8 +454,7 @@ end
 
 %% population average
 figure(6); clf
-t = all_data(1).ft.xb(1:length(tmp_win)) + win_start + 2;
-t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
+t = win_start:.1:win_end + 2;
 
 group_idx = right_idx + 2*exp_idx + 4*dark_idx;
 group_labels = {'left con cl','right con cl','left exp cl','right exp cl',...
@@ -461,22 +464,24 @@ m = cell(length(unique(group_idx)),1);
 c = cell(length(unique(group_idx)),1);
 x = cell(length(unique(group_idx)),1);
 
+m_pulses = reshape(cellfun(@(x)(interp1(1:length(x),x,1:length(t))),m_pulses,'UniformOutput',false),[],1);
+c_pulses = reshape(cellfun(@(x)(interp1(1:length(x),x,1:length(t))),c_pulses,'UniformOutput',false),[],1);
+
 for i = unique(group_idx)
     [~,tmp] = min(abs(t));
-    m{i+1} = unwrap(cell2mat(m_pulses(group_idx==i)));
+    m{i+1} = unwrap(cell2mat(m_pulses(group_idx==i))');
     m{i+1} = (m{i+1}-m{i+1}(tmp,:))';
 
-    [~,tmp] = min(abs(t2));
-    c{i+1} = -unwrap(cell2mat(c_pulses(group_idx==i)));
+    c{i+1} = -unwrap(cell2mat(c_pulses(group_idx==i))');
     c{i+1} = (c{i+1}-c{i+1}(tmp,:))';
 
-    x{i+1} = m{i+1} - interp1(t2,c{i+1}',t,'linear','extrap')';
+    x{i+1} = m{i+1} - c{i+1};
 end
 
 %% show pop avg
 dark_mode = false;
 figure(6); clf
-for i = 1:4
+for i = 1:2
 
 subplot(2,4,i); hold on
 plot(t,m{i*2-1},'r')
@@ -1998,7 +2003,7 @@ function [gain,bias] = find_gain(fly_vel,mu,fr)
 end
 
 function h = plot_sem(ax,t,x)
-
+t = reshape(t,1,[]);
 m1 = mean(x,1,'omitnan');
 s1 = std(x,1,'omitnan')./sqrt(sum(~isnan(x),1));
 
@@ -2008,7 +2013,7 @@ s1 = s1(idx);
 t  = t(idx);
 
 
-h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
+h = patch(ax,[t,fliplr(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
 end
 
 function rgb_image = mat2rgb(v,map)

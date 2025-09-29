@@ -59,7 +59,7 @@ for i = length(all_data):length(all_files)
 end
 
 %% plot
-i = 57;
+i = 55;
 alpha = unwrap(all_data(i).im.alpha);
 fr = mean(diff(all_data(i).ft.xb));
 
@@ -91,8 +91,8 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -1;
-win_end = 60;
+win_start = -3;
+win_end = 15;
 
 c_pulses = {};
 m_pulses = {};
@@ -127,14 +127,14 @@ for i = 1:length(all_data)
     %tmp_win = floor(win_start/fr):ceil(win_end/fr); %this is the additive index to the frames to extract for a given pulse window
     %findpeaks(smoothdata(max(tmp_a,[],1),'movmean',5),'MinPeakProminence',1.5,'MinPeakDistance',50/fr);
  
-        
-    if numel(loc) < 2
-        continue
-    end
 
     if i==1 || ~strcmp(all_data(i).meta(1:38),last_fly)
         last_fly = all_data(i).meta(1:38);
         first_log = true;
+    end
+
+        if numel(loc) < 2
+        continue
     end
 
     for j = loc
@@ -203,9 +203,17 @@ end
 %% plot sweeps
 figure(2); clf
 subplot(1,2,1); hold on
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
-a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
+% a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
+% a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
+% a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
+[~,ind] = min(abs(tmp_t));
+tmp_m = cell2mat(cellfun(@(x)(unwrap(x)),m_pulses','UniformOutput',false));
+tmp_m = tmp_m - tmp_m(:,ind);
+tmp_c = -cell2mat(cellfun(@(x)(unwrap(x)),c_pulses','UniformOutput',false));
+tmp_c = tmp_c - tmp_c(:,ind);
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:) - tmp_c(exp_idx & right_idx,:)); a.FaceColor = 'r';
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:) - tmp_c(exp_idx & ~right_idx,:)); a.FaceColor = 'b';
+
 
 plot([win_start,win_end],[0,0],':k')
 scatter(-.5,0,100,'r*')
@@ -215,9 +223,9 @@ ylabel('unwrapped bump position (rad)')
 axis tight
 
 subplot(1,2,2); hold on
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(~exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(~exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
-a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(~exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:) - tmp_c(~exp_idx & right_idx,:)); a.FaceColor = 'r';
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:) - tmp_c(~exp_idx & ~right_idx,:)); a.FaceColor = 'b';
+
 plot([win_start,win_end],[0,0],':k')
 title('control')
 xlabel('time post stim (s)')

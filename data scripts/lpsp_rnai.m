@@ -238,7 +238,7 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>1) > length(all_data(i).ft.f_speed)/10
+    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/10
         walk_idx(i) = true;
     end
     
@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 131;
+i = 85;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -331,12 +331,13 @@ fontsize(gcf,20,'pixels')
 
 %% show historams in the CL and the dark (offset)
 o = {};
+r_thresh = 3;
 for i = 1:length(all_data)
     tmp = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
     tmp_mean = atan2(mean(sin(tmp),'omitnan'),mean(cos(tmp),'omitnan'));
     tmp = tmp - tmp_mean;
     tmp(tmp<-pi) = tmp(tmp<-pi) + 2*pi;
-    tmp = tmp(abs(all_data(i).ft.r_speed)>0);
+    tmp = tmp(abs(all_data(i).ft.r_speed)>r_thresh);
     o{i} = tmp(~isnan(tmp));
 end
 o = reshape(o,[],1);
@@ -360,6 +361,35 @@ title(t,'Offset','color','w')
 set(gcf,'color','none','InvertHardcopy','off')
 fontsize(gcf,20,'pixels')
 
+
+%% show historams in the CL and the dark (vector strength)
+r = {};
+r_thresh = 1;
+for i = 1:length(all_data)
+    tmp = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+    tmp = tmp(abs(all_data(i).ft.r_speed)>r_thresh);
+    r{i} = tmp(~isnan(tmp));
+end
+r = reshape(r,[],1);
+
+figure(3); clf
+t = tiledlayout(1,2);
+for i = 0:1
+    nexttile; hold on
+    set(gca,'color','none','ycolor','w','xcolor','w')
+    tmp = reshape(cell2mat(r(walk_idx & empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.01:2],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
+    tmp = reshape(cell2mat(r(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
+    histogram(tmp(~isnan(tmp)),'BinEdges',[0:.01:2],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
+    legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
+           sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
+           'textcolor','w')
+    title(sprintf('Dark = %i',i),'Color','w')
+end
+
+title(t,'Vector Strength','color','w')
+set(gcf,'color','none','InvertHardcopy','off')
+fontsize(gcf,20,'pixels')
 %% show historams in the CL and the dark (bump and cue position occupancy)
 m = {};
 c = {};
@@ -374,6 +404,7 @@ for i = 1:length(all_data)
     tmp_mean = atan2(mean(sin(tmp),'omitnan'),mean(cos(tmp),'omitnan'));
     tmp = tmp - tmp_mean;
     tmp(tmp<-pi) = tmp(tmp<-pi) + 2*pi;
+    tmp = tmp(interp1(all_data(i).ft.xf,all_data(i).ft.f_speed,all_data(i).ft.xb)>f_thresh);
     m{i} = tmp(~isnan(tmp));
 end
 c = reshape(c,[],1);
@@ -391,7 +422,7 @@ for i = 0:1
     legend(sprintf('empty>TH-RNAi (%i)',sum(walk_idx & empty_idx & dark_idx == i)),...
            sprintf('lpsp>TH-RNAi (%i)',sum(walk_idx & ~empty_idx & dark_idx == i)),...
            'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+    title({'Cue Position',sprintf('Dark = %i',i)},'Color','w')
 end
 
 for i = 0:1
@@ -401,13 +432,12 @@ for i = 0:1
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
     tmp = reshape(cell2mat(m(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
-    legend(sprintf('empty>TH-RNAi (%i)',sum(empty_idx & dark_idx == i)),...
-           sprintf('lpsp>TH-RNAi (%i)',sum(~empty_idx & dark_idx == i)),...
+    legend(sprintf('empty>TH-RNAi (%i)',sum(walk_idx & empty_idx & dark_idx == i)),...
+           sprintf('lpsp>TH-RNAi (%i)',sum(walk_idx & ~empty_idx & dark_idx == i)),...
            'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+    title({'Bump Position',sprintf('Dark = %i',i)},'Color','w')
 end
 
-title(t,'Cue Position','color','w')
 set(gcf,'color','none','InvertHardcopy','off')
 fontsize(gcf,20,'pixels')
 
