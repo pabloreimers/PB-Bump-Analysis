@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 231;
+i = 25;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -315,28 +315,46 @@ sem_g = cellfun(@(x)(std(x,'omitnan')/sqrt(sum(~isnan(x)))),g);
 figure(3); clf
 for i = 0:1
     subplot(1,2,i+1); hold on
-    set(gca,'color','none','ycolor','w','xcolor','w')
+    set(gca,'color','none','ycolor',c,'xcolor',c)
     tmp = reshape(cell2mat(g(walk_idx & empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
     tmp = reshape(cell2mat(g(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
     legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
            sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
-           'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+           'textcolor',c,'Location','Southeast')
+    title(sprintf('Dark = %i',i),'Color',c)
 
     pos = get(gca,'Position');
     axes('Position',[pos(1)+pos(3)/2,pos(2)+pos(4)/2,pos(3)/2,pos(4)/2]); hold on
     errorbar(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),mean_g(empty_idx & walk_idx & dark_idx==i),sem_g(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
     errorbar(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),mean_g(~empty_idx & walk_idx & dark_idx==i),sem_g(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
     xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Integrative Gain')
-    axis padded; set(gca,'Color','none','ycolor','w','xcolor','w')
+    axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
 end
 
-title(t,'Integrative Gain','color','w')
+
+if dark_mode
 set(gcf,'color','none','InvertHardcopy','off')
+end
 fontsize(gcf,20,'pixels')
 
+%% identify index to specific trials sorted by gain
+tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
+[~,ind] = sort(mean_g(tmp_idx),'descend'); %sort the gains of those trials, and find the index
+
+sort_ind = tmp_ind(ind); %return the indices of the trials in descending gain order. 
+
+figure(5); clf; %show their histogram of forward speeds sorted in this order
+
+rows = ceil(sqrt(length(sort_ind)));
+cols = ceil(length(sort_ind)/rows);
+
+for i = 1:length(sort_ind)
+    subplot(rows,cols,i)
+    histogram(all_data(sort_ind(i)).ft.f_speed,'EdgeColor','none','BinEdges',-3:.1:20)
+    title(sprintf('trial: %i, gain:%.2f',sort_ind(i),mean_g(sort_ind(i))))
+end
 %% show historams in the CL and the dark (offset)
 r_thresh = 0;
 

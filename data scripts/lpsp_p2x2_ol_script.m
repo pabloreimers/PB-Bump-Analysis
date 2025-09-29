@@ -91,8 +91,8 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -3;
-win_end = 15;
+win_start = 15;
+win_end = 60;
 
 c_pulses = {};
 m_pulses = {};
@@ -211,8 +211,9 @@ tmp_m = cell2mat(cellfun(@(x)(unwrap(x)),m_pulses','UniformOutput',false));
 tmp_m = tmp_m - tmp_m(:,ind);
 tmp_c = -cell2mat(cellfun(@(x)(unwrap(x)),c_pulses','UniformOutput',false));
 tmp_c = tmp_c - tmp_c(:,ind);
-a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:) - tmp_c(exp_idx & right_idx,:)); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:) - tmp_c(exp_idx & ~right_idx,:)); a.FaceColor = 'b';
+tmp_o = tmp_m - tmp_c;
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = 'r';
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = 'b';
 
 
 plot([win_start,win_end],[0,0],':k')
@@ -223,8 +224,8 @@ ylabel('unwrapped bump position (rad)')
 axis tight
 
 subplot(1,2,2); hold on
-a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:) - tmp_c(~exp_idx & right_idx,:)); a.FaceColor = 'r';
-a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:) - tmp_c(~exp_idx & ~right_idx,:)); a.FaceColor = 'b';
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = 'r';
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:)); a.FaceColor = 'b';
 
 plot([win_start,win_end],[0,0],':k')
 title('control')

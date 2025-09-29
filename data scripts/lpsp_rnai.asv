@@ -1,6 +1,6 @@
 %% 
 close all
-clear all
+% clear all
 
 %% load in data
 base_dir = 'Z:\pablo\lpsp_rnai\'; %uigetdir(); %
@@ -36,10 +36,10 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = 222:length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 180;
+i = 139;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -315,27 +315,31 @@ sem_g = cellfun(@(x)(std(x,'omitnan')/sqrt(sum(~isnan(x)))),g);
 figure(3); clf
 for i = 0:1
     subplot(1,2,i+1); hold on
-    set(gca,'color','none','ycolor','w','xcolor','w')
+    set(gca,'color','none','ycolor',c,'xcolor',c)
     tmp = reshape(cell2mat(g(walk_idx & empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
     tmp = reshape(cell2mat(g(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[0:.1:5],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
     legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
            sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
-           'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+           'textcolor',c,'Location','Southeast')
+    title(sprintf('Dark = %i',i),'Color',c)
 
     pos = get(gca,'Position');
     axes('Position',[pos(1)+pos(3)/2,pos(2)+pos(4)/2,pos(3)/2,pos(4)/2]); hold on
     errorbar(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),mean_g(empty_idx & walk_idx & dark_idx==i),sem_g(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
     errorbar(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),mean_g(~empty_idx & walk_idx & dark_idx==i),sem_g(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
     xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Integrative Gain')
-    axis padded; set(gca,'Color','none','ycolor','w','xcolor','w')
+    axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
 end
 
-title(t,'Integrative Gain','color','w')
+
+if dark_mode
 set(gcf,'color','none','InvertHardcopy','off')
+end
 fontsize(gcf,20,'pixels')
+
+%% 
 
 %% show historams in the CL and the dark (offset)
 r_thresh = 0;
