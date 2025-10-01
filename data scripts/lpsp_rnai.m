@@ -39,7 +39,7 @@ rho_thresh = .1;
 %all_data = struct();
 
 tic
-for i = 222:length(all_files)
+for i = 231:length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 25;
+i = 248;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -304,6 +304,7 @@ histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
 %% show historams in the CL and the dark (integrative gain)
+c = 'k';
 g = {};
 for i = 1:length(all_data)
     g{i} = all_data(i).gain.g;
@@ -334,14 +335,14 @@ for i = 0:1
 end
 
 
-if dark_mode
+if strcmp(c,'w')
 set(gcf,'color','none','InvertHardcopy','off')
 end
 fontsize(gcf,20,'pixels')
 
 %% identify index to specific trials sorted by gain
-tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
-[~,ind] = sort(mean_g(tmp_idx),'descend'); %sort the gains of those trials, and find the index
+tmp_ind = find(empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
+[~,ind] = sort(mean_g(tmp_ind),'descend'); %sort the gains of those trials, and find the index
 
 sort_ind = tmp_ind(ind); %return the indices of the trials in descending gain order. 
 
@@ -357,6 +358,7 @@ for i = 1:length(sort_ind)
 end
 %% show historams in the CL and the dark (offset)
 r_thresh = 0;
+c = 'k';
 
 o = {};
 for i = 1:length(all_data)
@@ -373,27 +375,45 @@ var_o = cellfun(@(x)(circ_var(x)),o);
 figure(3); clf
 for i = 0:1
     subplot(1,2,i+1); hold on
-    set(gca,'color','none','ycolor','w','xcolor','w')
+    set(gca,'color','none','ycolor',c,'xcolor',c)
     tmp = reshape(cell2mat(o(walk_idx & empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
     tmp = reshape(cell2mat(o(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
     legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
            sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
-           'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+           'textcolor',c)
+    title(sprintf('Dark = %i',i),'Color',c)
 
     pos = get(gca,'Position');
     axes('Position',[pos(1)+pos(3)*.75,pos(2)+pos(4)/2,pos(3)/3,pos(4)/3]); hold on
     scatter(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),var_o(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
     scatter(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),var_o(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
     xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Offset Variance (Circular)')
-    axis padded; set(gca,'Color','none','ycolor','w','xcolor','w')
+    axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
 end
 
-title(t,'Offset','color','w')
+if strcmp(c,'w')
 set(gcf,'color','none','InvertHardcopy','off')
+end
 fontsize(gcf,20,'pixels')
+
+%% identify index to specific trials sorted by variance
+tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
+[~,ind] = sort(var_o(tmp_ind),'descend'); %sort the gains of those trials, and find the index
+
+sort_ind = tmp_ind(ind); %return the indices of the trials in descending gain order. 
+
+figure(5); clf; %show their histogram of forward speeds sorted in this order
+
+rows = ceil(sqrt(length(sort_ind)));
+cols = ceil(length(sort_ind)/rows);
+
+for i = 1:length(sort_ind)
+    subplot(rows,cols,i)
+    histogram(all_data(sort_ind(i)).ft.f_speed,'EdgeColor','none','BinEdges',-3:.1:20)
+    title(sprintf('trial: %i, offset var:%.2f',sort_ind(i),var_o(sort_ind(i))))
+end
 
 %% show historams in the CL and the dark (bump and cue position occupancy)
 m = {};
