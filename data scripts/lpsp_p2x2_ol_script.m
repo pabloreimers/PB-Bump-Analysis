@@ -59,7 +59,7 @@ for i = length(all_data):length(all_files)
 end
 
 %% plot
-i = 55;
+i = 157;
 alpha = unwrap(all_data(i).im.alpha);
 fr = mean(diff(all_data(i).ft.xb));
 
@@ -91,8 +91,8 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = 15;
-win_end = 60;
+win_start = -5;
+win_end = 15;
 
 c_pulses = {};
 m_pulses = {};
@@ -172,11 +172,11 @@ alpha = all_data(1).im.alpha;
 [~,ind] = min(abs(tmp_win*fr));
 ind = round(ind- 2/fr):ind;
 
-atp_loc = cellfun(@(x)(find(sum(x,2,'omitnan')==max(sum(x,2,'omitnan')),1,'first')),a_pulses);
-atp_loc(atp_loc > n/2) = atp_loc(atp_loc>n/2) - n/2;
-mu_loc  = cellfun(@(x)(find(abs(mean(x(ind),'omitnan')-alpha)==min(abs(mean(x(ind),'omitnan')-alpha)),1,'first')),m_pulses);
-
-overlap_idx = abs(atp_loc - mu_loc) < 4;
+% atp_loc = cellfun(@(x)(find(sum(x,2,'omitnan')==max(sum(x,2,'omitnan')),1,'first')),a_pulses);
+% atp_loc(atp_loc > n/2) = atp_loc(atp_loc>n/2) - n/2;
+% mu_loc  = cellfun(@(x)(find(abs(mean(x(ind),'omitnan')-alpha)==min(abs(mean(x(ind),'omitnan')-alpha)),1,'first')),m_pulses);
+% 
+% overlap_idx = abs(atp_loc - mu_loc) < 4;
 
 %% plot results
 figure(1); clf

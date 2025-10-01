@@ -260,7 +260,7 @@ figure(5); clf
 subplot(1,2,1); hold on; set(gca,'YDir','reverse')
 a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [1,0,0];
 a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [0,0,1];
-a = plot(t,mean(-cues(pulse_length>1,:),'omitnan'),'k','linewidth',2);
+plot(t,mean(-cues,1,'omitnan'),'k','linewidth',2)
 
 plot(xlim,[0,0],':k')
 title('2s eject')
@@ -272,7 +272,17 @@ legend('left','right','cue')
 subplot(1,2,2); hold on; set(gca,'YDir','reverse')
 a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [1,0,0];
 a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [0,0,1];
-a = plot(t,mean(-cues(pulse_length<1,:),'omitnan'),'k','linewidth',2);
+a = plot(t,mean(-cues,1(pulse_length<1 & pulse_left==1,:),'omitnan'),'k','linewidth',2)
+
+% 
+% m = mean(mus(pulse_length<1 & pulse_left==1,:),1,'omitnan');
+% s = std(mus(pulse_length<1 & pulse_left==1,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
+% patch([t,fliplr(t)],[m+s,fliplr(m-s)],[1,.5,.5])
+% 
+% m = mean(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan');
+% s = std(mus(pulse_length<1 & pulse_left==0,:),1,'omitnan') ./ sqrt(sum(~isnan(pulses),1));
+% patch([t,fliplr(t)],[m+s,fliplr(m-s)],[.5,.5,1])
+
 
 plot(xlim,[0,0],':k')
 title('.5s eject')
