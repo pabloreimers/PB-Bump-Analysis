@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 139;
+i = 30;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -303,10 +303,25 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
-%% show historams in the CL and the dark (integrative gain)
-g = {};
+%% process the gain to eliminate poor fits, points where fly isn't rotating
+
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g;
+    all_data(i).gain.original = all_data(i).gain.g;
+
+    tmp_g = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+    
+end
+
+%% show historams in the CL and the dark (integrative gain)
+c = 'k';
+g = {};
+
+for i = 1:length(all_data)
+    fly_id = fly_num(i);
+    dark_id = dark_id(i);
+    tmp_idx = fly_num == fly_id & dark_idx == dark_id;
+    for j 
+    g{i} = all_data(i).gain.g(all_data(i).gain.v < .1);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);
@@ -339,8 +354,22 @@ set(gcf,'color','none','InvertHardcopy','off')
 end
 fontsize(gcf,20,'pixels')
 
-%% 
+%% identify index to specific trials sorted by gain
+tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
+[~,ind] = sort(mean_g(tmp_idx),'descend'); %sort the gains of those trials, and find the index
 
+sort_ind = tmp_ind(ind); %return the indices of the trials in descending gain order. 
+
+figure(5); clf; %show their histogram of forward speeds sorted in this order
+
+rows = ceil(sqrt(length(sort_ind)));
+cols = ceil(length(sort_ind)/rows);
+
+for i = 1:length(sort_ind)
+    subplot(rows,cols,i)
+    histogram(all_data(sort_ind(i)).ft.f_speed,'EdgeColor','none','BinEdges',-3:.1:20)
+    title(sprintf('trial: %i, gain:%.2f',sort_ind(i),mean_g(sort_ind(i))))
+end
 %% show historams in the CL and the dark (offset)
 r_thresh = 0;
 

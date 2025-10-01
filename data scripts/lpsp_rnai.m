@@ -253,7 +253,7 @@ end
 
 
 %% create figure to show example
-i = 25;
+i = 30;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -303,10 +303,27 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
-%% show historams in the CL and the dark (integrative gain)
-g = {};
+%% process the gain to eliminate poor fits, points where fly isn't rotating
+
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g;
+    all_data(i).gain.original = all_data(i).gain.g;
+
+    tmp_g = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+    
+end
+
+%% show historams in the CL and the dark (integrative gain)
+c = 'k';
+g = {};
+
+for i = 1:length(all_data) %create a cell structure that has all of the data for a fly (in the same CL/dark condition) in one element
+    g{i} = [];
+    fly_id = fly_num(i);
+    dark_id = dark_idx(i);
+    tmp_idx = fly_num == fly_id & dark_idx == dark_id & walk_idx;
+    for j = find(tmp_idx)'
+        g{i} = [g{i};all_data(j).gain.g(all_data(j).gain.v < .1)];
+    end
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);
