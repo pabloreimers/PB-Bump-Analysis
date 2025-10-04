@@ -91,7 +91,7 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -5;
+win_start = -3;
 win_end = 15;
 
 c_pulses = {};
