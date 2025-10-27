@@ -265,7 +265,7 @@ end
 
 
 %% create figure to show example
-i = 336;
+i = 117;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -352,6 +352,12 @@ set(gcf,'color','none','InvertHardcopy','off')
 end
 fontsize(gcf,20,'pixels')
 
+%% extract big turns
+i = 9;
+
+figure(1); clf
+plot(all_data(i).ft.xf,unwrap(all_data(i).ft.cue))
+
 %% identify index to specific trials sorted by gain
 tmp_ind = find(empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
 [~,ind] = sort(mean_g(tmp_ind),'descend'); %sort the gains of those trials, and find the index
@@ -373,6 +379,7 @@ r_thresh = 0;
 c = 'k';
 
 o = {};
+h = [];
 for i = 1:length(all_data)
     tmp = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
     tmp_mean = atan2(mean(sin(tmp),'omitnan'),mean(cos(tmp),'omitnan'));
@@ -380,9 +387,12 @@ for i = 1:length(all_data)
     tmp(tmp<-pi) = tmp(tmp<-pi) + 2*pi;
     tmp = tmp(abs(all_data(i).ft.r_speed)>1);
     o{i} = tmp(~isnan(tmp));
+    h{i} = circ_var(all_data(i).ft.cue);
 end
 o = reshape(o,[],1);
+h = reshape(h,[],1);
 var_o = cellfun(@(x)(circ_var(x)),o);
+var_h = cell2mat(h);
 
 figure(3); clf
 for i = 0:1
@@ -410,6 +420,25 @@ set(gcf,'color','none','InvertHardcopy','off')
 end
 fontsize(gcf,20,'pixels')
 
+%% bootstrap offset variability over total heading variability
+
+figure(5); clf
+subplot(2,2,1)
+idx = ~dark_idx & walk_idx;
+scatter(empty_idx(idx),var_h(idx))
+axis padded
+title('heading variance')
+
+subplot(2,2,3)
+empty_ind = find(empty_idx & idx); %find indices to each group
+lpsp_ind  = find(~empty_idx & idx);
+n = 1e4;
+empty_mat = empty_ind(randi(length(empty_ind),length(empty_ind),n)); %create a matrix that resamples those indices across rows, and repeats this n times across columns
+lpsp_mat  = lpsp_ind(randi(length(lpsp_ind),length(lpsp_ind),n));
+
+scatter
+
+p = sum(mean(var_h(empty_mat),1) - mean(var_h(lpsp_mat),1)) > n; %count how many times the mean of the empty group is higher than the mean of the lpsp group
 %% identify index to specific trials sorted by variance
 tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
 [~,ind] = sort(var_o(tmp_ind),'descend'); %sort the gains of those trials, and find the index
