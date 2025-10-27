@@ -185,13 +185,13 @@ for i = 1:length(ind)
     title(all_data(ind(i)).meta(47:80))
 end
 %% create an averaged trace
-win = [-10,60];
+win = [-2,15];
 dt = .1;
 t = win(1):dt:win(2);
 
 num_pulse = 0;
 for i = 1:length(all_data)
-    if contains(all_data(i).meta,'grab') || contains(all_data(i).meta,'ach')
+    if contains(all_data(i).meta,'grab') || contains(all_data(i).meta,'ach')|| sum(abs(all_data(i).ft.r_speed)) > 20
         continue
     end
     num_pulse = num_pulse+sum(diff(all_data(i).ft.stims)>0);
@@ -205,11 +205,17 @@ pulse_left = false(num_pulse,1);
 grab_idx = false(num_pulse,1);
 
 counter = 0;
+fly_counter = 0;
+last_str = '';
 for i = 1:length(all_data)
-    if contains(all_data(i).meta,'grab') || contains(all_data(i).meta,'ach')
+    if contains(all_data(i).meta,'grab') || contains(all_data(i).meta,'ach') || sum(abs(all_data(i).ft.r_speed)) > 20
         continue
     end
     
+    if ~strcmp(last_str,all_data(i).meta(1:52))
+        fly_counter = fly_counter+1;
+        last_str = all_data(i).meta(1:52);
+    end
     stim_times = all_data(i).ft.xf(find(diff(all_data(i).ft.stims)>0)); %find the times at which pulse started
     stim_lengths = all_data(i).ft.xf(find(floor(diff(all_data(i).ft.stims))<-1)) - all_data(i).ft.xf(find(diff(all_data(i).ft.stims)>0));
     stim_left = sum(all_data(i).atp.d(1:end/2,:),[1,2]) < sum(all_data(i).atp.d(end/2:end,:),[1,2]);
@@ -258,8 +264,8 @@ plot(xlim,[0,0],':k')
 
 figure(5); clf
 subplot(1,2,1); hold on; set(gca,'YDir','reverse')
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [1,0,0];
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [0,0,1];
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0,0,1];
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [1,0,0];
 a = plot(t,mean(-cues(pulse_length>1,:),'omitnan'),'k','linewidth',2);
 
 plot(xlim,[0,0],':k')
@@ -270,8 +276,8 @@ xlabel('time since stim start')
 legend('left','right','cue')
 
 subplot(1,2,2); hold on; set(gca,'YDir','reverse')
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [1,0,0];
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [0,0,1];
+a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [0,0,1];
+a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [1,0,0];
 a = plot(t,mean(-cues(pulse_length<1,:),'omitnan'),'k','linewidth',2);
 
 plot(xlim,[0,0],':k')

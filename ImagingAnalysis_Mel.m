@@ -121,7 +121,7 @@ axis equal tight
 %% assign each pixel to a centroid
 [~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 figure(1); clf
-imagesc(mean(imgData2,3))                      %plot the image again with max intensity over time to show the whole pb
+%imagesc(mean(imgData2,3))                      %plot the image again with max intensity over time to show the whole pb
 colormap(bone)
 hold on
 for i = 1:2*n_centroid                          %overlay each pixel in its indexed color onto the pb image. 

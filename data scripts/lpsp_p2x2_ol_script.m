@@ -91,7 +91,7 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -2;
+win_start = -3;
 win_end = 15;
 
 c_pulses = {};
@@ -214,7 +214,7 @@ tmp_c = tmp_c - tmp_c(:,ind);
 tmp_o = tmp_m - tmp_c;
 a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = 'r';
 a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = 'b';
-a = plot(tmp_t,mean(tmp_c(exp_idx,:),1),'k','linewidth',2);
+
 
 plot([win_start,win_end],[0,0],':k')
 scatter(-.5,0,100,'r*')
@@ -222,12 +222,10 @@ title('experimental')
 xlabel('time post stim (s)')
 ylabel('unwrapped bump position (rad)')
 axis tight
-set(gca,'Color','none','YDir','reverse')
 
 subplot(1,2,2); hold on
 a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = 'r';
 a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:)); a.FaceColor = 'b';
-a = plot(tmp_t,mean(tmp_c(~exp_idx,:),1),'k','linewidth',2);
 
 plot([win_start,win_end],[0,0],':k')
 title('control')
@@ -235,7 +233,6 @@ xlabel('time post stim (s)')
 ylabel('unwrapped bump position (rad)')
 legend('right','left','Location','Southeast')
 axis tight
-set(gca,'Color','none','YDir','reverse')
 
 linkaxes(get(gcf,'Children'))
 fontsize(gcf,20,'pixels')
