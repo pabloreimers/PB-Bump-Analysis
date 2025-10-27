@@ -93,7 +93,7 @@ for i = 1:length(all_data)
 end
 
 tic
-for i = 1:length(all_data)
+for i = counter:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -265,7 +265,7 @@ end
 
 
 %% create figure to show example
-i = 117;
+i = 340;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -319,7 +319,7 @@ xlabel('f speed')
 c = 'k';
 g = {};
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g;
+    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .1 & all_data(i).gain.v < .2);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);
@@ -352,11 +352,80 @@ set(gcf,'color','none','InvertHardcopy','off')
 end
 fontsize(gcf,20,'pixels')
 
-%% extract big turns
-i = 9;
+%% find p value by grouping identical trials
 
-figure(1); clf
-plot(all_data(i).ft.xf,unwrap(all_data(i).ft.cue))
+group_idx = [fly_num,empty_idx,dark_idx,walk_idx];
+[unique_groups,~,ic] = unique(group_idx,'rows');
+g_grouped = nan(length(unique_groups),1);
+v_grouped = nan(length(unique_groups),1);
+
+
+for i = 1:length(unique_groups)
+    g_grouped(i) = mean(vertcat(g{ic==i}),'omitnan');
+    v_grouped(i) = var(vertcat(g{ic==i}),'omitnan');
+
+end
+
+figure(5); clf
+subplot(2,2,1)
+idx = ~unique_groups(:,3) & unique_groups(:,4);
+scatter(unique_groups(idx,2),g_grouped(idx),'k','filled','MarkerFaceAlpha',.5)
+axis padded
+title('mean gain')
+text(0,max(ylim),sprintf('n = %i',sum(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+text(1,max(ylim),sprintf('n = %i',sum(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+
+xticks([])
+
+subplot(2,4,5)
+empty_ind = find(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4)); %find indices to each group
+lpsp_ind  = find(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4));
+n = 1e4;
+empty_mat = empty_ind(randi(length(empty_ind),length(empty_ind),n)); %create a matrix that resamples those indices across rows, and repeats this n times across columns
+lpsp_mat  = lpsp_ind(randi(length(lpsp_ind),length(lpsp_ind),n));
+
+hold on
+swarmchart(ones(n,1),mean(g_grouped(empty_mat),1),'k.')
+swarmchart(zeros(n,1),mean(g_grouped(lpsp_mat),1),'k.')
+axis padded
+
+p = sum((mean(g_grouped(empty_mat),1) - mean(g_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
+title(sprintf('bootstrap mean\np: %.3f',p))
+xticks([0,1]); xticklabels({'lpsp','empty'})
+
+subplot(2,4,6)
+hold on
+swarmchart(ones(n,1),var(g_grouped(empty_mat),1),'k.')
+swarmchart(zeros(n,1),var(g_grouped(lpsp_mat),1),'k.')
+axis padded
+
+p = sum((var(g_grouped(empty_mat),1) - var(g_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
+title(sprintf('bootstrap var\np: %.3f',p))
+xticks([0,1]); xticklabels({'lpsp','empty'})
+
+subplot(2,2,2)
+scatter(unique_groups(idx,2),v_grouped(idx),'k','filled','MarkerFaceAlpha',.5)
+axis padded
+title('var gain')
+text(0,max(ylim),sprintf('n = %i',sum(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+text(1,max(ylim),sprintf('n = %i',sum(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+xticks([])
+
+subplot(2,2,4)
+hold on
+swarmchart(ones(n,1),mean(v_grouped(empty_mat),1),'k.')
+swarmchart(zeros(n,1),mean(v_grouped(lpsp_mat),1),'k.')
+axis padded
+
+
+p = sum((mean(v_grouped(empty_mat),1) - mean(v_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
+title(sprintf('bootstrap mean\np: %.3f',p))
+xticks([0,1]); xticklabels({'lpsp','empty'})
+
+%%
+figure(6); clf ; hold on
+for i = 1:length(all_data)
+    if ~em
 
 %% identify index to specific trials sorted by gain
 tmp_ind = find(empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
@@ -379,20 +448,23 @@ r_thresh = 0;
 c = 'k';
 
 o = {};
-h = [];
+h = {};
 for i = 1:length(all_data)
     tmp = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
     tmp_mean = atan2(mean(sin(tmp),'omitnan'),mean(cos(tmp),'omitnan'));
     tmp = tmp - tmp_mean;
     tmp(tmp<-pi) = tmp(tmp<-pi) + 2*pi;
-    tmp = tmp(abs(all_data(i).ft.r_speed)>1);
+    tmp = tmp(abs(all_data(i).ft.r_speed)>r_thresh);
+    
     o{i} = tmp(~isnan(tmp));
-    h{i} = circ_var(all_data(i).ft.cue);
+    h{i} = all_data(i).ft.cue;
 end
+
 o = reshape(o,[],1);
 h = reshape(h,[],1);
+
 var_o = cellfun(@(x)(circ_var(x)),o);
-var_h = cell2mat(h);
+var_h = cellfun(@(x)(circ_var(x)),h);
 
 figure(3); clf
 for i = 0:1
@@ -422,23 +494,63 @@ fontsize(gcf,20,'pixels')
 
 %% bootstrap offset variability over total heading variability
 
+%group identical trials
+group_idx = [fly_num,empty_idx,dark_idx,walk_idx];
+[unique_groups,~,ic] = unique(group_idx,'rows');
+o_grouped = nan(length(unique_groups),1);
+h_grouped = nan(length(unique_groups),1);
+
+for i = 1:length(unique_groups)
+    o_grouped(i) = circ_var(vertcat(o{ic==i}));
+    h_grouped(i) = circ_var(vertcat(h{ic==i}));
+end
+
 figure(5); clf
 subplot(2,2,1)
-idx = ~dark_idx & walk_idx;
-scatter(empty_idx(idx),var_h(idx))
+idx = ~unique_groups(:,3) & unique_groups(:,4);
+scatter(unique_groups(idx,2),h_grouped(idx),'k','filled','MarkerFaceAlpha',.5)
 axis padded
 title('heading variance')
+text(0,max(ylim),sprintf('n = %i',sum(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+text(1,max(ylim),sprintf('n = %i',sum(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
+
+xticks([])
 
 subplot(2,2,3)
-empty_ind = find(empty_idx & idx); %find indices to each group
-lpsp_ind  = find(~empty_idx & idx);
+empty_ind = find(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4)); %find indices to each group
+lpsp_ind  = find(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4));
 n = 1e4;
 empty_mat = empty_ind(randi(length(empty_ind),length(empty_ind),n)); %create a matrix that resamples those indices across rows, and repeats this n times across columns
 lpsp_mat  = lpsp_ind(randi(length(lpsp_ind),length(lpsp_ind),n));
 
-scatter
+hold on
+swarmchart(ones(n,1),mean(h_grouped(empty_mat),1),'k.')
+swarmchart(zeros(n,1),mean(h_grouped(lpsp_mat),1),'k.')
+axis padded
 
-p = sum(mean(var_h(empty_mat),1) - mean(var_h(lpsp_mat),1)) > n; %count how many times the mean of the empty group is higher than the mean of the lpsp group
+p = sum((mean(h_grouped(empty_mat),1) - mean(h_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
+title(sprintf('p: %.3f',p))
+xticks([0,1]); xticklabels({'lpsp','empty'})
+
+subplot(2,2,2)
+scatter(unique_groups(idx,2),o_grouped(idx),'k','filled','MarkerFaceAlpha',.5)
+axis padded
+title('offset variance')
+xticks([])
+
+subplot(2,2,4)
+hold on
+swarmchart(ones(n,1),mean(o_grouped(empty_mat),1),'k.')
+swarmchart(zeros(n,1),mean(o_grouped(lpsp_mat),1),'k.')
+axis padded
+xticks([0,1]); xticklabels({'lpsp','empty'})
+
+p = sum((mean(o_grouped(empty_mat),1) - mean(o_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
+title(sprintf('p: %.3f',p))
+
+linkaxes(get(gcf,'children'),'x')
+set(get(gcf,'Children'),'color','none')
+
 %% identify index to specific trials sorted by variance
 tmp_ind = find(~empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about
 [~,ind] = sort(var_o(tmp_ind),'descend'); %sort the gains of those trials, and find the index
