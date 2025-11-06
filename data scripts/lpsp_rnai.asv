@@ -265,7 +265,7 @@ end
 
 
 %% create figure to show example
-i = 340;
+i = 53;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -319,7 +319,7 @@ xlabel('f speed')
 c = 'k';
 g = {};
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .1 & all_data(i).gain.v < .2);
+    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .05 & all_data(i).gain.v < .1);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);
@@ -422,10 +422,15 @@ p = sum((mean(v_grouped(empty_mat),1) - mean(v_grouped(lpsp_mat),1))>0) / n; %co
 title(sprintf('bootstrap mean\np: %.3f',p))
 xticks([0,1]); xticklabels({'lpsp','empty'})
 
+set(get(gcf,'Children'),'Color','none')
+
 %%
 figure(6); clf ; hold on
 for i = 1:length(all_data)
-    if ~em
+    if ~empty_idx(i) && walk_idx(i) && ~dark_idx(i)
+        scatter(mean(all_data(i).ft.f_speed), mean_g(i))
+    end
+end
 
 %% identify index to specific trials sorted by gain
 tmp_ind = find(empty_idx & walk_idx & ~dark_idx); %find the index to the trials we care about

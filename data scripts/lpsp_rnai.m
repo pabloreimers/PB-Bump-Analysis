@@ -237,7 +237,7 @@ fly_num   = nan(length(all_data),1);
 last_str = '';
 fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:34);
+    tmp_str = all_data(i).meta(1:52);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -265,7 +265,7 @@ end
 
 
 %% create figure to show example
-i = 340;
+i = 148;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -283,10 +283,11 @@ xlabel('time (s)')
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
-a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
- patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+%a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
+patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 ylabel('offset')
-a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
+%a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
 pos = get(gca,'Position');
 pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
 ax = axes('Position',pos,'Color','none','XAxisLocation','top');
@@ -367,14 +368,14 @@ for i = 1:length(unique_groups)
 end
 
 figure(5); clf
-subplot(2,2,1)
+subplot(2,2,1); hold on
 idx = ~unique_groups(:,3) & unique_groups(:,4);
 scatter(unique_groups(idx,2),g_grouped(idx),'k','filled','MarkerFaceAlpha',.5)
 axis padded
 title('mean gain')
 text(0,max(ylim),sprintf('n = %i',sum(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
 text(1,max(ylim),sprintf('n = %i',sum(unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center')
-
+plot(xlim,[.8,.8],'k:')
 xticks([])
 
 subplot(2,4,5)
@@ -387,6 +388,7 @@ lpsp_mat  = lpsp_ind(randi(length(lpsp_ind),length(lpsp_ind),n));
 hold on
 swarmchart(ones(n,1),mean(g_grouped(empty_mat),1),'k.')
 swarmchart(zeros(n,1),mean(g_grouped(lpsp_mat),1),'k.')
+plot(xlim,[.8,.8],':k')
 axis padded
 
 p = sum((mean(g_grouped(empty_mat),1) - mean(g_grouped(lpsp_mat),1))>0) / n; %count how many times the mean of the empty group is higher than the mean of the lpsp group, divide by n for p value
@@ -449,7 +451,7 @@ for i = 1:length(sort_ind)
     title(sprintf('trial: %i, gain:%.2f',sort_ind(i),mean_g(sort_ind(i))))
 end
 %% show historams in the CL and the dark (offset)
-r_thresh = 0;
+r_thresh = 0.1;
 c = 'k';
 
 o = {};

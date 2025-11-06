@@ -37,7 +37,7 @@ im_win = {1,1};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
@@ -45,19 +45,19 @@ for i = 1:length(all_files)
 
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
-    % load([all_files(i).folder,'\',all_files(i).name])
-    % load([fileparts(all_files(i).folder),'\mask.mat'])
-    % tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
-    % load([tmp2.folder,'\',tmp2.name])
+    load([all_files(i).folder,'\',all_files(i).name])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
+    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    load([tmp2.folder,'\',tmp2.name])
     % tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     % load([tmp2.folder,'\',tmp2.name])
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
 
-    % all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    % all_data(i).im = process_im(squeeze(sum(img{1},3)), im_win, im_type, mask, n_centroid, f0_pct);
-    % if length(img) > 1; all_data(i).atp = process_im(squeeze(sum(img{2},3)), im_win, im_type, mask, n_centroid, f0_pct); end
-    % all_data(i).meta = all_files(i).folder;
+    all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
+    all_data(i).im = process_im(squeeze(sum(img{1},3)), im_win, im_type, mask, n_centroid, f0_pct);
+    if length(img) > 1; all_data(i).atp = process_im(squeeze(sum(img{2},3)), im_win, im_type, mask, n_centroid, f0_pct); end
+    all_data(i).meta = all_files(i).folder;
     all_data(i).ft.pattern = tmp2.patternPath{1};
 
     % if ~ismember('xb',fieldnames(all_data(i).ft))
@@ -92,7 +92,7 @@ for i = 1:length(all_data)
     trial_num(i) = counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>0) > length(all_data(i).ft.f_speed)/2
+    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/5
         walk_idx(i) = true;
     end
     
@@ -104,7 +104,7 @@ for i = 1:length(all_data)
 end
 
 %%
-i  = 20;
+i  = 122;
 
 tmp = zeros([size(all_data(i).im.d),3]);
 tmp(:,:,1) = all_data(i).atp.d*5;
@@ -117,8 +117,10 @@ plot(all_data(i).ft.xb,sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)),'g')
 plot(xlim,mean(sum(all_data(i).im.d,1)/max(sum(all_data(i).im.d,1)))*[1,1],':k')
 title(all_data(i).meta)
 
-subplot(4,1,2);
+subplot(4,1,2); hold on
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
+plot(all_data(i).ft.xf,-all_data(i).ft.cue)
+axis tight
 
 subplot(4,1,3); hold on
 %imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
