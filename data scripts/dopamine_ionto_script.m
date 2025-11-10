@@ -266,27 +266,42 @@ plot(xlim,[0,0],':k')
 
 figure(5); clf
 subplot(1,2,1); hold on; set(gca,'YDir','reverse')
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0,0,1];
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [1,0,0];
-a = plot(t,mean(-cues(pulse_length>1,:),'omitnan'),'k','linewidth',2);
+plot(gca,t,mean(mus(pulse_length>1 & pulse_left==0,:),1),'linewidth',2,'Color',[0,.7,.7])
+plot(gca,t,mean(mus(pulse_length>1 & pulse_left==1,:),1),'linewidth',2,'Color',[.3,.3,1])
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [0,.7,.7];
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0.3,0.3,1];
+a = plot(t,mean(-cues(pulse_length>1,:),'omitnan'),'Color',[.5,.5,.5],'linewidth',2);
+set(gca,'ycolor','w','xcolor','w')
 
-plot(xlim,[0,0],':k')
-title('2s eject')
-ylabel('unwrapped bump position')
-xlabel('time since stim start')
+plot(xlim,[0,0],':w')
+title('2s eject','color','w')
+yticks(-3*pi:pi:pi); ylim([min(ylim),pi]); yticklabels(-3:1)
+xlabel('time post stim (s)')
+ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
+axis tight
 
-legend('left','right','cue')
+legend('left','right','textcolor','w')
 
 subplot(1,2,2); hold on; set(gca,'YDir','reverse')
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [0,0,1];
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [1,0,0];
-a = plot(t,mean(-cues(pulse_length<1,:),'omitnan'),'k','linewidth',2);
+plot(gca,t,mean(mus(pulse_length<1 & pulse_left==0,:),1),'linewidth',2,'Color',[0,.7,.7])
+plot(gca,t,mean(mus(pulse_length<1 & pulse_left==1,:),1),'linewidth',2,'Color',[.3,.3,1])
+a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [0,.7,.7];
+a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [0.3,0.3,1];
+a = plot(t,mean(-cues(pulse_length<1,:),'omitnan'),'Color',[.5,.5,.5],'linewidth',2);
+set(gca,'ycolor','w','xcolor','w')
+plot(xlim,[0,0],':w')
+title('.5s eject','color','w')
+yticks(-3*pi:pi:pi); ylim([min(ylim),pi]); yticklabels(-3:1)
+xlabel('time post stim (s)')
+ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
+legend('left','right','textcolor','w')
+axis tight
 
-plot(xlim,[0,0],':k')
-title('.5s eject')
 fontsize(gcf,20,'pixels')
 
 linkaxes(get(gcf,'Children'))
+set(gcf,'Color','none','InvertHardcopy','off')
+set(get(gcf,'Children'),'color','none')
 
 %% find the effect on fluorescence
 dff_aligned = nan(32,900,length(all_data));
