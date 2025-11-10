@@ -138,7 +138,7 @@ cue(cue > pi) = cue(cue > pi) - 2*pi;
 
 vid_name = 'LPsP_syt8m_cl_color';
 figure(1); clf; set(gcf,'Color','none')
-cmap1 = [linspace(0,1,255)',linspace(0,0.5,255)',linspace(0,1,255)'];
+cmap1 = [linspace(0,.7,255)',linspace(0,0,255)',linspace(0,.7,255)'];
 cmap2 = [linspace(0,1,255)',linspace(0,1,255)',linspace(0,1,255)'];
 
 subplot(3,1,1)

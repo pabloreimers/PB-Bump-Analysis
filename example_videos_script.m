@@ -87,12 +87,14 @@ close(writerObj);
 %base_dir = 'Z:\pablo\lpsp_rnai\20251021\fly 2\20251021-5_epg_syt8s_empty_thrnai';
 base_dir = 'Z:\pablo\pizza_talks\epg example\20251028-4_epg_syt8m';
 base_dir = 'Z:\pablo\lpsp_cl_redo\20240229\fly 1\20240229-1_epg_syt8m\';
+base_dir = 'C:\Users\preim\Documents\GitHub\PB-Bump-Analysis\.data\20240229-1_epg_syt8m';
 tmp = dir([base_dir,'\registration_001\imagingData*.mat']);
 load([tmp.folder,'\',tmp.name])
 tmp = dir([base_dir,'\**\*ficTracData_DAQ.mat']);
 load([tmp.folder,'\',tmp.name])
 tmp = dir([base_dir,'\FicTracData\*fictrac-raw*.avi']);
 vidObj = VideoReader([tmp.folder, '\',tmp.name]);
+load('C:\Users\preim\Documents\GitHub\PB-Bump-Analysis\.data\lpsp_cl_redo_data_20240306.mat')
 
 %% sum across z
 imgReg = squeeze(sum(regProduct,3));
@@ -138,7 +140,7 @@ cue(cue > pi) = cue(cue > pi) - 2*pi;
 
 vid_name = 'LPsP_syt8m_cl_color';
 figure(1); clf; set(gcf,'Color','none')
-cmap1 = [linspace(0,.85,255)',linspace(0,0.4,255)',linspace(0,.8,255)'];
+cmap1 = [linspace(0,.85,255)',linspace(0,.4,255)',linspace(0,.8,255)'];
 cmap2 = [linspace(0,1,255)',linspace(0,1,255)',linspace(0,1,255)'];
 
 subplot(3,1,1)
@@ -158,9 +160,9 @@ polaraxes('Position',pos,'Color','none','rlim',[0,1],'RTick',[],'ThetaTick',[]);
 % h3 = scatter(cos(cue(i)),sin(cue(i)),500,'filled','sc');
 
 
-writerObj = VideoWriter(vid_name);
-writerObj.FrameRate = 120;
-open(writerObj);
+% writerObj = VideoWriter(vid_name);
+% writerObj.FrameRate = 120;
+% open(writerObj);
 
 for i = 1.7e4:2e4 %size(imgReg_scaled,3)-10
     h1.CData = mean(imgReg_scaled(:,:,i:i+10),3);
@@ -171,6 +173,6 @@ for i = 1.7e4:2e4 %size(imgReg_scaled,3)-10
     % h3.YData = sin(cue(i+10));
     drawnow
     %pause(1e-2)
-    writeVideo(writerObj,getframe(gcf));
+    % writeVideo(writerObj,getframe(gcf));
 end
-close(writerObj);
+% close(writerObj);
