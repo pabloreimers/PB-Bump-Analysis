@@ -104,7 +104,7 @@ for i = counter:length(all_data)
     n_frames = 1:length(m);
     m = interp1(all_data(i).ft.xb(n_frames),unwrap(m),all_data(i).ft.xf);
     m = smoothdata(m,1,"gaussian",60);
-    amp = interp1(all_data(i).ft.xb(n_frames),sum(all_data(i).im.d,1),all_data(i).ft.xf);
+    %amp = interp1(all_data(i).ft.xb(n_frames),sum(all_data(i).im.d,1),all_data(i).ft.xf);
 
     %extract the fly's heading (no gain applied) and apply all lags
     h = reshape(all_data(i).ft.heading,[],1);
@@ -237,7 +237,7 @@ fly_num   = nan(length(all_data),1);
 last_str = '';
 fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:52);
+    tmp_str = all_data(i).meta(1:45);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -250,7 +250,7 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/5
+    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/10
         walk_idx(i) = true;
     end
     
@@ -265,7 +265,7 @@ end
 
 
 %% create figure to show example
-i = 148;
+i = 1;
 binedges = 0:.05:5;
 dark_mode = false;
 

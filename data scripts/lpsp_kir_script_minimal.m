@@ -3,7 +3,7 @@ clear all
 close all
 
 %% find path to all relevant files
-base_dir = ('Z:\pablo\stacks\lpsp_kir_redo\');
+base_dir = ('Z:\pablo\lpsp_kir_redo\');
 all_files = dir([base_dir,'\**\*denoised*.mat']);
 
 %% make sure that each file has a mask
@@ -29,20 +29,25 @@ im_win = {5,5};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
 for i = 1:length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{7})
-    load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
+    %load([all_files(i).folder,'\',all_files(i).name])
+    %load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
 
-    all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
-    all_data(i).im = process_im_3d(regProduct, im_win, im_type, mask, n_centroid, f0_pct);
-    all_data(i).meta = all_files(i).folder;
+    %all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
+    %all_data(i).im = process_im_3d(regProduct, im_win, im_type, mask, n_centroid, f0_pct);
+    %all_data(i).meta = all_files(i).folder;
+    
+    tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
+    tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
+    all_data(i).ft.pattern = tmp2.patternPath{1};
+    all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.mu));
 
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
