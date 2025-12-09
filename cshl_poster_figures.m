@@ -63,9 +63,10 @@ ylabel('Heading (VR)')
 set(gca,'YDir','reverse')
 
 %% Compartmentalization Figures
-%load('C:\Users\ReimersPabloAlejandr\Documents\GitHub\LPsP_2p\MelData\PB-Bump-Analysis\.data\lpsp_cl_data_20240206.mat')
-%load('Z:\pablo\lpsp_cl\20221122\20221122-1_EPG_GRABDA(2m)_1\registration_001\imagingData_reg_ch1_trial_001.mat')
+load('C:\Users\ReimersPabloAlejandr\Documents\GitHub\LPsP_2p\MelData\PB-Bump-Analysis\.data\lpsp_cl_data_20240206.mat')
+load('Z:\pablo\lpsp_cl\20221122\20221122-1_EPG_GRABDA(2m)_1\registration_001\imagingData_reg_ch1_trial_001.mat')
 
+i = 38;
 b = [linspace(1,0,255)',linspace(1,.7,255)',linspace(1,0,255)'];
 figure(7); clf
 subplot(4,4,1)
@@ -80,14 +81,14 @@ xticks([]);yticks([])
 axis equal tight
 set(gca,'Colormap',b.^2)
 
-subplot(4,4,3) %run this section fom ImagingAnalysis_Mel
-imagesc(squeeze(sum(regProduct,[3,4])))                                    %plot the image again with max intensity over time to show the whole pb
-hold on
-plot(x_mid,y_mid,'w')                                                   %plot the midline in white
-scatter(centroids(:,2),centroids(:,1),[],cmap,'filled')         %show the centroids in each of their colors
-set(gca,'Colormap',b.^2)
-xticks([]); yticks([])
-axis equal tight
+% subplot(4,4,3) %run this section fom ImagingAnalysis_Mel
+% imagesc(squeeze(sum(regProduct,[3,4])))                                    %plot the image again with max intensity over time to show the whole pb
+% hold on
+% plot(x_mid,y_mid,'w')                                                   %plot the midline in white
+% scatter(centroids(:,2),centroids(:,1),[],cmap,'filled')         %show the centroids in each of their colors
+% set(gca,'Colormap',b.^2)
+% xticks([]); yticks([])
+% axis equal tight
 
 subplot(4,4,4)
 imagesc(squeeze(sum(regProduct,[3,4]))) 
@@ -135,7 +136,7 @@ linkaxes(h,'x')
 %% Compartmentalization Figures
 %load('C:\Users\ReimersPabloAlejandr\Documents\GitHub\LPsP_2p\MelData\PB-Bump-Analysis\.data\lpsp_cl_data_20240206.mat')
 %load('Z:\pablo\lpsp_cl\20221123\20221123-7_LPsP_syt7f_cl_2\registration_001\imagingData_reg_ch1_trial_001.mat')
-i = 52;
+i = 39;
 b = [linspace(1,.7,255)',linspace(1,0,255)',linspace(1,.7,255)'];
 figure(7); clf
 subplot(4,4,1)
