@@ -85,20 +85,20 @@ close(writerObj);
 
 %load in everything
 %base_dir = 'Z:\pablo\lpsp_rnai\20251021\fly 2\20251021-5_epg_syt8s_empty_thrnai';
-base_dir = 'Z:\pablo\pizza_talks\epg example\20251028-4_epg_syt8m';
-base_dir = 'Z:\pablo\lpsp_cl_redo\20240229\fly 1\20240229-1_epg_syt8m\';
-base_dir = 'C:\Users\preim\Documents\GitHub\PB-Bump-Analysis\.data\20240229-1_epg_syt8m';
-tmp = dir([base_dir,'\registration_001\imagingData*.mat']);
+base_dir = 'Z:\pablo\pizza_talks\epg example\20251028-2_epg_syt8m';
+%base_dir = 'Z:\pablo\lpsp_cl_redo\20240229\fly 1\20240229-1_epg_syt8m\';
+%base_dir = 'C:\Users\preim\Documents\GitHub\PB-Bump-Analysis\.data\20240229-1_epg_syt8m';
+tmp = dir([base_dir,'\registration_001\imagingData.mat']);
 load([tmp.folder,'\',tmp.name])
 tmp = dir([base_dir,'\**\*ficTracData_DAQ.mat']);
 load([tmp.folder,'\',tmp.name])
 tmp = dir([base_dir,'\FicTracData\*fictrac-raw*.avi']);
 vidObj = VideoReader([tmp.folder, '\',tmp.name]);
-load('C:\Users\preim\Documents\GitHub\PB-Bump-Analysis\.data\lpsp_cl_redo_data_20240306.mat')
+load('C:\Users\ReimersPabloAlejandr\Documents\GitHub\LPsP_2p\MelData\PB-Bump-Analysis\.data\pizza_talks_examples.mat')
 
 %% sum across z
-imgReg = squeeze(sum(regProduct,3));
-
+% imgReg = squeeze(sum(regProduct,3));
+imgReg = imgData;
 %% register the image
 imgReg = nan(size(imgData));
 [optimizer,metric] = imregconfig("monomodal");
@@ -108,7 +108,7 @@ for i = 1:size(imgData,3)
 end
 %% rescale image
 h0 = prctile(imgReg(:),20);
-h1 = prctile(imgReg(:),99.9);
+h1 = prctile(imgReg(:),99.5);
 
 imgReg_scaled = rot90((imgReg - h0)/(h1-h0)*256,2);
 
@@ -118,12 +118,12 @@ vid = squeeze(vid(:,:,1,:));
 ft_vid_sum = squeeze(sum(vid(1:150,:,:),[1,2]));
 start_idx = find(ft_vid_sum > mean(ft_vid_sum),1,'first');
 end_idx   = find(ft_vid_sum > mean(ft_vid_sum),1,'last');
-vid = vid(:,:,start_idx:end_idx);
+vid = vid(1:256,:,start_idx:end_idx);
 
 %% interpret movie and image to be the same number of frames
 xf = seconds(ftData_DAQ.trialTime{1});
-%xb = seconds(ftData_DAQ.volClock{1});
-xb = linspace(xf(1),xf(end),size(imgReg_scaled,3));
+xb = seconds(ftData_DAQ.volClock{1});
+%xb = linspace(xf(1),xf(end),size(imgReg_scaled,3));
 xm = linspace(xb(1),xb(end),size(vid,3));
 
 imgReg_scaled = permute(imgReg_scaled,[3,1,2]);
@@ -137,42 +137,90 @@ cue     = mod(cue,2*pi);                                %rewrap heading data, an
 cue(cue > pi) = cue(cue > pi) - 2*pi;
 
 %% 
+clear h
+vid_name = 'EPG_syt8s_cl_color_big';
+t_min = 20;
+t_max = 80;
 
-vid_name = 'LPsP_syt8m_cl_color';
 figure(1); clf; set(gcf,'Color','none')
-cmap1 = [linspace(0,.85,255)',linspace(0,.4,255)',linspace(0,.8,255)'];
+cmap1 = [linspace(0,0,255)',linspace(0,1,255)',linspace(0,1,255)'];
 cmap2 = [linspace(0,1,255)',linspace(0,1,255)',linspace(0,1,255)'];
 
-subplot(3,1,1)
+subplot(3,3,1)
 h1 = image(imgReg_scaled(:,:,1));
 colormap(gca,cmap1)
 axis equal tight; xticks([]); yticks([])
-subplot(3,1,2:3)
-h2 = imagesc(vid(:,:,1));
+pos1 = get(gca,'Position');
+
+subplot(3,3,4)
+h2 = image(vid(1:256,:,1));
 colormap(gca,cmap2)
 axis equal tight; xticks([]); yticks([])
+
+
+subplot(3,3,2:3)
+h(1) = imagesc(all_data(2).ft.xb,unwrap(all_data(2).im.alpha),all_data(2).im.z);
 pos = get(gca,'Position');
-pos = [pos(1)-.1,pos(2)-.1,pos(3)+.2,pos(4)+.2];
-polaraxes('Position',pos,'Color','none','rlim',[0,1],'RTick',[],'ThetaTick',[]); hold on
-%h3 = polarscatter(cue(i),1,500,'filled','sc');
-%pos = [.25,pos(2)+.1,.5,pos(4)];
-% axes('Position',pos,'Color','none','XColor','none','YColor','none'); hold on; xlim([-1,1]); ylim([-1,1])
-% h3 = scatter(cos(cue(i)),sin(cue(i)),500,'filled','sc');
+a = colorbar; set(a,'Color', 'w','ycolor','w'); ylabel(a,{'z-scored','\DeltaF/F'}, 'Rotation',0)
+yticks([])
+set(gca,'Colormap',cmap1,'CLim',clim+[0,-.3]*range(clim),'Position',pos,'xcolor','w','ycolor','w','Fontsize',20)
+xlim([t_min,t_max]); xticklabels([])
 
 
-% writerObj = VideoWriter(vid_name);
-% writerObj.FrameRate = 120;
-% open(writerObj);
+subplot(3,3,5:6)
+h(2) = plot(all_data(2).ft.xf,-all_data(2).ft.cue,'w','linewidth',2); h(2).YData(abs(diff(h(2).YData))>pi) = nan;
+set(gca,'Color','none','xcolor','w','ycolor','w','YDir','reverse','Fontsize',30)
+xlim([t_min,t_max]); xticklabels([])
+ylim([-pi,pi]); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'})
 
-for i = 1.7e4:2e4 %size(imgReg_scaled,3)-10
+subplot(3,3,8:9); 
+h(3) = plot(all_data(2).ft.xf,-all_data(2).ft.cue,'w','linewidth',2); h(3).YData(abs(diff(h(3).YData))>pi) = nan;
+hold on
+h(4) = plot(all_data(2).ft.xb,all_data(2).im.mu,'Color',[0,1,1],'linewidth',2); h(4).YData(abs(diff(h(4).YData))>pi) = nan;
+set(gca,'Color','none','xcolor','w','ycolor','w','YDir','reverse','Fontsize',30)
+xlim([t_min,t_max]); xticklabels([])
+ylim([-pi,pi]); yticks([-pi,0,pi]); yticklabels({'-\pi',0,'\pi'})
+xlabel('time (s)')
+
+%xlabel(all_data(2).meta,'color','w')
+
+%fontsize(gcf,40,'pixels')
+%%
+
+writerObj = VideoWriter('tmp.avi');
+writerObj.FrameRate = 60;
+open(writerObj);
+
+
+i_vec = find(xm > t_min & xm < t_max);
+for i = fliplr(i_vec) %size(imgReg_scaled,3)-10
     h1.CData = mean(imgReg_scaled(:,:,i:i+10),3);
-    h2.CData = vid(:,:,i+10);
-    xlabel(subplot(3,1,2:3),sprintf('t: %i',round(xm(i))),'Color','w')
-    %h3.ThetaData = cue(i);
-    % h3.XData = cos(cue(i+10));
-    % h3.YData = sin(cue(i+10));
+    h2.CData = vid(1:256,:,i+10);
+    
+    t = xm(i);
+    h(1).CData(:,h(1).XData > t) = nan;
+    h(2).YData(h(2).XData > t) = nan;
+    h(3).YData(h(3).XData > t) = nan;
+    h(4).YData(h(4).XData > t) = nan;
+    
+
     drawnow
     %pause(1e-2)
-    % writeVideo(writerObj,getframe(gcf));
+    writeVideo(writerObj,getframe(gcf));
 end
-% close(writerObj);
+ close(writerObj);
+
+
+ v = VideoReader('tmp.avi');
+ num_frames = v.NumFrames;
+ writerObj = VideoWriter(vid_name);
+writerObj.FrameRate = 60;
+open(writerObj);
+
+ for i = num_frames:-1:1
+    frame = read(v, i); 
+    
+    % Write the frame to the new video file
+    writeVideo(writerObj, frame);
+ end
+ close(writerObj)

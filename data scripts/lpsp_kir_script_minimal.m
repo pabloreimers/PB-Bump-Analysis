@@ -3,8 +3,8 @@ clear all
 close all
 
 %% find path to all relevant files
-base_dir = ('Z:\pablo\lpsp_kir_redo\');
-all_files = dir([base_dir,'\**\*denoised*.mat']);
+base_dir =  ('Z:\pablo\lpsp_kir_redo\');
+all_files =  dir([base_dir,'\**\*imagingData_trial001.mat']); %dir([base_dir,'\**\*denoised*.mat']);
 
 %% make sure that each file has a mask
 for i = 1:length(all_files)
@@ -28,21 +28,21 @@ im_win = {5,5};
 
 n_centroid = 16;
 f0_pct = 7;
-
-%all_data = struct();
+zdf
+all_data = struct();
 
 tic
 for i = 1:length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{7})
-    %load([all_files(i).folder,'\',all_files(i).name])
-    %load([fileparts(all_files(i).folder),'\mask.mat'])
+    load([all_files(i).folder,'\',all_files(i).name])
+    load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
 
-    %all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
-    %all_data(i).im = process_im_3d(regProduct, im_win, im_type, mask, n_centroid, f0_pct);
-    %all_data(i).meta = all_files(i).folder;
+    all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
+    all_data(i).im = process_im_3d(regProduct, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).meta = all_files(i).folder;
     
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
@@ -53,11 +53,12 @@ for i = 1:length(all_files)
 end
 
 %% plot all
-dark_mode = false;
+dark_mode = true;
 
 vel_thresh = .2;
 bump_thresh = 10;
 rho_thresh = .2;
+vel_max = 5;
 lag = 7;
 
 cc       = nan(length(all_data),1);
@@ -104,7 +105,7 @@ for i = 1:length(all_data)
     xb = linspace(min(xf),max(xf),size(all_data(i).im.mu,1));
     fr = mean(diff(xf));
 
-    fly_vel  = all_data(i).ft.r_speed;
+    fly_vel  = gradient(-all_data(i).ft.cue)/fr; %all_data(i).ft.r_speed;
     bump_vel = gradient(interp1(xb,unwrap(all_data(i).im.mu),xf))/fr;
     rho      = interp1(xb,all_data(i).im.rho,xf);
 
@@ -112,18 +113,21 @@ for i = 1:length(all_data)
     bump_vel = bump_vel(lag+1:end);
     rho      = rho(lag+1:end);
 
-    idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
+    idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh & abs(fly_vel) < vel_max;
     scatter(fly_vel(idx),bump_vel(idx),c,'filled','markerfacealpha',.1)
-    axis equal
-    y = ylim; x = xlim;
+    %axis equal
+    
+    %y = ylim; x = xlim;
+    x = [-10,10]; y = [-8,8];
     plot(x,[0,0],':','Color',c); 
     plot([0,0],y,':','Color',c);
     b = [ones(sum(idx),1),fly_vel(idx)]\bump_vel(idx); %fit the slope of fly vel and bump vel with an arbitrary offset
     r = corr(fly_vel(idx),bump_vel(idx));
     plot([0,0],y,':','Color', c)
     plot(x,[0,0],':','Color', c)
-    plot(x,x*b(2) + b(1),'r')
-    text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom','color',c)
+    plot(x,x*b(2) + b(1),'r','linewidth',2)
+    %text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom','color',c)
+    text(x(2),y(1),sprintf('gain: %.2f',b(2)),'HorizontalAlignment','right','VerticalAlignment','bottom','color',c)
     xlim(x); ylim(y);
 
     cc(i) = r;
@@ -139,7 +143,7 @@ for i = unique(ind)'
     title(t{i},group_order(i),'fontsize',40,'color',c)
     xlabel(t{i},'fly vel (rad/s)','fontsize',30,'color',c); ylabel(t{i},'bump vel (rad/s)','fontsize',30,'color',c)
     if dark_mode
-        set(gcf,'color','none')
+        set(gcf,'color','none','InvertHardcopy','off')
     end
 end
 
@@ -180,7 +184,7 @@ for i = unique(ind)'
 end
 
 %% compare correlation coefficients and gains
-dark_mode = false;
+dark_mode = true;
 
 group_order = {'empty (CL)','LPsP (CL)','empty (dark)','LPsP (dark)'};
 ind = 2*dark_idx + lpsp_idx + 1;

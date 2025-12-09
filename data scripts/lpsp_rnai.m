@@ -1,11 +1,21 @@
 %% 
-close all
-% clear all
+%close all
+clear all
 
 %% load in data
-base_dir = 'Z:\pablo\lpsp_rnai\'; %uigetdir(); %
-all_files = dir([base_dir,'\**\*imagingData.mat']);
+base_dir = 'Z:\pablo\lpsp_vglutrnai\'; %uigetdir(); %
+all_files = dir([base_dir,'\**\*imgData_reg.mat']);
 all_files = natsortfiles(all_files);
+
+%% register the image
+% tic
+% for i = 1:length(all_files)
+%     load([all_files(i).folder,'\',all_files(i).name])
+%     imgData = normcorre_regProduct(imgData,false);
+%     save([all_files(i).folder,'\imgData_reg.mat'],'imgData')
+%     fprintf('files done: %i / %i time elapsed: %.2f\n', i,length(all_files),toc)
+% end
+
 %% make sure that each file has a mask
 for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
@@ -36,7 +46,7 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = length(all_data):length(all_files)
@@ -84,16 +94,16 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 hv = cell(length(all_data),1);
 
-counter=0;
-for i = 1:length(all_data)
-    if isempty(all_data(i).gain)
-        break
-    end
-    counter=counter+1;
-end
+% counter=0;
+% for i = 1:length(all_data)
+%     if isempty(all_data(i).gain)
+%         break
+%     end
+%     counter=counter+1;
+% end
 
 tic
-for i = counter:length(all_data)
+for i = 1:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -240,7 +250,7 @@ for i = 1:length(all_data)
     tmp_str = all_data(i).meta(1:33);
 
     if ~strcmp(tmp_str,last_str)
-        counter = 0;35
+        counter = 0;
         last_str = tmp_str;        
         fly_counter = fly_counter+1;
     end
@@ -265,7 +275,7 @@ end
 
 
 %% create figure to show example
-i = 189;
+i = 64;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -586,7 +596,8 @@ for i = 1:length(sort_ind)
     title(sprintf('trial: %i, offset var:%.2f',sort_ind(i),var_o(sort_ind(i))))
 end
 
-%% show historams in the CL and the dark (bump and cue position occupancy)
+%% show historams in the
+% CL and the dark (bump and cue position occupancy)
 m = {};
 c = {};
 for i = 1:length(all_data)
@@ -670,43 +681,56 @@ t.Children(2).XTick = [1,2]; t.Children(2).XTickLabel = {'Cue','Mu'}; title(t.Ch
 t.Children(1).XTick = [1,2]; t.Children(1).XTickLabel = {'Empty','LPsP'}; title(t.Children(1), 'Difference (mu-cue)');
 
 %% show scatter of bump and fly vel for every fly
-%figure(8); clf
-% rows = ceil(sqrt(length(all_data)));
-% cols = ceil(length(all_data)/rows);
+figure(8); clf
+rows = ceil(sqrt(length(all_data)));
+cols = ceil(length(all_data)/rows);
 
 % rows = 2;
 % cols = ceil(length(all_data)/rows);
 
-t = tiledlayout(rows,cols);
+%t = tiledlayout(rows,cols);
+vel_thresh = .2;
+bump_thresh = 10;
+rho_thresh = .2;
+vel_max = 5;
 lag = 10;
 g = nan(length(all_data),1);
 
-for i = 1:length(all_data)
-    %nexttile; hold on
+for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
+    nexttile; hold on
 
-    dm = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf)) * 60;
-    dr = all_data(i).ft.r_speed;
+    bump_vel = [0;diff(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))] * 60;
+    fly_vel = [0;diff(-all_data(i).ft.cue)] * 60; %all_data(i).ft.r_speed;
+    rho      = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
-    dm = smoothdata(dm(1+lag:end),1,'movmean',5);
-    dr = smoothdata(dr(1:end-lag),1,'movmean',5);
+    fly_vel  = fly_vel(1:end-lag);
+    bump_vel = bump_vel(lag+1:end);
+    rho      = rho(lag+1:end);
+    %dm = smoothdata(dm(1+lag:end),1,'movmean',5);
+    %dr = smoothdata(dr(1:end-lag),1,'movmean',5);
 
-    idx = abs(dr) > .1 & ~isnan(dm);
+    idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh & abs(fly_vel) < vel_max;
+    
     if empty_idx(i); c = [0,.5,1]; else; c=[1,.5,0];end
-    %scatter(dr(idx),dm(idx),5,'filled','MarkerFaceColor',c)
+    scatter(fly_vel(idx),bump_vel(idx),5,'filled','MarkerFaceColor',c)
 
-    b = [ones(sum(idx),1),dr(idx)] \ dm(idx);
+    b = [ones(sum(idx),1),fly_vel(idx)] \ bump_vel(idx);
     g(i) = b(2);
     %plot([-2,2],b(1)+g(i)*[-2,2],'r')
     %text(max(xlim),min(ylim),sprintf('gain: %.2f',g(i)),'HorizontalAlignment','right','VerticalAlignment','bottom')
 end
 
-xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
+%xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
 
-figure(9); clf
+figure(9); hold on
 c = [1,.5,0; 0,.5,1];
-group_idx = empty_idx + 2*dark_idx;
-scatter(group_idx(walk_idx),g(walk_idx),[],c(empty_idx(walk_idx)+1,:));ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
-
+group_idx = 2+ empty_idx + 2*dark_idx;
+scatter(group_idx(walk_idx),g(walk_idx),100,c(empty_idx(walk_idx)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
+xticklabels({'LPsP\newlineTH-RNAi\newlineCL','Empty\newlineTH-RNAi\newlineCL','LPsP\newlinevGlut-RNAi\newlineCL'});
+xlim([-.5,2.5])
+set(gcf,'Color','none','InvertHardCopy','off')
+set(gca,'Color','none','xcolor','w','ycolor','w')
+fontsize(gcf,20,'pixels')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)

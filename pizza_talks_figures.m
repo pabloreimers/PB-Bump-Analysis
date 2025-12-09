@@ -95,7 +95,7 @@ t_max = 100;
 h = imagesc(rot90(mean(imgData,3),2));
 axis equal tight
 xticks([]); yticks([])
-set(gca,'Colormap',cmap,'CLim',clim+[0.2,0]*range(clim))
+set(gca,'Colormap',cmap,'CLim',clim+[0.2,-.2]*range(clim))
 
 t_ind = find(all_data(i).ft.xb > t_min & all_data(i).ft.xb < t_max);
 
@@ -223,12 +223,18 @@ close(writerObj)
 
 %% rnai figures
 
-i = 1;
-cmap = [linspace(0,0,255)',linspace(0.0,0.7,255)',linspace(0,0.7,255)'];
-t_min = 300;
-t_max = 500;
 
-% i = 189;
+i = 8; %lpsp > vglut-rnai
+cmap = [linspace(0,1,255)',linspace(0.0,0,255)',linspace(0,1,255)'];
+t_min = 20;
+t_max = 150;
+% 
+% i = 245; % lpsp > th-rnai
+% cmap = [linspace(0,0,255)',linspace(0.0,0.7,255)',linspace(0,0.7,255)'];
+% t_min = 300;
+% t_max = 500;
+
+% i = 189; empty > th-rnai
 % cmap = [linspace(0,1,255)',linspace(0,0.5,255)',linspace(0,0,255)'];
 % t_min = 250;
 % t_max = 450;
@@ -237,7 +243,7 @@ dark_mode = true;
 
 figure(1); clf
 a1 = subplot(3,1,1);
-imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+h = imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
 %if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',cmap(end,:),'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
@@ -246,7 +252,7 @@ a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'color',[.5,.5,.5],'linewidth',2)
 title(all_data(i).meta,'color','w')
 xticks([t_min:20:t_max]); xticklabels({});
 set(gca,'Colormap',cmap)
-pos= get(gca,'Position'); colorbar; set(gca,'Position',pos)
+pos= get(gca,'Position'); colorbar; set(gca,'Position',pos,'CLim',clim+[0.3,-.1]*range(clim))
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
