@@ -188,7 +188,7 @@ fontsize(gcf,20,'pixels')
 %% ejection video
  figure(1); clf
  i = 19; %20240806-16_epg_syt7f_th_p2x2
- cmap =  [linspace(0,0,255)',linspace(0,.7,255)',linspace(0,.7,255)'];
+ cmap =  [linspace(0,0,255)',linspace(0,1,255)',linspace(0,1,255)'];
 
 
 a = squeeze(sum(img{2},3));
@@ -197,7 +197,7 @@ a = a .* reshape([1,0,0],1,1,1,[]);
 
 d = squeeze(sum(img{1},3));
 d = 5*d/max(d,[],'all');
-d = d .* reshape([0,.7,.7],1,1,1,[]);
+d = d .* reshape([0,1,1],1,1,1,[]);
 imgData = a+d;
 imgData = permute(imgData,[1,2,4,3]);
 
@@ -207,23 +207,25 @@ axis equal tight
 xticks([]); yticks([])
 
 t_min = 20;
-t_max = 80;
+t_max = 60;
 t_ind = find(all_data(i).ft.xb > t_min & all_data(i).ft.xb < t_max);
 
-writerObj = VideoWriter('ATP_P2X2_example.avi');
-writerObj.FrameRate = 20;
+writerObj = VideoWriter('ATP_P2X2_example_short.avi');
+writerObj.FrameRate = 30;
 open(writerObj);
+
 for t = t_ind'
     h.CData = rot90(mean(imgData(:,:,:,t:t+10),4),2);
     drawnow
     writeVideo(writerObj,getframe(gcf));
+    %pause(1/120)
 end
 close(writerObj)
 
 
 %% rnai figures
 
-i = 1;
+i = 248;
 cmap = [linspace(0,0,255)',linspace(0.0,0.7,255)',linspace(0,0.7,255)'];
 t_min = 300;
 t_max = 500;

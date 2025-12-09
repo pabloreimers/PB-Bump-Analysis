@@ -364,6 +364,7 @@ g_grouped = nan(length(unique_groups),1);
 v_grouped = nan(length(unique_groups),1);
 
 
+
 for i = 1:length(unique_groups)
     g_grouped(i) = mean(vertcat(g{ic==i}),'omitnan');
     v_grouped(i) = var(vertcat(g{ic==i}),'omitnan');
@@ -373,7 +374,7 @@ end
 figure(5); clf
 subplot(2,2,1); hold on
 idx = ~unique_groups(:,3) & unique_groups(:,4);
-scatter(unique_groups(idx,2),g_grouped(idx),[],c(unique_groups(idx,2)+1,:),'filled','MarkerFaceAlpha',.5)
+scatter(unique_groups(idx,2),g_grouped(idx)/.8,[],c(unique_groups(idx,2)+1,:),'filled','MarkerFaceAlpha',.5)
 axis padded
 ylabel({'Gain','mean'},'color','w','Rotation',0)
 text(0,max(ylim),sprintf('n = %i',sum(~unique_groups(:,2) & ~unique_groups(:,3) & unique_groups(:,4))),'HorizontalAlignment','center','color','w')

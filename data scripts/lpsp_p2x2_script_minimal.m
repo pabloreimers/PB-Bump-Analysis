@@ -123,7 +123,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240628\fly 2')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20240621\fly 1')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -135,11 +135,11 @@ for i = 1:length(idx)
     colormap(a2,c2)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
-    a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
-    colormap(a1,c1)
+    %a1 = axes('Position',get(gca,  'Position')); 
+    %imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
+    %colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
-    xticks([])
+    %xticks([])
     
     set(gca,'color','none')
     hold on
@@ -502,8 +502,8 @@ legend(group_labels((i*2-1):(i*2)),'Autoupdate','off')
 end
 
 ax = get(gcf,'Children');
-linkaxes(ax(2:3:12))
-linkaxes(ax(3:3:12))
+% linkaxes(ax(2:3:12))
+% linkaxes(ax(3:3:12))
 
 ax = get(gcf,'Children');
 
