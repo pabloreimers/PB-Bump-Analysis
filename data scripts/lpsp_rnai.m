@@ -40,7 +40,7 @@ end
 ft_type= 'movmean'; %the type of smoothing for fictrac data
 ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {1,1};
+im_win = {5,5};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
@@ -275,7 +275,7 @@ end
 
 
 %% create figure to show example
-i = 64;
+i = 8;
 binedges = 0:.05:5;
 dark_mode = false;
 
