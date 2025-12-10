@@ -59,7 +59,7 @@ for i = length(all_data):length(all_files)
 end
 
 %% plot
-i = 157;
+i = 1;
 alpha = unwrap(all_data(i).im.alpha);
 fr = mean(diff(all_data(i).ft.xb));
 
@@ -91,7 +91,7 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -3;
+win_start = 0;
 win_end = 15;
 
 c_pulses = {};
@@ -105,22 +105,22 @@ exp_idx  = {};
 right_idx= {};
 first_idx= {};
 fr = 10;
-tmp_x   = linspace(0,300,300*fr);    
+tmp_x   = linspace(0,630,630*fr);    
 tmp_win = floor(win_start*fr):ceil(win_end*fr); %this is the additive index to the frames to extract for a given pulse window
 tmp_t   = tmp_win/10;
 
 figure(15); clf
 counter = 0;
 for i = 1:length(all_data)
-    tmp_f   = interp1(all_data(i).ft.xb,all_data(i).im.f',tmp_x,'linear','extrap')';%interpolate everything into the same framerate
-    tmp_d   = interp1(all_data(i).ft.xb,all_data(i).im.d',tmp_x,'linear','extrap')';
-    tmp_z   = interp1(all_data(i).ft.xb,all_data(i).im.z',tmp_x,'linear','extrap')';
-    tmp_a   = interp1(all_data(i).ft.xb,all_data(i).atp.d',tmp_x,'linear','extrap')';
+    tmp_f   = interp1(all_data(i).ft.xb,all_data(i).im.f',tmp_x)';%interpolate everything into the same framerate
+    tmp_d   = interp1(all_data(i).ft.xb,all_data(i).im.d',tmp_x)';
+    tmp_z   = interp1(all_data(i).ft.xb,all_data(i).im.z',tmp_x)';
+    tmp_a   = interp1(all_data(i).ft.xb,all_data(i).atp.d',tmp_x)';
     
-    tmp_m   = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),tmp_x,'linear','extrap')'; tmp_m = mod(tmp_m,2*pi); tmp_m(tmp_m>pi) = tmp_m(tmp_m>pi) - 2*pi;
-    tmp_cue = interp1(all_data(i).ft.xf,unwrap(all_data(i).ft.cue),tmp_x,'linear','extrap')';tmp_cue = mod(tmp_cue,2*pi); tmp_cue(tmp_cue>pi) = tmp_cue(tmp_cue>pi) - 2*pi; 
+    tmp_m   = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),tmp_x)'; tmp_m = mod(tmp_m,2*pi); tmp_m(tmp_m>pi) = tmp_m(tmp_m>pi) - 2*pi;
+    tmp_cue = interp1(all_data(i).ft.xf,unwrap(all_data(i).ft.cue),tmp_x)';tmp_cue = mod(tmp_cue,2*pi); tmp_cue(tmp_cue>pi) = tmp_cue(tmp_cue>pi) - 2*pi; 
    
-    tmp_atp = sum(tmp_a,2);
+    tmp_atp = sum(tmp_a,2,'omitnan');
     tmp_right = sum(tmp_atp(1:end/2,:),'all') > sum(tmp_atp(end/2:end,:),'all');
     [~,loc] = findpeaks(smoothdata(max(tmp_a,[],1),'movmean',5),'MinPeakProminence',1.5,'MinPeakDistance',50*fr);
     %fr = mean(diff(all_data(i).ft.xb)); %find the new framerate (amount of time per frame)
@@ -133,17 +133,21 @@ for i = 1:length(all_data)
         first_log = true;
     end
 
-        if numel(loc) < 2
+    if numel(loc) < 2
         continue
     end
 
     for j = loc
 
         n = length(all_data(i).im.alpha);
-        pad1 = nan(n,sum(j+tmp_win < 1)); %create padding for images
-        pad2 = nan(n,sum(j+tmp_win > length(all_data(i).ft.xb)));
-        tmp_idx = j+tmp_win((size(pad1,2)+1):(end-size(pad2,2))); %extract all of the appropriate frames. if we exceed the window in either direction, just fill it with the nearest calculated gain. a bit hacky
         
+        tmp_idx = j+tmp_win; %extract all of the appropriate frames. if we exceed the window in either direction, just fill it with the nearest calculated gain. a bit hacky
+        
+        
+        pad1 = nan(n,sum(tmp_idx < 1)); %create padding for images
+        pad2 = nan(n,sum(tmp_idx > length(tmp_x)));
+        tmp_idx = tmp_idx(tmp_idx > 1 & tmp_idx < length(tmp_x)+1);
+
         counter = counter+1;
         d_pulses{counter} = [pad1,tmp_d(:,tmp_idx),pad2];
         z_pulses{counter} = [pad1,tmp_z(:,tmp_idx),pad2];       
@@ -181,6 +185,7 @@ ind = round(ind- 2/fr):ind;
 %% plot results
 figure(1); clf
 group_idx = exp_idx + 2*right_idx;
+group_idx = right_idx;
 group_labels = {'con (left)','exp (left)','con (right)','exp (right)'};
 for i = unique(group_idx)
     figure(i+1); clf
@@ -202,7 +207,8 @@ for i = unique(group_idx)
 end
 %% plot sweeps
 figure(2); clf
-subplot(1,2,1); hold on
+%subplot(1,2,1); hold on
+hold on
 % a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & right_idx)','UniformOutput',false))); a.FaceColor = 'r';
 % a = plot_sem(gca,tmp_t',cell2mat(cellfun(@(x)(unwrap(x-x(1))),m_pulses(exp_idx & ~right_idx)','UniformOutput',false))); a.FaceColor = 'b';
 % a = plot_sem(gca,tmp_t',-cell2mat(cellfun(@(x)(unwrap(x-x(1))),c_pulses(exp_idx)','UniformOutput',false))); a.FaceColor = 'g';
@@ -213,44 +219,52 @@ tmp_m = tmp_m - tmp_m(:,ind);
 tmp_c = -cell2mat(cellfun(@(x)(unwrap(x)),c_pulses','UniformOutput',false));
 tmp_c = tmp_c - tmp_c(:,ind);
 tmp_o = tmp_m - tmp_c;
-a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
-a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = [.3,.3,1]; a.FaceAlpha = .3;
-plot(tmp_t,mean(tmp_m(exp_idx & right_idx,:),1),'Color',[0,.7,.7],'linewidth',2)
-plot(tmp_t,mean(tmp_m(exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
-plot(tmp_t,mean(tmp_c),'Color',[.5,.5,.5],'linewidth',2)
+
+plot(tmp_t,mean(tmp_m(exp_idx & right_idx,:),1),'Color',[1,0,1],'linewidth',2)
+plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0.5,.5,.5],'linewidth',2)
+%plot(tmp_t,mean(tmp_m(exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
+plot(tmp_t,mean(tmp_c(right_idx,:)),'Color','w','linewidth',2)
+
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = [1,0,1]; a.FaceAlpha = .3;
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = [.5,.5,.5]; a.FaceAlpha = .3;
+%a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = [.3,.3,1]; a.FaceAlpha = .3;
+%a = plot_sem(gca,tmp_t',tmp_c(exp_idx,:)); a.FaceColor = 'w'; a.FaceAlpha = .3;
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
-title('LPsP > P2X2','color','w')
+title('Right Stim','color','w')
 xlabel('time post stim (s)')
 ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
+pos = get(gca,'Position');
+%legend('LPsP > P2X2 (n=12)','Empty > P2X2 (n=10)','heading','Location','Northeastoutside','textcolor','w','edgecolor','w')
 axis tight
 set(gca, 'YDir','reverse','xcolor','w','ycolor','w')
-yticks(-3*pi:pi:4*pi); ylim([min(ylim),pi]); yticklabels(-3:4)
+%yticks(-3*pi:pi:4*pi); ylim([min(ylim),pi]); yticklabels(-3:4)
 
+%%
 subplot(1,2,2); hold on
-plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0,.7,.7],'linewidth',2)
-plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
+% plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0,.7,.7],'linewidth',2)
+% plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
+plot(tmp_t,mean(tmp_m(exp_idx & ~right_idx,:),1),'Color',[1,0,1],'linewidth',2)
+plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.5,.5,.5],'linewidth',2)
+plot(tmp_t,mean(tmp_c(~right_idx,:),1),'Color','w','linewidth',2)
 
-a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
-a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:)); a.FaceColor = [.3,.3,1]; a.FaceAlpha = .3;
-plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0,.7,.7],'linewidth',2)
-plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
-plot(tmp_t,mean(tmp_c),'Color',[.5,.5,.5],'linewidth',2)
+a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = [1,0,1]; a.FaceAlpha = .3;
+a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & ~right_idx,:)); a.FaceColor = [.5,.5,.5]; a.FaceAlpha = .3;
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
-title('Empty > P2X2','color','w')
+title('Left Stim','color','w')
 xlabel('time post stim (s)')
 %ylabel({'unwrapped', 'bump', 'position', '(rad)'},'Rotation',0)
-legend('right','left','Location','Southeast','textcolor','w','edgecolor','w')
+legend('LPsP > P2X2 (n=12)','Empty > P2X2 (n=10)','heading','Location','Northeast','textcolor','w','edgecolor','w')
 axis tight
 set(gca, 'YDir','reverse','ycolor','w','xcolor','w')
 yticks(-3*pi:pi:4*pi); ylim([min(ylim),pi]); yticklabels(-3:4)
 
 
 linkaxes(get(gcf,'Children'))
-fontsize(gcf,20,'pixels')
+fontsize(gcf,40,'pixels')
 set(get(gcf,'Children'),'Color','none')
 set(gcf,'Color','none','InvertHardCopy','off')
 

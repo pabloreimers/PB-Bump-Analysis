@@ -82,7 +82,7 @@ walk_idx  = false(length(all_data),1);
 last_str = '';
 
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:45);
+    tmp_str = all_data(i).meta(1:52);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -104,11 +104,11 @@ for i = 1:length(all_data)
 end
 
 %%
-i  = 122;
+i  = 143;
 
 tmp = zeros([size(all_data(i).im.d),3]);
 tmp(:,:,1) = all_data(i).atp.d*5;
-tmp(:,:,2) = all_data(i).im.d*3;
+tmp(:,:,2) = all_data(i).im.d;
 
 figure(1); clf
 subplot(4,1,1); hold on
@@ -187,7 +187,7 @@ for i = 1:length(ind)
     title(all_data(ind(i)).meta(47:80))
 end
 %% create an averaged trace
-win = [-2,15];
+win = [-30,30];
 dt = .1;
 t = win(1):dt:win(2);
 
@@ -205,6 +205,7 @@ cues = nan(num_pulse,length(t));
 pulse_length = nan(num_pulse,1);
 pulse_left = false(num_pulse,1);
 grab_idx = false(num_pulse,1);
+fly_num = nan(num_pulse,1);
 
 counter = 0;
 fly_counter = 0;
@@ -217,6 +218,8 @@ for i = 1:length(all_data)
     if ~strcmp(last_str,all_data(i).meta(1:52))
         fly_counter = fly_counter+1;
         last_str = all_data(i).meta(1:52);
+    else
+        %continue
     end
     stim_times = all_data(i).ft.xf(find(diff(all_data(i).ft.stims)>0)); %find the times at which pulse started
     stim_lengths = all_data(i).ft.xf(find(floor(diff(all_data(i).ft.stims))<-1)) - all_data(i).ft.xf(find(diff(all_data(i).ft.stims)>0));
@@ -238,6 +241,7 @@ for i = 1:length(all_data)
         cues(counter,1:sum(idx)) = tmp - tmp(round(abs(win(1))/dt));
         pulse_length(counter) = stim_lengths(j);
         pulse_left(counter) = stim_left;
+        fly_num(counter) = fly_counter;
     end
 end
 
@@ -245,6 +249,7 @@ idx = all(isnan(pulses),1);
 pulses(:,idx) = [];
 mus(:,idx) = [];
 cues(:,idx) = [];
+
 offs = mus+cues;
 t(idx) = [];
 
@@ -266,35 +271,38 @@ plot(xlim,[0,0],':k')
 
 figure(5); clf
 subplot(1,2,1); hold on; set(gca,'YDir','reverse')
-plot(gca,t,mean(mus(pulse_length>1 & pulse_left==0,:),1),'linewidth',2,'Color',[0,.7,.7])
-plot(gca,t,mean(mus(pulse_length>1 & pulse_left==1,:),1),'linewidth',2,'Color',[.3,.3,1])
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [0,.7,.7];
-a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0.3,0.3,1];
-a = plot(t,mean(-cues(pulse_length>1,:),'omitnan'),'Color',[.5,.5,.5],'linewidth',2);
+plot(gca,t,mean(mus(pulse_length>1 & pulse_left==0,:),1),'linewidth',2,'Color',[0,1,.0])
+%plot(gca,t,mean(mus(pulse_length<1 & pulse_left==0,:),1),'linewidth',2,'Color',[0.5,1,.5])
+plot(gca,t,mean(mus(pulse_length>1 & pulse_left==1,:),1),'linewidth',2,'Color',[0.5,1,.5])
+plot(t,mean(-cues(pulse_left==0,:),'omitnan'),'Color','w','linewidth',2);
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==0,:)); a.FaceColor = [0,1,0];
+%a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [0.5,1,.5];
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0.5,1,.5];
+
 set(gca,'ycolor','w','xcolor','w')
 
 plot(xlim,[0,0],':w')
-title('2s eject','color','w')
+title('Right stim','color','w')
 yticks(-3*pi:pi:pi); ylim([min(ylim),pi]); yticklabels(-3:1)
 xlabel('time post stim (s)')
 ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
 axis tight
 
-legend('left','right','textcolor','w')
+legend('2s stim','0.5s stim','heading','textcolor','w')
 
 subplot(1,2,2); hold on; set(gca,'YDir','reverse')
-plot(gca,t,mean(mus(pulse_length<1 & pulse_left==0,:),1),'linewidth',2,'Color',[0,.7,.7])
-plot(gca,t,mean(mus(pulse_length<1 & pulse_left==1,:),1),'linewidth',2,'Color',[.3,.3,1])
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==0,:)); a.FaceColor = [0,.7,.7];
-a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [0.3,0.3,1];
-a = plot(t,mean(-cues(pulse_length<1,:),'omitnan'),'Color',[.5,.5,.5],'linewidth',2);
+plot(gca,t,mean(mus(pulse_length>1 & pulse_left==1,:),1),'linewidth',2,'Color',[0,1,.0])
+plot(gca,t,mean(mus(pulse_length<1 & pulse_left==1,:),1),'linewidth',2,'Color',[0.5,1,.5])
+plot(t,mean(-cues(pulse_left==1,:),'omitnan'),'Color','w','linewidth',2);
+a = plot_sem(gca,t,mus(pulse_length>1 & pulse_left==1,:)); a.FaceColor = [0,1,0];
+a = plot_sem(gca,t,mus(pulse_length<1 & pulse_left==1,:)); a.FaceColor = [0.5,1,.5];
 set(gca,'ycolor','w','xcolor','w')
 plot(xlim,[0,0],':w')
-title('.5s eject','color','w')
+title('Left stim','color','w')
 yticks(-3*pi:pi:pi); ylim([min(ylim),pi]); yticklabels(-3:1)
 xlabel('time post stim (s)')
 ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
-legend('left','right','textcolor','w')
+legend('2s stim','0.5s stim','heading','textcolor','w')
 axis tight
 
 fontsize(gcf,20,'pixels')
