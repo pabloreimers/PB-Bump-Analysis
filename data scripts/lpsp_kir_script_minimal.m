@@ -28,7 +28,6 @@ im_win = {5,5};
 
 n_centroid = 16;
 f0_pct = 7;
-zdf
 all_data = struct();
 
 tic

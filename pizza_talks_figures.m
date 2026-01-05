@@ -8,11 +8,11 @@ for i = 1:length(all_data)
 end
 all_data = all_data(keep_idx);
 %%
-for i = 1:length(all_data)
-    all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.mu)); %add in time vector for imaging
-end
+% for i = 1:length(all_data)
+%     all_data(i).ft.xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),length(all_data(i).im.mu)); %add in time vector for imaging
+% end
 
-i = 79; %20221212-1_EPG_GRAB(DA2m)_cl_1'
+i = 6; %20221212-1_EPG_GRAB(DA2m)_cl_1'
 cmap =  [linspace(0,0,255)',linspace(0,1,255)',linspace(0,.5,255)'];
 t_min = 0;
 t_max = 100;

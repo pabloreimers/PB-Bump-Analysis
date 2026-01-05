@@ -1,6 +1,6 @@
 %% 
 %close all
-clear all
+%clear all
 
 %% load in data
 base_dir = 'Z:\pablo\lpsp_vglutrnai\'; %uigetdir(); %
@@ -46,7 +46,7 @@ f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-all_data = struct();
+%all_data = struct();
 
 tic
 for i = length(all_data):length(all_files)
@@ -242,12 +242,13 @@ end
 trial_num = zeros(length(all_data),1);
 dark_idx  = false(length(all_data),1);
 empty_idx = false(length(all_data),1);
+mcherry_idx = false(length(all_data),1);
 walk_idx  = false(length(all_data),1);
 fly_num   = nan(length(all_data),1);
 last_str = '';
 fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:33);
+    tmp_str = all_data(i).meta(1:39);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -268,6 +269,9 @@ for i = 1:length(all_data)
         dark_idx(i) = true;
     end
 
+    if contains(all_data(i).meta,'mcherry')
+        mcherry_idx(i) = true;
+    end
     if contains(all_data(i).meta,'empty')
         empty_idx(i) = true;
     end
@@ -275,21 +279,32 @@ end
 
 
 %% create figure to show example
-i = 8;
+i = 131;
 binedges = 0:.05:5;
 dark_mode = false;
+r_thresh = .2;
 
 figure(1); clf
 a1 = subplot(3,1,1);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
 if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
-a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
 idx = round(all_data(i).ft.cue,4) == -.2945;
 
-a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
-title(all_data(i).meta)
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta,'Interpreter','none')
 xlabel('time (s)')
+
+pos = get(gca,'Position');
+pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos,'Color','none','XAxisLocation','top'); hold on
+idx = all_data(i).ft.r_speed > r_thresh;
+mu  = interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf);
+histogram(mu(idx),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability')
+histogram(-all_data(i).ft.cue(idx),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability')
+box(ax,'off')
+ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
@@ -306,8 +321,8 @@ box(ax,'off')
 ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a3 = subplot(6,1,4); hold on
-plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
-plot(all_data(i).gain.xt,all_data(i).gain.g)
+scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
+scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
 ylabel('gain'); legend('instant','integ','autoupdate','off')
 
 linkaxes([a1,a2,a3],'x')
@@ -693,15 +708,15 @@ cols = ceil(length(all_data)/rows);
 vel_thresh = .2;
 bump_thresh = 10;
 rho_thresh = .2;
-vel_max = 5;
-lag = 10;
+vel_max = 10;
+lag = 8;
 g = nan(length(all_data),1);
 
 for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
     nexttile; hold on
 
     bump_vel = [0;diff(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))] * 60;
-    fly_vel = [0;diff(-all_data(i).ft.cue)] * 60; %all_data(i).ft.r_speed;
+    fly_vel =  [0;diff(-all_data(i).ft.cue)] * 60;%all_data(i).ft.r_speed; % 
     rho      = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
     fly_vel  = fly_vel(1:end-lag);
@@ -717,18 +732,18 @@ for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
 
     b = [ones(sum(idx),1),fly_vel(idx)] \ bump_vel(idx);
     g(i) = b(2);
-    %plot([-2,2],b(1)+g(i)*[-2,2],'r')
-    %text(max(xlim),min(ylim),sprintf('gain: %.2f',g(i)),'HorizontalAlignment','right','VerticalAlignment','bottom')
+    plot([-2,2],b(1)+g(i)*[-2,2],'r')
+    text(max(xlim),min(ylim),sprintf('gain: %.2f',g(i)),'HorizontalAlignment','right','VerticalAlignment','bottom')
 end
 
 %xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
 
 figure(9); hold on
 c = [1,.5,0; 0,.5,1];
-group_idx = 2+ empty_idx + 2*dark_idx;
+group_idx = empty_idx + 2*dark_idx;
 scatter(group_idx(walk_idx),g(walk_idx),100,c(empty_idx(walk_idx)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
 xticklabels({'LPsP\newlineTH-RNAi\newlineCL','Empty\newlineTH-RNAi\newlineCL','LPsP\newlinevGlut-RNAi\newlineCL'});
-xlim([-.5,2.5])
+xlim([-.5,1.5])
 set(gcf,'Color','none','InvertHardCopy','off')
 set(gca,'Color','none','xcolor','w','ycolor','w')
 fontsize(gcf,20,'pixels')
