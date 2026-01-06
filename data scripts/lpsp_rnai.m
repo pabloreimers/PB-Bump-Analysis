@@ -261,7 +261,7 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/5
+    if sum(all_data(i).ft.f_speed>.1) > length(all_data(i).ft.f_speed)/5
         walk_idx(i) = true;
     end
     
@@ -279,7 +279,7 @@ end
 
 
 %% create figure to show example
-i = 131;
+i = 146;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
@@ -643,9 +643,10 @@ for i = 0:1
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
     legend(sprintf('empty>TH-RNAi (%i)',sum(walk_idx & empty_idx & dark_idx == i)),...
            sprintf('lpsp>TH-RNAi (%i)',sum(walk_idx & ~empty_idx & dark_idx == i)),...
-           'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+           'textcolor','w','color','none')
+    title(sprintf(' Cue Occupancy Dark = %i',i),'Color','w')
 end
+
 
 for i = 0:1
     nexttile; hold on
@@ -654,10 +655,10 @@ for i = 0:1
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[0,.5,1],'FaceAlpha',.8)
     tmp = reshape(cell2mat(m(walk_idx & ~empty_idx & dark_idx == i)),1,[]);
     histogram(tmp(~isnan(tmp)),'BinEdges',[-pi:.1:pi],'Normalization','Probability','FaceColor',[1,.5,0],'FaceAlpha',.8)
-    legend(sprintf('empty>TH-RNAi (%i)',sum(empty_idx & dark_idx == i)),...
-           sprintf('lpsp>TH-RNAi (%i)',sum(~empty_idx & dark_idx == i)),...
-           'textcolor','w')
-    title(sprintf('Dark = %i',i),'Color','w')
+    legend(sprintf('empty>TH-RNAi (%i)',sum(walk_idx & empty_idx & dark_idx == i)),...
+           sprintf('lpsp>TH-RNAi (%i)',sum(walk_idx & ~empty_idx & dark_idx == i)),...
+           'textcolor','w','color','none')
+    title(sprintf('Mu Occupancy Dark = %i',i),'Color','w')
 end
 
 title(t,'Cue Position','color','w')
@@ -707,15 +708,15 @@ cols = ceil(length(all_data)/rows);
 %t = tiledlayout(rows,cols);
 vel_thresh = .2;
 bump_thresh = 10;
-rho_thresh = .2;
+rho_thresh = .3;
 vel_max = 10;
-lag = 8;
+lag = 1;
 g = nan(length(all_data),1);
 
 for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
     nexttile; hold on
 
-    bump_vel = [0;diff(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))] * 60;
+    bump_vel = gradient(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf)) * 60;
     fly_vel =  [0;diff(-all_data(i).ft.cue)] * 60;%all_data(i).ft.r_speed; % 
     rho      = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
@@ -738,7 +739,7 @@ end
 
 %xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
 
-figure(9); hold on
+figure(9); clf; hold on
 c = [1,.5,0; 0,.5,1];
 group_idx = empty_idx + 2*dark_idx;
 scatter(group_idx(walk_idx),g(walk_idx),100,c(empty_idx(walk_idx)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
