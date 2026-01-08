@@ -247,7 +247,7 @@ fly_num   = nan(length(all_data),1);
 last_str = '';
 fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:33);
+    tmp_str = all_data(i).meta(1:39);
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -275,7 +275,7 @@ end
 
 
 %% create figure to show example
-i = 64;
+i = 11;
 binedges = 0:.05:5;
 dark_mode = false;
 
@@ -288,14 +288,14 @@ a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi
 idx = round(all_data(i).ft.cue,4) == -.2945;
 
 a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w'); a.YData(abs(diff(a.YData))>pi) = nan;
-title(all_data(i).meta)
+title(all_data(i).meta,'Interpreter','none')
 xlabel('time (s)')
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
 a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
-patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+%patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 ylabel('offset')
 %a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
 pos = get(gca,'Position');
@@ -306,13 +306,14 @@ box(ax,'off')
 ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a3 = subplot(6,1,4); hold on
-plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
-plot(all_data(i).gain.xt,all_data(i).gain.g)
-ylabel('gain'); legend('instant','integ','autoupdate','off')
-
+% plot(all_data(i).ft.xb,all_data(i).gain.inst_g)
+% plot(all_data(i).gain.xt,all_data(i).gain.g)
+% ylabel('gain'); legend('instant','integ','autoupdate','off')
+%ylim([0,5])
+plot(all_data(i).ft.xf,all_data(i).ft.f_speed); ylabel('f speed (mm/s)')
 linkaxes([a1,a2,a3],'x')
 xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
-ylim([0,5])
+
 plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
