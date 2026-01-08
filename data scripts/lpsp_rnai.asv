@@ -261,7 +261,7 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/5
+    if sum(all_data(i).ft.f_speed>.1) > length(all_data(i).ft.f_speed)/5
         walk_idx(i) = true;
     end
     
@@ -279,7 +279,7 @@ end
 
 
 %% create figure to show example
-i = 131;
+i = 97;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
@@ -716,14 +716,14 @@ for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
     nexttile; hold on
 
     bump_vel = [0;diff(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))] * 60;
-    fly_vel =  [0;diff(-all_data(i).ft.cue)] * 60;%all_data(i).ft.r_speed; % 
+    fly_vel =  all_data(i).ft.r_speed; % [0;diff(-all_data(i).ft.cue)] * 60;%
     rho      = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
     fly_vel  = fly_vel(1:end-lag);
     bump_vel = bump_vel(lag+1:end);
     rho      = rho(lag+1:end);
-    %dm = smoothdata(dm(1+lag:end),1,'movmean',5);
-    %dr = smoothdata(dr(1:end-lag),1,'movmean',5);
+    dm = smoothdata(dm(1+lag:end),1,'movmean',10);
+    dr = smoothdata(dr(1:end-lag),1,'movmean',10);
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh & abs(fly_vel) < vel_max;
     
