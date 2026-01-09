@@ -248,7 +248,7 @@ fly_num   = nan(length(all_data),1);
 last_str = '';
 fly_counter = 0;
 for i = 1:length(all_data)
-    tmp_str = all_data(i).meta(1:39);
+    tmp_str = all_data(i).meta(1:39); %33 for th rnai, 39 for vglut rnai
 
     if ~strcmp(tmp_str,last_str)
         counter = 0;
@@ -279,7 +279,7 @@ end
 
 
 %% create figure to show example
-i = 131;
+i = 51;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
@@ -308,17 +308,18 @@ ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTick
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
-a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+%a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
-patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
-ylabel('offset')
-%a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
-pos = get(gca,'Position');
-pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
-ax = axes('Position',pos,'Color','none','XAxisLocation','top');
-histogram(offset,-pi:.1:pi,'Orientation','horizontal','edgeColor','none')
-box(ax,'off')
-ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+% patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+% ylabel('offset')
+% %a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
+% pos = get(gca,'Position');
+% pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+% ax = axes('Position',pos,'Color','none','XAxisLocation','top');
+% histogram(offset,-pi:.1:pi,'Orientation','horizontal','edgeColor','none')
+% box(ax,'off')
+% ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a3 = subplot(6,1,4); hold on
 scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
@@ -346,7 +347,7 @@ c = 'k';
 
 g = {};
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .1 & all_data(i).gain.v < .1);
+    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .4 & all_data(i).gain.v < .1);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);
@@ -709,27 +710,41 @@ vel_thresh = .2;
 bump_thresh = 10;
 rho_thresh = .2;
 vel_max = 10;
-lag = 8;
-g = nan(length(all_data),1);
+lag = 10;
 
-for i = find(walk_idx & ~dark_idx)' %1:length(all_data)
-    nexttile; hold on
 
-    bump_vel = [0;diff(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf))] * 60;
+group_idx = [fly_num,empty_idx,dark_idx,walk_idx];
+[unique_groups,~,ic] = unique(group_idx,'rows');
+
+vel_cell = cell(length(all_data),1);
+
+for i = 1:length(all_data)
+    
+    bump_vel = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)) / mean(diff(all_data(i).ft.xb)),all_data(i).ft.xf);
     fly_vel =  all_data(i).ft.r_speed; % [0;diff(-all_data(i).ft.cue)] * 60;%
     rho      = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
 
-    fly_vel  = fly_vel(1:end-lag);
-    bump_vel = bump_vel(lag+1:end);
     rho      = rho(lag+1:end);
-    dm = smoothdata(dm(1+lag:end),1,'movmean',10);
-    dr = smoothdata(dr(1:end-lag),1,'movmean',10);
+    bump_vel = smoothdata(bump_vel(1+lag:end),1,'gaussian',1);
+    fly_vel = smoothdata(fly_vel(1:end-lag),1,'gaussian',300);
+
+    vel_cell{i} = [fly_vel,bump_vel,rho];
+end
+
+g = nan(size(unique_groups,1),1);
+for i = 1:length(unique_groups)
+
+    tmp         = vertcat(vel_cell{ic==i});
+    fly_vel     = tmp(:,1);
+    bump_vel    = tmp(:,2);
+    rho         = tmp(:,3);
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh & abs(fly_vel) < vel_max;
     
-    if empty_idx(i); c = [0,.5,1]; else; c=[1,.5,0];end
-    scatter(fly_vel(idx),bump_vel(idx),5,'filled','MarkerFaceColor',c)
-
+    if unique_groups(i,2); c = [0,.5,1]; else; c=[1,.5,0];end
+    %nexttile
+    %scatter(fly_vel(idx),bump_vel(idx),5,'filled','MarkerFaceColor',c)
+    
     b = [ones(sum(idx),1),fly_vel(idx)] \ bump_vel(idx);
     g(i) = b(2);
     plot([-2,2],b(1)+g(i)*[-2,2],'r')
@@ -738,15 +753,73 @@ end
 
 %xlabel(t,'Fly Speed (rad/s)'); ylabel(t,'Bump Speed (rad/s)')
 
-figure(9); hold on
+figure(9); clf; hold on
 c = [1,.5,0; 0,.5,1];
-group_idx = empty_idx + 2*dark_idx;
-scatter(group_idx(walk_idx),g(walk_idx),100,c(empty_idx(walk_idx)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
+walk_idx2 = logical(unique_groups(:,4));
+empty_idx2 = logical(unique_groups(:,2));
+dark_idx2  = logical(unique_groups(:,3));
+scatter(empty_idx2(walk_idx2 & ~dark_idx2),g(walk_idx2 & ~dark_idx2),100,c(empty_idx2(walk_idx2 & ~dark_idx2)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
+errorbar(1.1,mean(g(empty_idx2 & walk_idx2 & ~dark_idx2)),std(g(empty_idx2 & walk_idx2 & ~dark_idx2))/sqrt(sum(empty_idx2 & walk_idx2 & ~dark_idx2)),'r')
+errorbar(0.1,mean(g(~empty_idx2 & walk_idx2 & ~dark_idx2)),std(g(~empty_idx2 & walk_idx2 & ~dark_idx2))/sqrt(sum(empty_idx2 & walk_idx2 & ~dark_idx2)),'r')
 xticklabels({'LPsP\newlineTH-RNAi\newlineCL','Empty\newlineTH-RNAi\newlineCL','LPsP\newlinevGlut-RNAi\newlineCL'});
 xlim([-.5,1.5])
 set(gcf,'Color','none','InvertHardCopy','off')
 set(gca,'Color','none','xcolor','w','ycolor','w')
 fontsize(gcf,20,'pixels')
+
+%% extract turns from each trial
+i = 151;
+
+rot_vel         = smoothdata(all_data(i).ft.r_speed,1,'gaussian',300);
+noise_thresh    = .2;
+noise_std       = std(rot_vel(abs(rot_vel)<noise_thresh));
+turn_start      = 5*noise_std;
+turn_end        = 1*noise_std;
+
+figure(1); clf
+t = tiledlayout('vertical');
+nexttile
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+idx = round(all_data(i).ft.cue,4) == -.2945;
+
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta,'Interpreter','none')
+xlabel('time (s)')
+
+nexttile; hold on
+plot(all_data(i).ft.xf,rot_vel)
+plot(all_data(i).ft.xf,abs(rot_vel)>turn_start)
+
+start_inds = find(diff(abs(rot_vel)>turn_start)>0);
+end_inds = find(diff(abs(rot_vel)>turn_start)<0);
+
+if end_inds(1) < start_inds(1); start_inds = [1;start_inds]; end
+if start_inds(end) > end_inds(end); end_inds = [end_inds;length(rot_vel)]; end
+
+plot(all_data(i).ft.xf(start_inds),ones(size(start_inds)),'r*')
+plot(all_data(i).ft.xf(end_inds),ones(size(end_inds)),'b*')
+
+turn_gains = cell(size(start_inds));
+
+dm = interp1(all_data(i).ft.xb,gradient(unwrap(all_data(i).im.mu)) / mean(diff(all_data(i).ft.xb)),all_data(i).ft.xf);
+
+tmp_inds = start_inds(8):end_inds(8);
+plot(all_data(i).ft.xf,dm)
+plot(all_data(i).ft.xf,smoothdata(dm,1,'gaussian',300))
+plot(all_data(i).ft.xf(tmp_inds),rot_vel(tmp_inds))
+% for i = 1:length(start_inds)
+%     r = rot_vel(start_ind(i):end_ind(i));
+   
+
+
+linkaxes(get(t,'Children'),'x')
+axis tight
+
+nexttile
+scatter(rot_vel(tmp_inds),dm(tmp_inds),'.')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
