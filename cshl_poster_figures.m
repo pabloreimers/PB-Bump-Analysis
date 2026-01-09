@@ -244,3 +244,103 @@ imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).atp.z);
 
 linkaxes(h,'x')
 xlim([160,180])
+
+%% kir figures
+ind = [23,31];
+
+figure(5); clf; hold on
+
+for j = 1:2
+    subplot(1,2,j); hold on
+    i = ind(j)
+xf = all_data(i).ft.xf;
+xb = linspace(min(xf),max(xf),size(all_data(i).im.mu,1));
+fr = mean(diff(xf));
+
+fly_vel  = all_data(i).ft.r_speed;
+bump_vel = gradient(interp1(xb,unwrap(all_data(i).im.mu),xf))/fr;
+rho      = interp1(xb,all_data(i).im.rho,xf);
+
+fly_vel  = fly_vel(1:end-lag);
+bump_vel = bump_vel(lag+1:end);
+rho      = rho(lag+1:end);
+
+idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
+scatter(fly_vel(idx),bump_vel(idx),c,'filled','markerfacealpha',.1)
+axis equal
+xlim([-6,6]); ylim([-6,6])
+y = ylim; x = xlim;
+plot(x,[0,0],':','Color',c); 
+plot([0,0],y,':','Color',c);
+b = [ones(sum(idx),1),fly_vel(idx)]\bump_vel(idx); %fit the slope of fly vel and bump vel with an arbitrary offset
+r = corr(fly_vel(idx),bump_vel(idx));
+plot([0,0],y,':','Color', c)
+plot(x,[0,0],':','Color', c)
+plot(x,x*b(2) + b(1),'r')
+text(x(2),y(1),sprintf('gain: %.2f\nr: %.2f',b(2),r),'HorizontalAlignment','right','VerticalAlignment','bottom','color',c)
+xlim(x); ylim(y);
+yticks([-5,0,5])
+end
+linkaxes(get(gcf,'Children'))
+
+%% thrnai figures
+i = 0;
+
+figure(1); clf; 
+subplot(3,3,1)
+c='k';
+hold on
+errorbar(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),mean_g(empty_idx & walk_idx & dark_idx==i),sem_g(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
+errorbar(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),mean_g(~empty_idx & walk_idx & dark_idx==i),sem_g(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
+xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Integrative Gain')
+plot(xlim,[.8,.8],':k')
+axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
+
+legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
+   sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
+   'textcolor',c,'Location','best')
+
+
+subplot(3,3,2); hold on
+ scatter(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),var_o(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
+scatter(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),var_o(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
+xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Offset Variance (Circular)')
+axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
+
+
+
+
+ind=[248,189];
+b = {[linspace(1,0,255)',linspace(1,0.7,255)',linspace(1,.7,255)'];...
+    [linspace(1,1,255)',linspace(1,0.5,255)',linspace(1,0,255)']};
+for j = 1:2
+    i = ind(j);
+a1 = subplot(6,1,3+2*(j-1));
+
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+set(gca,'Colormap',b{j},'CLim',clim+[0.2,0]*range(clim))
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+idx = round(all_data(i).ft.cue,4) == -.2945;
+
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',b{j}(end,:),'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta)
+xlabel('time (s)')
+
+
+a2 = subplot(6,1,4+2*(j-1)); hold on
+offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
+a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+ patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+ylabel('offset')
+a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
+pos = get(gca,'Position');
+pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos,'Color','none','XAxisLocation','top');
+histogram(offset,-pi:.1:pi,'Orientation','horizontal','edgeColor','none')
+box(ax,'off')
+ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+linkaxes([a1,a2],'x')
+xlim(a1,[200,400])
+end
