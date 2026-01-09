@@ -94,16 +94,16 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 hv = cell(length(all_data),1);
 
-% counter=0;
-% for i = 1:length(all_data)
-%     if isempty(all_data(i).gain)
-%         break
-%     end
-%     counter=counter+1;
-% end
+counter=0;
+for i = 1:length(all_data)
+    if isempty(all_data(i).gain)
+        break
+    end
+    counter=counter+1;
+end
 
 tic
-for i = 1:length(all_data)
+for i = counter:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -279,7 +279,7 @@ end
 
 
 %% create figure to show example
-i = 131;
+i = 155;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
