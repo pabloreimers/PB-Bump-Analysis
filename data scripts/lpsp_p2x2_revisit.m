@@ -3,8 +3,8 @@ close all
 clear all
 
 %% load in data
-base_dir = 'Z:\pablo\lpsp_p2x2\'; %uigetdir(); %
-all_files = dir([base_dir,'\**\*imagingData_fast.mat']);
+base_dir = 'Z:\pablo\lpsp_p2x2_redo\'; %uigetdir(); %
+all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 
 idx = cellfun(@(x)(contains(x,'exclusions') | contains(x,'open loop')),{all_files.folder}');
@@ -34,7 +34,7 @@ end
 ft_type= 'movmean'; %the type of smoothing for fictrac data
 ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {1,1};
+im_win = {5,1};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
@@ -43,7 +43,7 @@ rho_thresh = .1;
 all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = 32:length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -65,7 +65,7 @@ for i = 1:length(all_files)
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
-    %all_data(i).ft.stims = ftData_DAQ.stim{1};
+    all_data(i).ft.stims = ftData_DAQ.stim{1};
     all_data(i).ft.pattern = tmp2.patternPath{1};
 
     
@@ -165,7 +165,7 @@ for i = 1:length(all_data)
 end
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240628\fly 1')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260128\fly 3')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -179,18 +179,18 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     xticks([])
-    
+    % 
     set(gca,'color','none')
     hold on
     [~,ind] = max(sum(all_data(idx(i)).atp.d,2));
-    tmp_alpha = unwrap(all_data(i).im.alpha);
+    tmp_alpha = unwrap(all_data(idx(i)).im.alpha);
     scatter(0,tmp_alpha(ind),'r*')
 
-    if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+    if contains(all_data(idx(i)).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
     a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,c);
     a.YData(abs(diff(a.YData))>pi) = nan;
     a = plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'w');
@@ -200,11 +200,11 @@ for i = 1:length(idx)
     pos = get(gca,'Position');
     pos1 = [pos(1),pos(2)+pos(4),pos(3),.03];
     a3 = axes('Position',pos1,'color','none'); 
-    plot(all_data(idx(i)).ft.xb,2*sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)))   
+    plot(all_data(idx(i)).ft.xb,2*sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)),'r','linewidth',2)   
     hold on
     % plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
     % plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
-    plot(all_data(idx(i)).gain.xt,all_data(idx(i)).gain.g)
+%    plot(all_data(idx(i)).gain.xt,all_data(idx(i)).gain.g)
     yticks([]);xticks([])
     axis tight
     set(gca,'Color','none')
@@ -213,7 +213,7 @@ for i = 1:length(idx)
 
     pos2 = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
     ax = axes('Position',pos2,'Color','none','XAxisLocation','top');
-    offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
+    offset = circ_dist(-all_data(idx(i)).ft.cue,interp1(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.mu),all_data(idx(i)).ft.xf));
     histogram(offset,bin_edges,'Orientation','horizontal','edgeColor','none','FaceColor',c)
     box(ax,'off')
     ax.YAxisLocation =  'right'; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};

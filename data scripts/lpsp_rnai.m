@@ -61,13 +61,13 @@ for i = length(all_data):length(all_files)
     load([all_files(i).folder,'\',all_files(i).name])
     load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
-   
-        
+
+
     load([tmp2.folder,'\',tmp2.name])
-   
+
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
-    
+
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).ft.stims = ftData_DAQ.stim{1};
@@ -94,16 +94,16 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 hv = cell(length(all_data),1);
 
-% counter=0;
-% for i = 1:length(all_data)
-%     if isempty(all_data(i).gain)
-%         break
-%     end
-%     counter=counter+1;
-% end
+counter=0;
+for i = 1:length(all_data)
+    if isempty(all_data(i).gain)
+        break
+    end
+    counter=counter+1;
+end
 
 tic
-for i = 1:length(all_data)
+for i = counter:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -279,12 +279,12 @@ end
 
 
 %% create figure to show example
-i = 51;
+i = 540;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
 
-figure(1); clf
+figure(2); clf
 a1 = subplot(3,1,1);
 imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
@@ -394,7 +394,6 @@ v_grouped = nan(length(unique_groups),1);
 for i = 1:length(unique_groups)
     g_grouped(i) = mean(vertcat(g{ic==i}),'omitnan');
     v_grouped(i) = var(vertcat(g{ic==i}),'omitnan');
-
 end
 
 figure(5); clf
@@ -761,7 +760,7 @@ dark_idx2  = logical(unique_groups(:,3));
 scatter(empty_idx2(walk_idx2 & ~dark_idx2),g(walk_idx2 & ~dark_idx2),100,c(empty_idx2(walk_idx2 & ~dark_idx2)+1,:),'filled','MarkerFaceAlpha',.5);ylabel({'instantaneous gain',sprintf('lag = %ims',round(lag/60*1e3))},'Rotation',0); xlim([-.5,3.5]); xticks([0:3]); xticklabels({'LPsP\newlineCL','Empty\newlineCL','LPsP\newlineDark','Empty\newlineDark'}); set(gca,'YAxisLocation','right')
 errorbar(1.1,mean(g(empty_idx2 & walk_idx2 & ~dark_idx2)),std(g(empty_idx2 & walk_idx2 & ~dark_idx2))/sqrt(sum(empty_idx2 & walk_idx2 & ~dark_idx2)),'r')
 errorbar(0.1,mean(g(~empty_idx2 & walk_idx2 & ~dark_idx2)),std(g(~empty_idx2 & walk_idx2 & ~dark_idx2))/sqrt(sum(empty_idx2 & walk_idx2 & ~dark_idx2)),'r')
-xticklabels({'LPsP\newlineTH-RNAi\newlineCL','Empty\newlineTH-RNAi\newlineCL','LPsP\newlinevGlut-RNAi\newlineCL'});
+xticklabels({'LPsP\newlinevGlut-RNAi\newlineCL','Empty\newlineTH-RNAi\newlineCL','LPsP\newlinevGlut-RNAi\newlineCL'});
 xlim([-.5,1.5])
 set(gcf,'Color','none','InvertHardCopy','off')
 set(gca,'Color','none','xcolor','w','ycolor','w')

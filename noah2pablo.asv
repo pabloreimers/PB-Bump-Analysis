@@ -13,7 +13,7 @@ for i = 1:length(all_files)
 end
 
 %%
-all_files = dir('Z:\pablo\lpsp_vglutrnai\**\imagingData_reg*.mat');
+all_files = dir('Z:\pablo\lpsp_p2x2_redo\**\imagingData*.mat');
 all_files = natsortfiles(all_files);
 % idx = cellfun(@(x)(contains(x,'exclusions') | contains(x,'open loop')),{all_files.folder}');
 % all_files(idx) = [];

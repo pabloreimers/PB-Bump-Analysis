@@ -221,8 +221,8 @@ tmp_c = -cell2mat(cellfun(@(x)(unwrap(x)),c_pulses','UniformOutput',false));
 tmp_c = tmp_c - tmp_c(:,ind);
 tmp_o = tmp_m - tmp_c;
 
-plot(tmp_t,mean(tmp_m(exp_idx & right_idx,:),1),'Color',[1,0,1],'linewidth',2)
-plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0.5,.5,.5],'linewidth',2)
+plot(tmp_t,mean(tmp_m(exp_idx & ~right_idx,:),1),'Color',[1,0,1],'linewidth',2)
+plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[0.5,.5,.5],'linewidth',2)
 %plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
 plot(tmp_t,mean(tmp_c(right_idx,:)),'Color','w','linewidth',2)
 
