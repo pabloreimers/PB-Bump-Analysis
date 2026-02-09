@@ -91,8 +91,8 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -10;
-win_end = 150;
+win_start = -5;
+win_end = 60;
 
 c_pulses = {};
 m_pulses = {};
@@ -104,6 +104,7 @@ dark_idx = {};
 exp_idx  = {};
 right_idx= {};
 first_idx= {};
+stim_length= {};
 fr = 10;
 tmp_x   = linspace(0,630,630*fr);    
 tmp_win = floor(win_start*fr):ceil(win_end*fr); %this is the additive index to the frames to extract for a given pulse window
@@ -138,6 +139,8 @@ for i = 1:length(all_data)
         continue
     end
 
+
+    stim_length_curr = diff(all_data(i).ft.xf(find(abs(diff(all_data(i).ft.stims))>1,2)));
     for j = loc
 
         n = length(all_data(i).im.alpha);
@@ -156,10 +159,11 @@ for i = 1:length(all_data)
         a_pulses{counter} = [pad1,tmp_a(:,tmp_idx),pad2];
         m_pulses{counter} = [pad1(1,:),tmp_m(tmp_idx)',pad2(1,:)];
         c_pulses{counter} = [pad1(1,:),tmp_cue(tmp_idx)',pad2(1,:)];
-        dark_idx{counter} = contains(all_data(i).meta,'dark');
+        dark_idx{counter} = contains(all_data(i).meta,'dark') || contains(all_data(i).ft.pattern,'background');
         exp_idx{counter} = ~contains(all_data(i).meta,'empty');
         right_idx{counter} = tmp_right;
         first_idx{counter} = first_log;
+        stim_length{counter} = stim_length_curr;
         
         if first_log
             first_log = false;
@@ -172,8 +176,9 @@ dark_idx = logical(cell2mat(dark_idx));
 exp_idx = logical(cell2mat(exp_idx));
 right_idx = logical(cell2mat(right_idx));
 first_idx = logical(cell2mat(first_idx));
+stim_length = cell2mat(stim_length);
 
-alpha = all_data(1).im.alpha;
+alpha = all_data(i).im.alpha;
 [~,ind] = min(abs(tmp_win*fr));
 ind = round(ind- 2/fr):ind;
 
@@ -186,7 +191,7 @@ ind = round(ind- 2/fr):ind;
 %% plot results
 figure(1); clf
 group_idx = exp_idx + 2*right_idx;
-group_idx = right_idx;
+%group_idx = right_idx;
 group_labels = {'con (left)','exp (left)','con (right)','exp (right)'};
 for i = unique(group_idx)
     figure(i+1); clf
@@ -221,26 +226,28 @@ tmp_c = -cell2mat(cellfun(@(x)(unwrap(x)),c_pulses','UniformOutput',false));
 tmp_c = tmp_c - tmp_c(:,ind);
 tmp_o = tmp_m - tmp_c;
 
-plot(tmp_t,mean(tmp_m(exp_idx & right_idx,:),1),'Color',[1,0,1],'linewidth',2)
-plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0.5,.5,.5],'linewidth',2)
+plot(tmp_t,mean(tmp_m(dark_idx & exp_idx & right_idx & stim_length < 1,:),1),'Color',[1,0,1],'linewidth',2)
+plot(tmp_t,mean(tmp_m(dark_idx & ~exp_idx & right_idx & stim_length < 1,:),1),'Color',[0.5,.5,.5],'linewidth',2)
 %plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
-plot(tmp_t,mean(tmp_c(right_idx,:)),'Color','w','linewidth',2)
+plot(tmp_t,mean(tmp_c(dark_idx & right_idx,:)),'Color','w','linewidth',2)
 
-a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = [1,0,1]; a.FaceAlpha = .3;
-a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = [.5,.5,.5]; a.FaceAlpha = .3;
+a = plot_sem(gca,tmp_t',tmp_m(dark_idx & exp_idx & right_idx & stim_length < 1,:)); a.FaceColor = [1,0,1]; a.FaceAlpha = .3;
+a = plot_sem(gca,tmp_t',tmp_m(dark_idx & ~exp_idx & right_idx & stim_length < 1,:)); a.FaceColor = [.5,.5,.5]; a.FaceAlpha = .3;
 %a = plot_sem(gca,tmp_t',tmp_m(exp_idx & ~right_idx,:)); a.FaceColor = [.3,.3,1]; a.FaceAlpha = .3;
 %a = plot_sem(gca,tmp_t',tmp_c(exp_idx,:)); a.FaceColor = 'w'; a.FaceAlpha = .3;
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
-title('Right Stim','color','w')
-xlabel('time post stim (s)')
-ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
+%title('Right Stim','color','w')
+%xlabel('time post stim (s)')
+%ylabel({'unwrapped', 'bump', 'position', '(\pi rad)'},'Rotation',0)
 pos = get(gca,'Position');
 %legend('LPsP > P2X2 (n=12)','Empty > P2X2 (n=10)','heading','Location','Northeastoutside','textcolor','w','edgecolor','w')
 axis tight
 set(gca, 'YDir','reverse','xcolor','w','ycolor','w','Color','none')
 %yticks(-3*pi:pi:4*pi); ylim([min(ylim),pi]); yticklabels(-3:4)
+ylim([-2*pi,pi]); yticks([-2*pi,-pi,0,pi]); yticklabels({'-2\pi','-\pi',0,'\pi'})
+fontsize(gcf,30,'pixels')
 
 %%
 subplot(1,2,2); hold on
@@ -282,8 +289,8 @@ tmp_d = tmp_d - tmp_d(:,ind);
 tmp_a = cell2mat(cellfun(@(x)(mean(x,1)),a_pulses','UniformOutput',false));
 tmp_a = tmp_a - tmp_a(:,ind);
 
-a = plot_sem(gca,tmp_t',tmp_d(exp_idx,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
-plot(tmp_t,mean(tmp_d(exp_idx,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
+a = plot_sem(gca,tmp_t',tmp_d(exp_idx & stim_length < 1,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
+plot(tmp_t,mean(tmp_d(exp_idx & stim_length < 1,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
@@ -294,8 +301,8 @@ axis tight
 set(gca,'xcolor','w','ycolor','w')
 
 ax(2) = subplot(2,2,2); hold on
-a = plot_sem(gca,tmp_t',tmp_d(~exp_idx,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
-plot(tmp_t,mean(tmp_d(~exp_idx,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
+a = plot_sem(gca,tmp_t',tmp_d(~exp_idx & stim_length < 1,:)); a.FaceColor = [0,.7,.7]; a.FaceAlpha = .3;
+plot(tmp_t,mean(tmp_d(~exp_idx & stim_length < 1,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
@@ -305,7 +312,7 @@ axis tight
 set(gca,'ycolor','w','xcolor','w')
 
 ax(3) = subplot(2,1,2); hold on
-plot(tmp_t,mean(tmp_d(exp_idx,:),1,'omitnan') - mean(tmp_d(~exp_idx,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
+plot(tmp_t,mean(tmp_d(exp_idx & stim_length<1,:),1,'omitnan') - mean(tmp_d(~exp_idx & stim_length<1,:),1,'omitnan'),'Color',[0,.7,.7],'linewidth',2)
 
 plot([win_start,win_end],[0,0],':w')
 scatter(0,0,100,'r*')
@@ -317,7 +324,7 @@ linkaxes(ax(1:3),'y')
 ylabel({'LPsP \DeltaF/F','-','Empty \DeltaF/F'},'Rotation',0)
 
 ax(4) = axes('Position',get(gca,'Position'),'Color','none');
-plot(tmp_t,mean(tmp_a,1,'omitnan'),'Color','r','linewidth',2)
+plot(tmp_t,mean(tmp_a(stim_length<1,:),1,'omitnan'),'Color','r','linewidth',2)
 axis tight
 set(gca,'Box','off', 'ycolor','r','xcolor','none','YAxisLocation','right')
 ylim(ax(4),3.5*[ax(3).YLim(1)/ ax(3).YLim(2),1])

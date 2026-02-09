@@ -55,14 +55,19 @@ for i = 1:length(all_files)
             img{i}(:,:,SI.hStackManager.numFramesPerVolume+1:end,:) = [];
         end
         
-    
+        
         save([filepath,'\registration\imagingData_trial001.mat'],'img','-v7.3')
+    
+        img{1} = squeeze(sum(img{1},3));
+        img{2} = squeeze(sum(img{2},3));
 
-        imgData_reg = normcorre_regProduct(squeeze(sum(img{1},3)),false); %save motion correction of the image summed across all planes
+        save([filepath,'\registration\imagingData.mat'],'img','-v7.3')
+        
+        imgData_reg = normcorre_regProduct(img{1},false); %save motion correction of the image summed across all planes
         
         save([filepath,'\registration\imgData_reg.mat'],'imgData_reg','-v7.3')
 
-        imgData_smooth_reg = normcorre_regProduct(smoothdata(squeeze(sum(img{1},3)),3,'movmean',5),false); %save motion correction of the image summed across all planes
+        imgData_smooth_reg = normcorre_regProduct(smoothdata(img{1},3,'movmean',5),false); %save motion correction of the image summed across all planes
         
         save([filepath,'\registration\imgData_smooth_reg.mat'],'imgData_smooth_reg','-v7.3')
 
