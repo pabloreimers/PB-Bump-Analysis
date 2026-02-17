@@ -176,7 +176,7 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 
 tic
-for i = 1:length(all_data)
+for i = 200:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -279,7 +279,7 @@ end
 
 
 %% create figure to show example
-i = 532;
+i = 201;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
@@ -332,7 +332,8 @@ ylim([0,5])
 plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
-h = histogram(all_data(i).gain.g,'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
+tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+h = histogram(tmp(abs(all_data(i).ft.r_speed)>r_thresh),'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
 
 xlabel('gain')
 ylabel('counts')
