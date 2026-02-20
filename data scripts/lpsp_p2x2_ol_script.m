@@ -91,8 +91,8 @@ linkaxes(get(gcf,'Children'),'x')
 axis tight
 
 %% extract mu aligned pulses
-win_start = -10;
-win_end = 150;
+win_start = -2;
+win_end = 15;
 
 c_pulses = {};
 m_pulses = {};
@@ -224,7 +224,7 @@ tmp_o = tmp_m - tmp_c;
 plot(tmp_t,mean(tmp_m(exp_idx & right_idx,:),1),'Color',[1,0,1],'linewidth',2)
 plot(tmp_t,mean(tmp_m(~exp_idx & right_idx,:),1),'Color',[0.5,.5,.5],'linewidth',2)
 %plot(tmp_t,mean(tmp_m(~exp_idx & ~right_idx,:),1),'Color',[.3,.3,1],'linewidth',2)
-plot(tmp_t,mean(tmp_c(right_idx,:)),'Color','w','linewidth',2)
+%plot(tmp_t,mean(tmp_c(right_idx,:)),'Color','w','linewidth',2)
 
 a = plot_sem(gca,tmp_t',tmp_m(exp_idx & right_idx,:)); a.FaceColor = [1,0,1]; a.FaceAlpha = .3;
 a = plot_sem(gca,tmp_t',tmp_m(~exp_idx & right_idx,:)); a.FaceColor = [.5,.5,.5]; a.FaceAlpha = .3;
