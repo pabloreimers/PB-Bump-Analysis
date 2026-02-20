@@ -1,6 +1,6 @@
 %% 
 close all
-clear all
+%clear all
 
 %% load in data
 base_dir = 'Z:\pablo\lpsp_p2x2_redo\'; %uigetdir(); %
@@ -20,30 +20,33 @@ for i = 1:length(all_files)
         imgData = img{1};
         top_pct = prctile(imgData,98,'all');
         bot_pct = prctile(imgData,5,'all');
-        
+
         imgData(imgData>top_pct) = top_pct;
         imgData(imgData<bot_pct) = bot_pct;        
 
         figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
         mask = roipoly();
+
+        %mask = sum(img{1},3) > mean(sum(img{1},3),'all');
         save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
     end
 end
 
 %% process and store all values
-ft_type= 'movmean'; %the type of smoothing for fictrac data
-ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
-im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {5,1};
+ft_type= 'gaussian'; %the type of smoothing for fictrac data
+ft_win = 30; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
+im_type= {'gaussian','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
+im_win = {3,5};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
 rho_thresh = .1;
 
-all_data = struct();
+%all_data = struct();
 
+figure(10); clf; tiledlayout("flow")
 tic
-for i = 32:length(all_files)
+for i = length(all_data):length(all_files)
     if i<length(all_data) && strcmp(all_files(i).folder,all_data(i).meta); continue; end %if we've already processed a file, move on
     if i < length(all_data); all_data(i+1:end+1) = all_data(i:end); end %if the current file to process is missing from the data struct, insert it to the middle by shifting all_data down 1 and rewriting all_data(i)
     % clear img regProduct 
@@ -62,13 +65,16 @@ for i = 32:length(all_files)
     tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
     
+    mask = bwareafilt(mask,1);
+    
+
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).ft.stims = ftData_DAQ.stim{1};
     all_data(i).ft.pattern = tmp2.patternPath{1};
 
-    
+    nexttile; imagesc(all_data(i).im.mid); xlabel(i); drawnow
     
     dr = all_data(i).ft.r_speed;
     %dr(abs(dr)>r_thresh) = dr(abs(dr)>r_thresh) - mean(dr(abs(dr)>r_thresh));
@@ -164,8 +170,20 @@ for i = 1:length(all_data)
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_data)-i) / 60 / 60)
 end
 
+%% deconvolve heading traces
+for i = 40:length(all_data)
+    dt = mean(diff(all_data(i).ft.xb));
+    gamma = exp(-dt / .5); %decay time for gcamp8s is .5 seconds
+
+    all_data(i).im.dconv = nan(size(all_data(i).im.d));
+    all_data(i).im.dconv(:,1) = all_data(i).im.d(:,1);
+    for t = 2:size(all_data(i).im.d,2)
+        all_data(i).im.dconv(:,t) = all_data(i).im.d(:,t) - gamma * all_data(i).im.d(:,t-1);
+    end
+end
+
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20260128\fly 3')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260206\fly 14\')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -179,11 +197,11 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     xticks([])
-    % 
+
     set(gca,'color','none')
     hold on
     [~,ind] = max(sum(all_data(idx(i)).atp.d,2));
@@ -258,7 +276,7 @@ last_str = '';
 
 for i = 1:length(all_data)
     dark_idx(i) = contains(all_data(i).ft.pattern,'background');
-    empty_idx(i) = contains(all_data(i).meta,'control');
+    empty_idx(i) = contains(all_data(i).meta,'empty');
     tmp_ind = strfind(all_data(i).meta,'fly');
     fly_str = all_data(i).meta(tmp_ind-9:tmp_ind+5);
     
@@ -336,9 +354,18 @@ function s = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct)
     imgData = smoothdata(imgData,3,im_type{1},im_win{1});
     imgData = imgData - min(imgData,[],'all');
 
-    [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
+   [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
 min_axis        = min(range(x_mask),range(y_mask));
 mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+
+mask        = bwmorph(mask,'majority'); %fill in scraggly points
+skel        = bwskel(mask); %initial skeleton of the mask
+endpoints   = bwmorph(skel,'endpoints'); %find all possible endpoints of the multiple branches
+D           = bwdistgeodesic(skel, find(endpoints, 1)); % Distance from first endpoint
+[~, idx]    = max(D(:)); % Find the point furthest from start
+D2          = bwdistgeodesic(skel, idx); % Distance from that furthest point
+mid         = D+D2 == mode(D+D2,'all'); 
+
 [y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
 ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
 [y0,x0]         = find(ep,1);
@@ -388,6 +415,8 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.mask = mask;
+    s.mid = mid;
     %s.imgData = imgData;
 end
 
