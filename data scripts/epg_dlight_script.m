@@ -244,7 +244,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260217\fly 1\')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260219\fly 7\')),{all_data.meta})); %,6,'last');
 i = idx(1);
 
 binedges = 0:.05:5;
@@ -317,6 +317,30 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
+%% show dff as a function of cue gain
+
+figure(2); clf
+t = tiledlayout("flow");
+
+for i = 1:length(all_data)
+nexttile; hold on
+dff = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',20); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[60,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',20);
+cc  = smoothdata(abs(dc),'movmean',[60,0]); %calculate the cumulative rotational speed
+
+
+g = smoothdata(-dc ./ dr,'movmean',[60,0]);
+scatter(cr(g<.5),amp(g<.5),'g.')
+scatter(cr(g>.9),amp(g>.9),'r.')
+scatter(cr(g<.9 & g>.5),amp(g<.9 & g>.5),'k.')
+%histogram(g(abs(dr)>.1),'binedges',-1:.1:2)
+end
+
+linkaxes(get(t,'Children'),'y')
+set(get(t,'Children'),'color','none')
 
 %% Functions
 

@@ -244,8 +244,8 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260217\fly 2\')),{all_data.meta})); %,6,'last');
-i = idx(4);
+idx = find(cellfun(@(x)(contains(x,'20260219\fly 7\')),{all_data.meta})); %,6,'last');
+i = idx(1);
 
 binedges = 0:.05:5;
 dark_mode = false;
@@ -316,6 +316,24 @@ legend('integrative','color','none','textcolor','w')
 subplot(3,2,6); 
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
+
+%% show dff as a function of cue gain
+i = 1;
+
+figure(2); clf
+tiledlayout("flow")
+
+nexttile; hold on
+dff = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(abs(all_data(i).ft.r_speed),'gaussian',60); %smooth the rotational speed, partially to improve the accurac
+cr  = smoothdata(dr,'movmean',[60,0]);
+dc  = unwrap(all_data(i).ft.cue);
+
+scatter(cr,amp,'.')
+%plot(amp)
+%plot(dr)
+%plot(cr)
 
 
 %% Functions
