@@ -246,6 +246,7 @@ end
 %% create figure to show example
 idx = find(cellfun(@(x)(contains(x,'20260219\fly 7\')),{all_data.meta})); %,6,'last');
 i = idx(1);
+i = 8;
 
 binedges = 0:.05:5;
 dark_mode = false;
@@ -284,6 +285,8 @@ offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data
 %a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
 %a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
+ylabel('r speed')
+
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 % patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 % ylabel('offset')
@@ -296,14 +299,23 @@ plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
 % ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a3 = subplot(6,1,4); hold on
-scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
-scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
-ylabel('gain'); legend('instant','integ','autoupdate','off')
+%scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
+%scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
+% xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
+% ylim([0,5])
+% plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
+% ylabel('gain'); legend('instant','integ','autoupdate','off')
 
+r_lag = abs(all_data(i).ft.r_speed);
+r_lag = r_lag(1:end-3);
+c_lag = smoothdata(abs(gradient(unwrap(all_data(i).ft.cue))) * 60,'gaussian',10);
+c_lag = c_lag(4:end);
+freeze_idx = bwareaopen(r_lag > r_thresh & c_lag < r_thresh,20);
+patch([all_data(i).ft.xf(1:end-3);flipud(all_data(i).ft.xf(1:end-3))],[freeze_idx;freeze_idx*0],'r')
+plot(all_data(i).ft.xb,max(all_data(i).im.z,[],1))
+ylabel(' max z scored dff')
 linkaxes([a1,a2,a3],'x')
-xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
-ylim([0,5])
-plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
+axis tight
 
 subplot(3,2,5); hold on
 tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
@@ -319,7 +331,7 @@ xlabel('f speed')
 
 %% show dff as a function of cue gain
 
-figure(2); clf
+figure(3); clf
 t = tiledlayout("flow");
 
 for i = 1:length(all_data)
@@ -341,6 +353,8 @@ end
 
 linkaxes(get(t,'Children'),'y')
 set(get(t,'Children'),'color','none')
+xlabel(t,'cumulative rotation (1s prior)')
+ylabel(t,'bump max')
 
 %% Functions
 
