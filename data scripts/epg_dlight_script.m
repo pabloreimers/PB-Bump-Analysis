@@ -244,7 +244,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260217\fly 1\')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260216\fly 3\')),{all_data.meta})); %,6,'last');
 i = idx(1);
 
 binedges = 0:.05:5;
@@ -317,7 +317,35 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
+%% extract slope relating fly speed to bump amp brightness
+figure(1); clf
+t = tiledlayout("flow");
 
+for i = 1:length(all_data)
+tmp_d = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
+amp   = max(tmp_d,[],2);
+dr    = smoothdata(abs(all_data(i).ft.r_speed),"gaussian",60);
+dc    = [smoothdata(abs(diff(unwrap(all_data(i).ft.cue))),"gaussian",60)*60;0];
+
+%nexttile
+% hold on
+% plot(all_data(i).ft.xf,amp)
+% plot(all_data(i).ft.xf,dr)
+
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'k'; end
+
+nexttile; hold on
+%scatter(dr(dc>.1),amp(dc>.1),['.',c])
+%scatter(dr(dc<.1),amp(dc<.1),'.r')
+plot(dc./dr,'.')
+%plot(xlim,.8*xlim)
+end
+legend('Cue Moving','Cu  Still')
+xlabel(t,'Fly Speed (rad/s)')
+ylabel(t,'max dFF')
+title(t,'EPG  > dLight 3.8')
+set(get(t,'Children'),'Color','none')
+linkaxes(get(t,'Children'),'y')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)

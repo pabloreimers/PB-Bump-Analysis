@@ -235,8 +235,8 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260213\fly 4\')),{all_data.meta})); %,6,'last');
-i = idx(2);
+idx = find(cellfun(@(x)(contains(x,'20260213\fly 1\')),{all_data.meta})); %,6,'last');
+i = idx(1);
 
 binedges = 0:.05:5;
 dark_mode = false;

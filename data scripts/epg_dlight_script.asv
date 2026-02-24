@@ -244,7 +244,7 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260217\fly 2\')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260217\fly 4\')),{all_data.meta})); %,6,'last');
 i = idx(4);
 
 binedges = 0:.05:5;
@@ -317,7 +317,21 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
+%% extract slope relating fly speed to bump amp brightness
+i = 8;
 
+tmp_d = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+amp   = max(tmp_d,[],2);
+dr    = abs(smoothdata(all_data(i).ft.r_speed,"gaussian",1));
+
+figure(1); clf; tiledlayout("flow")
+nexttile
+hold on
+plot(all_data(i).ft.xf,amp)
+plot(all_data(i).ft.xf,dr)
+
+nexttile
+scatter(dr,amp,'.')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
