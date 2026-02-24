@@ -244,8 +244,9 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260216\fly 3\')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260219\fly 7\')),{all_data.meta})); %,6,'last');
 i = idx(1);
+i = 8;
 
 binedges = 0:.05:5;
 dark_mode = false;
@@ -284,6 +285,8 @@ offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data
 %a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
 %a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
+ylabel('r speed')
+
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 % patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 % ylabel('offset')
@@ -296,14 +299,23 @@ plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
 % ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
 a3 = subplot(6,1,4); hold on
-scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
-scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
-ylabel('gain'); legend('instant','integ','autoupdate','off')
+%scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
+%scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
+% xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
+% ylim([0,5])
+% plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
+% ylabel('gain'); legend('instant','integ','autoupdate','off')
 
+r_lag = abs(all_data(i).ft.r_speed);
+r_lag = r_lag(1:end-3);
+c_lag = smoothdata(abs(gradient(unwrap(all_data(i).ft.cue))) * 60,'gaussian',10);
+c_lag = c_lag(4:end);
+freeze_idx = bwareaopen(r_lag > r_thresh & c_lag < r_thresh,20);
+patch([all_data(i).ft.xf(1:end-3);flipud(all_data(i).ft.xf(1:end-3))],[freeze_idx;freeze_idx*0],'r')
+plot(all_data(i).ft.xb,max(all_data(i).im.z,[],1))
+ylabel(' max z scored dff')
 linkaxes([a1,a2,a3],'x')
-xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
-ylim([0,5])
-plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
+axis tight
 
 subplot(3,2,5); hold on
 tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
@@ -317,35 +329,33 @@ subplot(3,2,6);
 histogram(all_data(i).ft.f_speed,'edgecolor','none')
 xlabel('f speed')
 
-%% extract slope relating fly speed to bump amp brightness
-figure(1); clf
+%% show dff as a function of cue gain
+
+figure(3); clf
 t = tiledlayout("flow");
 
 for i = 1:length(all_data)
-tmp_d = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
-amp   = max(tmp_d,[],2);
-dr    = smoothdata(abs(all_data(i).ft.r_speed),"gaussian",60);
-dc    = [smoothdata(abs(diff(unwrap(all_data(i).ft.cue))),"gaussian",60)*60;0];
-
-%nexttile
-% hold on
-% plot(all_data(i).ft.xf,amp)
-% plot(all_data(i).ft.xf,dr)
-
-if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'k'; end
-
 nexttile; hold on
-%scatter(dr(dc>.1),amp(dc>.1),['.',c])
-%scatter(dr(dc<.1),amp(dc<.1),'.r')
-plot(dc./dr,'.')
-%plot(xlim,.8*xlim)
+dff = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',20); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[60,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',20);
+cc  = smoothdata(abs(dc),'movmean',[60,0]); %calculate the cumulative rotational speed
+
+
+g = smoothdata(-dc ./ dr,'movmean',[60,0]);
+scatter(cr(g<.5),amp(g<.5),'g.')
+scatter(cr(g>.9),amp(g>.9),'r.')
+scatter(cr(g<.9 & g>.5),amp(g<.9 & g>.5),'k.')
+%histogram(g(abs(dr)>.1),'binedges',-1:.1:2)
 end
-legend('Cue Moving','Cu  Still')
-xlabel(t,'Fly Speed (rad/s)')
-ylabel(t,'max dFF')
-title(t,'EPG  > dLight 3.8')
-set(get(t,'Children'),'Color','none')
+
 linkaxes(get(t,'Children'),'y')
+set(get(t,'Children'),'color','none')
+xlabel(t,'cumulative rotation (1s prior)')
+ylabel(t,'bump max')
+
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)
