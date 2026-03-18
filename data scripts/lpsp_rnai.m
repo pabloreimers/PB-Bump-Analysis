@@ -24,14 +24,26 @@ for i = 1:length(all_files)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
 
-        top_pct = prctile(imgData,98,'all');
-        bot_pct = prctile(imgData,5,'all');
-        
-        imgData(imgData>top_pct) = top_pct;
-        imgData(imgData<bot_pct) = bot_pct;        
+        % top_pct = prctile(imgData,98,'all');
+        % bot_pct = prctile(imgData,5,'all');
+        % 
+        % imgData(imgData>top_pct) = top_pct;
+        % imgData(imgData<bot_pct) = bot_pct;        
+        % 
+        % figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
+        % mask = roipoly();
+        % save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
 
-        figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
-        mask = roipoly();
+
+         mask = mean(imgData,3) > mean(imgData,'all');
+        tmp = regionprops(mask);
+        tmp = sort([tmp.Area],'descend');
+        if (tmp(1) / tmp(2)) > 1.5
+            mask = bwareafilt(mask,1);
+        else
+            se = strel('line',10,0);
+            mask = imdilate(bwareafilt(mask,2),se);
+        end
         save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
     end
 end
@@ -279,7 +291,7 @@ end
 
 
 %% create figure to show example
-i = 201;
+i = 211;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
@@ -297,14 +309,20 @@ title(all_data(i).meta,'Interpreter','none')
 xlabel('time (s)')
 
 pos = get(gca,'Position');
-pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
-ax = axes('Position',pos,'Color','none','XAxisLocation','top'); hold on
+pos1 = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos1,'Color','none','XAxisLocation','top'); hold on
 idx = all_data(i).ft.r_speed > r_thresh;
 mu  = interp1(all_data(i).ft.xb,all_data(i).im.mu,all_data(i).ft.xf);
 histogram(mu(idx),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability')
 histogram(-all_data(i).ft.cue(idx),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability')
 box(ax,'off')
 ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+
+pos2 = [pos(1)-.05,pos(2),.05,pos(4)];
+ax = axes('Position',pos2,'Color','none','XAxisLocation','top');
+imagesc(all_data(i).im.mask); hold on
+scatter(all_data(i).im.centroids(:,2),all_data(i).im.centroids(:,1),'.r')
+view(90,90); xticks([]); yticks([])
 
 a2 = subplot(6,1,3); hold on
 offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
@@ -859,8 +877,17 @@ function s = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct)
     imgData = imgData - min(imgData,[],'all');
 
     [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
-min_axis        = min(range(x_mask),range(y_mask));
-mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+    min_axis        = min(range(x_mask),range(y_mask));
+    mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+    
+    mask        = bwmorph(mask,'majority'); %fill in scraggly points
+    skel        = bwskel(mask); %initial skeleton of the mask
+    endpoints   = bwmorph(skel,'endpoints'); %find all possible endpoints of the multiple branches
+    D           = bwdistgeodesic(skel, find(endpoints, 1)); % Distance from first endpoint
+    [~, idx]    = max(D(:)); % Find the point furthest from start
+    D2          = bwdistgeodesic(skel, idx); % Distance from that furthest point
+    mid         = D+D2 == mode(D+D2,'all'); 
+
 [y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
 ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
 [y0,x0]         = find(ep,1);
@@ -910,6 +937,9 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.mask = mask;
+    s.mid = mid;
+    s.centroids = centroids;
     %s.imgData = imgData;
 end
 

@@ -1,6 +1,7 @@
 %% load in data
 base_dir = 'Z:\pablo\epg_dlight\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\imagingData.mat']);
+all_files = dir([base_dir,'\**\imgData_denoised.mat']);
 all_files = natsortfiles(all_files);
 
 %% make sure that each file has a mask
@@ -8,7 +9,7 @@ for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
     clear img regProduct 
 
-    if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
+    if ~isfile([fileparts(all_files(i).folder),'\mask_denoised.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
         
         %imgData = squeeze(sum(img{1},3));
@@ -23,7 +24,7 @@ for i = 1:length(all_files)
         tmp_ft = process_ft(ftData_DAQ, ft_win, ft_type);
 
         all_pix = reshape(imgData,[],size(imgData,3))';
-        all_pix = interp1(tmp_ft.xb,all_pix,tmp_ft.xf);
+        all_pix = interp1(tmp_ft.xb,double(all_pix),tmp_ft.xf);
         r_corr  = reshape(corr(all_pix,abs(tmp_ft.r_speed),rows="complete"),size(imgData,1),size(imgData,2));
 
 
@@ -38,15 +39,15 @@ for i = 1:length(all_files)
         %     se = strel('line',10,0);
         %     mask = imdilate(bwareafilt(mask,2),se);
         % end
-        save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+        save([fileparts(all_files(i).folder),'\mask_denoised.mat'],'mask')
     end
 end
 
 %% process and store all values
 ft_type= 'movmean'; %the type of smoothing for fictrac data
-ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
+ft_win = 1; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'gaussian','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {30,1};
+im_win = {10,1};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
@@ -65,7 +66,7 @@ for i = length(all_data):length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
     load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
+    load([fileparts(all_files(i).folder),'\mask_denoised.mat'])
 
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
 
@@ -244,13 +245,16 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-idx = find(cellfun(@(x)(contains(x,'20260219\fly 7\')),{all_data.meta})); %,6,'last');
-i = idx(1);
-i = 8;
+%idx = find(cellfun(@(x)(contains(x,'20260216\fly 2\')),{all_data.meta})); %,6,'last');
+%i = idx(4);
+i = 1;
 
+pre_smooth = 90;
+post_smooth = 90;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .2;
+rho_thresh = .1;
 
 figure(2); clf
 a1 = subplot(3,1,1);
@@ -258,8 +262,6 @@ imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
 hold on
 if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
-idx = round(all_data(i).ft.cue,4) == -.2945;
-
 a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
 title(all_data(i).meta,'Interpreter','none')
 xlabel('time (s)')
@@ -280,13 +282,6 @@ imagesc(all_data(i).im.mask); hold on
 scatter(all_data(i).im.centroids(:,2),all_data(i).im.centroids(:,1),'.r')
 view(90,90); xticks([]); yticks([])
 
-a2 = subplot(6,1,3); hold on
-offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
-%a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
-%a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
-plot(all_data(i).ft.xf,abs(all_data(i).ft.r_speed))
-ylabel('r speed')
-
 %plot(all_data(i).ft.xf,all_data(i).ft.f_speed)
 % patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
 % ylabel('offset')
@@ -298,64 +293,358 @@ ylabel('r speed')
 % box(ax,'off')
 % ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
 
-a3 = subplot(6,1,4); hold on
-%scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
-%scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
-% xlim([min(all_data(i).ft.xb),max(all_data(i).ft.xb)])
-% ylim([0,5])
-% plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
-% ylabel('gain'); legend('instant','integ','autoupdate','off')
+dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',pre_smooth);
+cc  = smoothdata(abs(dc),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+mu = unwrap(all_data(i).im.mu);
+mu(all_data(i).im.rho< rho_thresh) = nan;
+mu  = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+dm  = smoothdata([diff(mu) * 60;0],'gaussian',1);
+cm  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+g   = median(-dc(abs(dr)>.1) ./ dr(abs(dr)>.1));
 
-r_lag = abs(all_data(i).ft.r_speed);
-r_lag = r_lag(1:end-3);
-c_lag = smoothdata(abs(gradient(unwrap(all_data(i).ft.cue))) * 60,'gaussian',10);
-c_lag = c_lag(4:end);
-freeze_idx = bwareaopen(r_lag > r_thresh & c_lag < r_thresh,20);
-patch([all_data(i).ft.xf(1:end-3);flipud(all_data(i).ft.xf(1:end-3))],[freeze_idx;freeze_idx*0],'r')
-plot(all_data(i).ft.xb,max(all_data(i).im.z,[],1))
-ylabel(' max z scored dff')
-linkaxes([a1,a2,a3],'x')
+freeze_idx = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
+
+a3 = subplot(6,1,3); hold on
+plot(all_data(i).ft.xf,abs(cr))
+plot(all_data(i).ft.xf,abs(cc))
+plot(all_data(i).ft.xf,abs(cm))
+y = ylim;
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*freeze_idx;-100*flipud(freeze_idx)],'r','FaceAlpha',.1,'edgecolor','none')
+ylim(y);
+ylabel('r speed (rad/s)')
+legend('fly','cue','bump')
+
+a4 = subplot(6,1,4); hold on
+plot(all_data(i).ft.xf,amp)
+ylabel('max dff z-scored')
+y = ylim;
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*freeze_idx;-100*flipud(freeze_idx)],'r','FaceAlpha',.1,'edgecolor','none')
+
+linkaxes([a1,a2,a3,a4],'x')
 axis tight
+ylim(y);
 
 subplot(3,2,5); hold on
-tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
-h = histogram(tmp(abs(all_data(i).ft.r_speed)>r_thresh),'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
+scatter(cr(~freeze_idx),amp(~freeze_idx),5,'k','filled','MarkerFaceAlpha',.1)
+scatter(cr(freeze_idx),amp(freeze_idx),5,'r','filled','MarkerFaceAlpha',.1)
+legend('moving','frozen')
 
-xlabel('gain')
-ylabel('counts')
-legend('integrative','color','none','textcolor','w')
+subplot(3,2,6); hold on
+tmp = ceil(max(cr));
+edges = 0:.25:tmp;
+binned_amp = nan(length(edges)-1,2);
+binned_sem = nan(length(edges)-1,2);
+for j = 1:(length(edges)-1)
+    idx1 = cr > edges(j) & cr < edges(j+1) & freeze_idx;
+    idx2 = cr > edges(j) & cr < edges(j+1) & ~freeze_idx;
 
-subplot(3,2,6); 
-histogram(all_data(i).ft.f_speed,'edgecolor','none')
-xlabel('f speed')
+    idx1 = idx1 * (sum(idx1) / 60) > 5;
+    idx2 = idx2 * (sum(idx2) / 60) > 5;
+
+    binned_amp(j,1) = mean(amp(idx1),'omitnan');
+    binned_amp(j,2) = mean(amp(idx2),'omitnan');
+    binned_sem(j,1) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+    binned_sem(j,2) = std(amp(idx2),'omitnan') / sqrt(sum(~isnan(amp(idx2))));
+end
+errorbar(edges(1:end-1),binned_amp(:,1),binned_sem(:,1),'o-r')
+errorbar(edges(1:end-1),binned_amp(:,2),binned_sem(:,2),'o-k')
+
+% subplot(3,2,5); hold on
+% tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+% h = histogram(tmp(abs(all_data(i).ft.r_speed)>r_thresh),'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
+% 
+% xlabel('gain')
+% ylabel('counts')
+% legend('integrative','color','none','textcolor','w')
+% 
+% subplot(3,2,6); 
+% histogram(all_data(i).ft.f_speed,'edgecolor','none')
+% xlabel('f speed')
 
 %% show dff as a function of cue gain
 
-figure(3); clf
-t = tiledlayout("flow");
+edges1 = 0:.1:10; %ceil(max(cr));
+edges2 = 0:.1:10; %ceil(max(cm));
+
+binned_amp = nan(length(edges2)-1,length(edges1)-1,2,length(all_data));
+binned_sem = nan(length(edges2)-1,length(edges1)-1,2,length(all_data));
+dark_idx = false(length(all_data),1);
+
 
 for i = 1:length(all_data)
-nexttile; hold on
-dff = interp1(all_data(i).ft.xb,all_data(i).im.d',all_data(i).ft.xf);
+dark_idx(i) = contains(all_data(i).ft.pattern,'background');
+
+dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
 amp = max(dff,[],2);
-dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',20); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
-cr  = smoothdata(abs(dr),'movmean',[60,0]); %calculate the cumulative rotational speed
-dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',20);
-cc  = smoothdata(abs(dc),'movmean',[60,0]); %calculate the cumulative rotational speed
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',pre_smooth);
+cc  = smoothdata(abs(dc),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+mu = unwrap(all_data(i).im.mu);
+mu(all_data(i).im.rho< rho_thresh) = nan;
+mu  = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+dm  = smoothdata([diff(mu) * 60;0],'gaussian',1);
+cm  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+g   = median(-dc(abs(dr)>.1) ./ dr(abs(dr)>.1));
 
+freeze_idx = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
 
-g = smoothdata(-dc ./ dr,'movmean',[60,0]);
-scatter(cr(g<.5),amp(g<.5),'g.')
-scatter(cr(g>.9),amp(g>.9),'r.')
-scatter(cr(g<.9 & g>.5),amp(g<.9 & g>.5),'k.')
-%histogram(g(abs(dr)>.1),'binedges',-1:.1:2)
+for k = 1:(length(edges2)-1)
+for j = 1:(length(edges1)-1)
+    idx1 = cm > edges2(k) & cm < edges2(k+1) & cr > edges1(j) & cr < edges1(j+1) & freeze_idx;
+    idx2 = cm > edges2(k) & cm < edges2(k+1) & cr > edges1(j) & cr < edges1(j+1) & ~freeze_idx;
+
+    %idx1 = idx1 * (sum(idx1) / 60) > .2;
+    %idx2 = idx2 * (sum(idx2) / 60) > .2;
+
+    binned_amp(k,j,1,i) = mean(amp(idx1),'omitnan');
+    binned_amp(k,j,2,i) = mean(amp(idx2),'omitnan');
+    %binned_sem(k,j,1) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+    %binned_sem(k,j,2) = std(amp(idx2),'omitnan') / sqrt(sum(~isnan(amp(idx2))));
+end
+end
 end
 
-linkaxes(get(t,'Children'),'y')
-set(get(t,'Children'),'color','none')
-xlabel(t,'cumulative rotation (1s prior)')
-ylabel(t,'bump max')
 
+%%
+figure(3); clf
+t = tiledlayout("flow");
+nexttile
+imagesc(edges1,edges2,mean(binned_amp(:,:,1,~dark_idx),4,'omitnan'))
+title('freeze')
+clim([0,8])
+
+nexttile
+imagesc(edges1,edges2,mean(binned_amp(:,:,2,~dark_idx),4,'omitnan'))
+title('moving')
+clim([0,8])
+
+nexttile
+imagesc(edges1,edges2,mean(binned_amp(:,:,2,dark_idx),4,'omitnan'))
+title('dark')
+clim([0,8])
+
+xlabel(t,"average fly speed")
+ylabel(t,"average bump speed")
+set(get(t,'Children'),'YDir','normal')
+linkaxes(get(t,'Children'))
+%% show binned amp vs rotational speed for every trial
+pre_smooth = 90;
+post_smooth = 90; %these are in units of frames. so it's really 2s 
+
+[c,ia,fly_id] = unique(cellfun(@(x)(x(1:34)),{all_data.meta}','UniformOutput',false));
+
+figure(4); clf
+t = tiledlayout("flow");
+
+
+edges = 0:.25:2;
+binned_amp = nan(length(edges)-1,2,length(all_data));
+binned_sem = nan(length(edges)-1,2,length(all_data));
+
+for i = 1:length(all_data)
+dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',pre_smooth);
+cc  = smoothdata(abs(dc),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+mu = unwrap(all_data(i).im.mu);
+mu(all_data(i).im.rho< rho_thresh) = nan;
+mu  = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+dm  = smoothdata([diff(mu) * 60;0],'gaussian',1);
+cm  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+g   = median(-dc(abs(dr)>.1) ./ dr(abs(dr)>.1));
+
+freeze_idx = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
+tmp = ceil(max(cr));
+
+for j = 1:(length(edges)-1)    
+    idx1 = cm < 10 & cr > edges(j) & cr < edges(j+1) & freeze_idx;
+    idx2 = cm < 10 & cr > edges(j) & cr < edges(j+1) & ~freeze_idx;
+
+    idx1 = idx1 * (sum(idx1) / 60) > 5;
+    idx2 = idx2 * (sum(idx2) / 60) > 5;
+
+    binned_amp(j,1,i) = mean(amp(idx1),'omitnan');
+    binned_amp(j,2,i) = mean(amp(idx2),'omitnan');
+    binned_sem(j,1,i) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+    binned_sem(j,2,i) = std(amp(idx2),'omitnan') / sqrt(sum(~isnan(amp(idx2))));
+end
+
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'k'; end
+%if g < .5; c = 'k'; elseif g > .9; c = 'm'; else; c = 'b'; end
+%if i > 1 && ic(i) > ic(i-1); nexttile; hold on; end 
+nexttile; hold on
+errorbar(edges(1:end-1),binned_amp(:,1,i),binned_sem(:,1,i),'-r')
+errorbar(edges(1:end-1),binned_amp(:,2,i),binned_sem(:,2,i),['-',c])
+%title(sprintf('gain: %.2f',g))
+end
+
+linkaxes(get(t,'Children'))
+
+
+%% show binned amp vs rotational speed for every fly
+
+[c,ia,fly_id] = unique(cellfun(@(x)(x(1:34)),{all_data.meta}','UniformOutput',false));
+
+figure(4); clf
+t = tiledlayout("flow");
+
+
+edges = 0:.25:2;
+binned_amp = nan(length(edges)-1,3,max(fly_id));
+binned_sem = nan(length(edges)-1,3,max(fly_id));
+
+amp_cell = cell(length(all_data));
+cr_cell  = cell(length(all_data));
+cc_cell  = cell(length(all_data));
+cm_cell  = cell(length(all_data));
+
+for i = 1:length(all_data)
+dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+amp_cell{i} = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr_cell{i}  = smoothdata(abs(dr),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',pre_smooth);
+cc_cell{i}  = smoothdata(abs(dc),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+mu = unwrap(all_data(i).im.mu);
+mu(all_data(i).im.rho< rho_thresh) = nan;
+mu  = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+dm  = smoothdata([diff(mu) * 60;0],'gaussian',1);
+cm_cell{i}  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+g   = median(-dc(abs(dr)>.1) ./ dr(abs(dr)>.1));
+
+end
+
+for i = 1:max(fly_id)
+
+amp = cat(1,amp_cell{fly_id == i & ~dark_idx});
+cr = cat(1,cr_cell{fly_id == i & ~dark_idx});
+cc = cat(1,cc_cell{fly_id == i & ~dark_idx});
+cm = cat(1,cm_cell{fly_id == i & ~dark_idx});
+
+freeze_idx = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
+tmp = ceil(max(cr));
+
+for j = 1:(length(edges)-1)    
+    idx1 = cm < 10 & cr > edges(j) & cr < edges(j+1) & freeze_idx;
+    idx2 = cm < 10 & cr > edges(j) & cr < edges(j+1) & ~freeze_idx;
+
+    idx1 = idx1 * (sum(idx1) / 60) > 5;
+    idx2 = idx2 * (sum(idx2) / 60) > 5;
+
+    binned_amp(j,1,i) = mean(amp(idx1),'omitnan');
+    binned_amp(j,2,i) = mean(amp(idx2),'omitnan');
+    binned_sem(j,1,i) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+    binned_sem(j,2,i) = std(amp(idx2),'omitnan') / sqrt(sum(~isnan(amp(idx2))));
+end
+
+amp = cat(1,amp_cell{fly_id == i & dark_idx});
+cr = cat(1,cr_cell{fly_id == i & dark_idx});
+cc = cat(1,cc_cell{fly_id == i & dark_idx});
+cm = cat(1,cm_cell{fly_id == i & dark_idx});
+
+
+for j = 1:(length(edges)-1)    
+    idx1 = cm < 10 & cr > edges(j) & cr < edges(j+1);
+
+    idx1 = idx1 * (sum(idx1) / 60) > 5;
+
+    binned_amp(j,3,i) = mean(amp(idx1),'omitnan');
+    binned_sem(j,3,i) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+end
+
+%if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'k'; end
+%if g < .5; c = 'k'; elseif g > .9; c = 'm'; else; c = 'b'; end
+%if i > 1 && ic(i) > ic(i-1); nexttile; hold on; end 
+nexttile; hold on
+errorbar(edges(1:end-1),binned_amp(:,1,i),binned_sem(:,1,i),'-r','Linewidth',2)
+errorbar(edges(1:end-1),binned_amp(:,2,i),binned_sem(:,2,i),'-k','Linewidth',2)
+errorbar(edges(1:end-1),binned_amp(:,3,i),binned_sem(:,3,i),'-m','Linewidth',2)
+%title(sprintf('gain: %.2f',g))
+end
+legend('frozen cue','moving cue','darkness')
+xlabel(t,{'binned rot speed (rad/s)','lower bound'})
+ylabel(t,'peak dFF')
+linkaxes(get(t,'Children'))
+
+%%
+figure(5); clf
+subplot(2,2,1)
+plot(edges(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,1,:)),'-','Color',[.2,.2,.2])
+hold on
+plot(xlim,[0,0],':k','Linewidth',2)
+ylabel('dff moving - freeze'); xlabel('fly rot speed (rad/s)')
+
+
+subplot(2,2,2)
+plot(edges(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,3,:)),'-','Color',[.2,.2,.2])
+hold on
+plot(xlim,[0,0],':k','Linewidth',2)
+ylabel('dff moving - dark'); xlabel('fly rot speed (rad/s)')
+
+subplot(2,2,3)
+plot(edges(1:end-1),squeeze(binned_amp(:,1,:) - binned_amp(:,3,:)),'-','Color',[.2,.2,.2])
+hold on
+plot(xlim,[0,0],':k','Linewidth',2)
+ylabel('dff freeze - dark'); xlabel('fly rot speed (rad/s)')
+
+%% find the optimal rotational speed smoothing
+
+pre_smooth = 1:100:600;
+post_smooth = 10:100:600;
+lags       = 1:5:20;
+corr_mat = nan(length(pre_smooth),length(post_smooth),length(lags),length(all_data));
+
+for i = 1:length(all_data)
+    disp(i)
+    for j  = 1:length(pre_smooth)
+        for k = 1:length(post_smooth)
+            for ll = 1:length(lags)
+                dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+                amp = max(dff,[],2);
+                dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth(j)); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+                cr  = smoothdata(abs(dr),'movmean',[post_smooth(k),0]); %calculate the cumulative rotational speed
+             
+                lag = lags(ll);
+
+                amp = amp(lag:end);
+                cr  = cr(1:end-(lag-1));
+
+                idx = ~isnan(amp);
+                corr_mat(j,k,ll,i) = corr(cr(idx),amp(idx));
+           end
+        end
+    end
+end
+
+%%
+figure(6); clf
+
+t = tiledlayout("flow");
+for i = 1:length(all_data)
+    nexttile
+    imagesc(post_smooth,pre_smooth,mean(corr_mat(:,:,3,i),3))
+end
+xlabel(t,'post abs smooth')
+ylabel(t,'pre abs smooth')
+
+figure(7); clf
+t = tiledlayout("flow");
+for i = 1:size(corr_mat,3)
+    nexttile
+    imagesc(post_smooth,pre_smooth,mean(corr_mat(:,:,i,:),4))
+    title(sprintf("lag: %.2fs",lags(i)/60))
+    clim([.6,.75])
+    colorbar
+end
+xlabel(t,'post abs smooth')
+ylabel(t,'pre abs smooth')
 %% Functions
 
 function s = process_ft(ftData_DAQ, ft_win, ft_type)

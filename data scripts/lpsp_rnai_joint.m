@@ -71,7 +71,7 @@ end
 
 
 %% extract the integrative gain of each trial, group identical trials
-hv_thresh = .4; %what is the heading variability of specific integrative gain window have to be to be counted (low variability heading traces can have any gain and it'll work, becase the fly isn't rotating)
+hv_thresh = .1; %what is the heading variability of specific integrative gain window have to be to be counted (low variability heading traces can have any gain and it'll work, becase the fly isn't rotating)
 v_thresh  = .1; %what is the maximum loss function value (circvar of circdist) to be counted as a reasonable estimate of the gain (the optimization "worked")
 
 g = {}; %create a cell array for each trial extracting the fit gains which pass the selection criteria
