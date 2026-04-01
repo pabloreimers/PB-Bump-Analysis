@@ -59,7 +59,7 @@ for i = 1:length(all_files)
         save([filepath,'\registration\imagingData_trial001.mat'],'img','-v7.3')
     
         img{1} = squeeze(sum(img{1},3));
-        img{2} = squeeze(sum(img{2},3));
+        try img{2} = squeeze(sum(img{2},3)); end
 
         save([filepath,'\registration\imagingData.mat'],'img','-v7.3')
         

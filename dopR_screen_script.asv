@@ -8,31 +8,29 @@ for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
     clear img regProduct 
 
-    %if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
+    if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
         
-        imgData = img{1};
-        %imgData = squeeze(sum(img{1},3));
-        top_pct = prctile(imgData,98,'all');
-        bot_pct = prctile(imgData,5,'all');
-
-        imgData(imgData>top_pct) = top_pct;
-        imgData(imgData<bot_pct) = bot_pct;        
-
-        figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
-        mask = roipoly();
-        
-        % mask = mean(imgData,3) > mean(imgData,'all');
-        % tmp = regionprops(mask);
-        % tmp = sort([tmp.Area],'descend');
-        % if (tmp(1) / tmp(2)) > 1.5
-        %     mask = bwareafilt(mask,1);
-        % else
-        %     se = strel('line',10,0);
-        %     mask = imdilate(bwareafilt(mask,2),se);
-        % end
+        % %imgData = squeeze(sum(img{1},3));
+        % top_pct = prctile(imgData,98,'all');
+        % bot_pct = prctile(imgData,5,'all');
+        % 
+        % imgData(imgData>top_pct) = top_pct;
+        % imgData(imgData<bot_pct) = bot_pct;        
+        % 
+        % figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
+        % mask = roipoly();
+        mask = mean(imgData,3) > mean(imgData,'all');
+        tmp = regionprops(mask);
+        tmp = sort([tmp.Area],'descend');
+        if (tmp(1) / tmp(2)) > 1.5
+            mask = bwareafilt(mask,1);
+        else
+            se = strel('line',10,0);
+            mask = imdilate(bwareafilt(mask,2),se);
+        end
         save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
-    %end
+    end
 end
 
 %% process and store all values
@@ -238,9 +236,9 @@ for i = 1:length(all_data)
 end
 
 %% create figure to show example
-%idx = find(cellfun(@(x)(contains(x,'20260213\fly 1\')),{all_data.meta})); %,6,'last');
-%i = idx(1);
-i = 5;
+idx = find(cellfun(@(x)(contains(x,'20260213\fly 1\')),{all_data.meta})); %,6,'last');
+i = idx(1);
+i = 1;
 
 binedges = 0:.05:5;
 dark_mode = false;

@@ -184,7 +184,7 @@ for i = 1:length(all_data)
 end
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20260330\fly 5\')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260326\fly 1\')),{all_data.meta})); %,6,'last');
 %idx = 1;
 dark_mode = true;
 figure(2); clf
