@@ -247,7 +247,7 @@ end
 %% create figure to show example
 %idx = find(cellfun(@(x)(contains(x,'20260216\fly 2\')),{all_data.meta})); %,6,'last');
 %i = idx(4);
-i = 6;
+i = 108;
 
 pre_smooth = 90;
 post_smooth = 90;
@@ -307,7 +307,7 @@ cm  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative r
 g   = round(medfilt1(-dc ./ dr,1e3),1);
 
 freeze_idx = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
-freeze_idx = g > .5;
+freeze_idx = g > 1;
 
 a3 = subplot(6,1,3); hold on
 plot(all_data(i).ft.xf,abs(cr))
@@ -666,7 +666,7 @@ edges = 0:.25:5;
 binned_amp = nan(length(edges)-1,3,length(all_data));
 binned_sem = nan(length(edges)-1,3,length(all_data));
 
-for i = 1:length(all_data)
+for i = 50:length(all_data)
 dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
 amp = max(dff,[],2);
 dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
@@ -802,7 +802,7 @@ errorbar(edges(1:end-1),binned_amp(:,4,i),binned_sem(:,4,i),'-','Color',[0,0,1],
 %title(sprintf('gain: %.2f',g))
 end
 pos = get(gca,'Position');
-legend('low gain','med gain','high gain','Location','Northeastoutside')
+legend('low gain','med gain','high gain','dark','Location','Northeastoutside')
 set(gca,'Position',pos)
 xlabel(t,{'binned rot speed (rad/s)','lower bound'})
 ylabel(t,'peak dFF')
