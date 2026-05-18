@@ -274,7 +274,7 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_str = tmp_str;
     
-    if (sum(all_data(i).ft.f_speed>.1) > length(all_data(i).ft.f_speed)/5) && sum(abs(diff(unwrap(all_data(i).ft.cue)))) > 5 && mean(all_data(i).im.rho) > .4
+    if (sum(all_data(i).ft.f_speed>.5) > length(all_data(i).ft.f_speed)/2) && sum(abs(diff(unwrap(all_data(i).ft.cue)))) > 5 && mean(all_data(i).im.rho) > .4
         walk_idx(i) = true;
     end
     
@@ -292,7 +292,7 @@ end
 
 
 %% create figure to show example
-i = 1;
+i = 345;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .5;
@@ -342,7 +342,9 @@ a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 
 a3 = subplot(6,1,4); hold on
 scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
-scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
+tmp = all_data(i).gain.g;
+tmp(all_data(i).gain.hv<.1 | all_data(i).gain.v>.1) = nan;
+scatter(all_data(i).gain.xt,tmp,'.')
 ylabel('gain'); legend('instant','integ','autoupdate','off')
 
 linkaxes([a1,a2,a3],'x')
@@ -351,7 +353,10 @@ ylim([0,5])
 plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
-tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+tmp = all_data(i).gain.g;
+tmp(all_data(i).gain.hv < .1| all_data(i).gain.v>.5) = nan;
+tmp = interp1(all_data(i).gain.xt,tmp,all_data(i).ft.xf);
+tmp(all_data(i).ft.xf > 530) = nan;
 h = histogram(tmp(abs(all_data(i).ft.r_speed)>r_thresh),'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
 
 xlabel('gain')
@@ -367,7 +372,7 @@ c = 'k';
 
 g = {};
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .4 & all_data(i).gain.v < .1);
+    g{i} = all_data(i).gain.g(all_data(i).gain.hv >.1); %all_data(i).gain.g(all_data(i).gain.hv > .4 & all_data(i).gain.v < .1);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);

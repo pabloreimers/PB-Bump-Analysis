@@ -108,10 +108,11 @@ hv = cell(length(all_data),1);
 
 counter=0;
 for i = 1:length(all_data)
-    if isfield(all_data(i),'gain')
+    counter=counter+1;
+    if ~isfield(all_data(i),'gain')
         break
     end
-    counter=counter+1;
+    
 end
 
 tic
@@ -188,7 +189,7 @@ g = cell(length(all_data),1);
 v = cell(length(all_data),1);
 
 tic
-for i = 200:length(all_data)
+for i = 1:length(all_data)
     if isempty(all_data(i).ft); continue; end
     fprintf('processing: %i ',i)
 
@@ -291,7 +292,7 @@ end
 
 
 %% create figure to show example
-i = 18;
+i = 50;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .5;
@@ -341,7 +342,9 @@ a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 
 a3 = subplot(6,1,4); hold on
 scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
-scatter(all_data(i).gain.xt,all_data(i).gain.g,'.')
+tmp = all_data(i).gain.g;
+tmp(all_data(i).gain.hv<.1) = nan;
+scatter(all_data(i).gain.xt,tmp,'.')
 ylabel('gain'); legend('instant','integ','autoupdate','off')
 
 linkaxes([a1,a2,a3],'x')
@@ -350,7 +353,9 @@ ylim([0,5])
 plot(xlim,[.8,.8],'k:'); %plot(xlim,[1.6,1.6],':k')
 
 subplot(3,2,5); hold on
-tmp = interp1(all_data(i).gain.xt,all_data(i).gain.g,all_data(i).ft.xf);
+tmp = all_data(i).gain.g;
+tmp(all_data(i).gain.hv < .1) = nan;
+tmp = interp1(all_data(i).gain.xt,tmp,all_data(i).ft.xf);
 h = histogram(tmp(abs(all_data(i).ft.r_speed)>r_thresh),'BinEdges',binedges,'FaceAlpha',.8,'Normalization','probability','EdgeColor','none');
 
 xlabel('gain')
@@ -366,7 +371,7 @@ c = 'k';
 
 g = {};
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > .4 & all_data(i).gain.v < .1);
+    g{i} = all_data(i).gain.g(all_data(i).gain.hv >.1); %all_data(i).gain.g(all_data(i).gain.hv > .4 & all_data(i).gain.v < .1);
 end
 g = reshape(g,[],1);
 mean_g = cellfun(@(x)(mean(x,'omitnan')),g);

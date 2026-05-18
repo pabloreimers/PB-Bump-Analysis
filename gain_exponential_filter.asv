@@ -1,0 +1,133 @@
+i = 444;
+
+g = .8;
+tau = 1e-2; %this is your filter rate
+
+x0 = [g,tau];
+lb = [0,0];
+ub = [5,3];
+
+x = zeros(length(all_data),2);
+fval = inf(length(all_data),1);
+
+for i = 1:length(all_data)
+    disp(i)
+    [x(i,:),fval(i)] = fmincon(@(p) opt_fun(p,all_data,i),x0,[],[],[],[],lb,ub);
+end
+
+%% 
+i = 328;
+figure(4);clf; 
+
+subplot(2,1,1)
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta,'Interpreter','none')
+xlabel('time (s)')
+
+subplot(2,1,2)
+hold on
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k'); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xb,all_data(i).im.mu,'b'); a.YData(abs(diff(a.YData))>pi) = nan;
+a = plot(all_data(i).ft.xf,mod(expt_filt(all_data,i,x(i,1),x(i,2)),2*pi)-pi,'r'); a.YData(abs(diff(a.YData))>pi) = nan;
+legend('heading','bump','model')
+linkaxes(get(gcf,'Children'))
+axis tight
+
+pos = get(gca,'Position');
+pos1 = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos1,'Color','none','XAxisLocation','top'); hold on
+idx = all_data(i).ft.r_speed > r_thresh;
+mu1  = interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf);
+histogram(circ_dist(mu1(idx),-all_data(i).ft.cue(idx)),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability','facecolor','b')
+mu2 = expt_filt(all_data,i,x(i,1),x(i,2));
+histogram(circ_dist(mu1(idx),mu2(idx)),-pi:.1:pi,'Orientation','horizontal','edgeColor','none','Normalization','probability','facecolor','r')
+box(ax,'off')
+ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+
+%%
+g = x(:,1);
+
+inc_idx = walk_idx & cue_idx & rho_idx; %create an inclusion index. had to walk, cue had to be working, bump had to be detectable
+
+group_idx = [fly_num,empty_idx,mcherry_idx,vglut_idx,dark_idx];
+
+g = g(inc_idx); %remove all trials to exclude
+group_idx = group_idx(inc_idx,:);
+
+[unique_groups,~,ic] = unique(group_idx,'rows');
+g_grouped = nan(length(unique_groups),1);
+v_grouped = nan(length(unique_groups),1);
+
+for i = 1:length(unique_groups)
+    g_grouped(i) = mean(vertcat(g(ic==i)),'omitnan');
+end 
+
+group_ind   = 1+sum(unique_groups(:,2:5) .* [1,2,4,8],2);
+group_labels= { 'LPsP\newlineTH-RNAi\newlineCL\newline',...
+                'Empty\newlineTH-RNAi\newlineCL\newline',...
+                'LPsP\newlinemCherry-RNAi\newlineCL\newline',...
+                'Empty\newlinemCherry-RNAi\newlineCL\newline',...
+                'LPsP\newlinevGlut-RNAi\newlineCL\newline',...
+                'Empty\newlinevGlut-RNAi\newlineCL\newline',...
+                'x',...
+                'x',...
+                'LPsP\newlineTH-RNAi\newlineDark\newline',...
+                'Empty\newlineTH-RNAi\newlineDark\newline',...
+                'LPsP\newlinemCherry-RNAi\newlineDark\newline',...
+                'Empty\newlinemCherry-RNAi\newlineDark\newline',...
+                'LPsP\newlinevGlut-RNAi\newlineDark\newline',...
+                'Empty\newlinevGlut-RNAi\newlineDark\newline',...
+                'x',...
+                'x'};
+
+figure(1); clf
+
+for i = unique(group_ind)'
+    subplot(2,1,1); hold on
+    scatter(i*ones(sum(group_ind==i),1),g_grouped(group_ind==i),'k','filled','MarkerFaceAlpha',.1);
+    errorbar(i+.1,mean(g_grouped(group_ind==i),'omitnan'),std(g_grouped(group_ind==i),'omitnan')/sqrt(sum(group_ind==i)),'or')
+    group_labels{i} = [group_labels{i},sprintf('(n = %i)',sum(group_ind==i))];
+    
+    subplot(2,1,2); hold on
+    scatter(i*ones(sum(group_ind==i),1),v_grouped(group_ind==i),'k','filled','MarkerFaceAlpha',.1);
+    errorbar(i+.1,mean(v_grouped(group_ind==i),'omitnan'),std(v_grouped(group_ind==i),'omitnan')/sqrt(sum(group_ind==i)),'or')
+end
+subplot(2,1,1); ylabel('mean gain'); plot(xlim,.8*[1,1],':k'); xticks(1:length(group_labels)); xticklabels(group_labels)
+subplot(2,1,2); ylabel('mean variance'); xticks(1:length(group_labels)); xticklabels(group_labels)
+linkaxes(get(gcf,"Children"),'x')
+%%
+function loss = opt_fun(p, all_data, i)
+    
+    g = p(1);
+    tau = p(2);
+
+    y = expt_filt(all_data,i,g,tau);
+
+    bump = mod(interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf),2*pi);
+    rho  = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+    y    = mod(y,2*pi);
+    idx = ~isnan(bump) & ~isnan(y) & rho >.4;
+    loss = circ_var(circ_dist(y(idx),bump(idx)));
+    if sum(idx)==0
+        loss = 2;
+    end
+end
+
+function y = expt_filt(all_data,i,g,tau)
+
+    dt = mean(diff(all_data(i).ft.xf));
+    alpha = dt / (tau+dt);
+
+    x = cumsum(all_data(i).ft.r_speed * g) * dt; %this is bump prime, the "perfect" bump with some gain
+    
+    y = zeros(size(x));
+    y(1) = x(1);
+    
+    for t = 2:length(x) %implement exponential filter of time series
+        y(t) = alpha * x(t) + (1-alpha) * y(t-1);
+    end
+end

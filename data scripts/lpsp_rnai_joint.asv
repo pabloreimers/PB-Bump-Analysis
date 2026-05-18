@@ -40,7 +40,8 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_id = fly_id;
     
-    if (sum(all_data(i).ft.f_speed>for_thresh) > length(all_data(i).ft.f_speed)*for_length) 
+    %if (sum((all_data(i).ft.f_speed>for_thresh) | (abs(all_data(i).ft.r_speed)*2 > for_thresh)) > length(all_data(i).ft.f_speed)*for_length)
+    if (sum(all_data(i).ft.f_speed>for_thresh) > length(all_data(i).ft.f_speed)*for_length)
         walk_idx(i) = true;
     end
     
@@ -73,12 +74,23 @@ end
 %% extract the integrative gain of each trial, group identical trials
 hv_thresh = .1; %what is the heading variability of specific integrative gain window have to be to be counted (low variability heading traces can have any gain and it'll work, becase the fly isn't rotating)
 v_thresh  = .1; %what is the maximum loss function value (circvar of circdist) to be counted as a reasonable estimate of the gain (the optimization "worked")
+r_thersh
+
 
 g = {}; %create a cell array for each trial extracting the fit gains which pass the selection criteria
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > hv_thresh & all_data(i).gain.v < v_thresh);
+    tmp = all_data(i).gain.g;
+    tmp(all_data(i).gain.hv < hv_thresh | all_data(i).gain.v<v_thresh) = nan;
+    tmp = interp1(all_data(i).gain.xt,tmp,all_data(i).ft.xf);
+    rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+    tmp(abs(all_data(i).ft.r_speed)<r_thresh & rho < rho_thresh) = nan;
+    if sum(~isnan(tmp)) > 500
+        g{i} = tmp;
+    end
+    %g{i} = all_data(i).gain.g(all_data(i).gain.hv > hv_thresh & all_data(i).gain.v < v_thresh);
 end
 g = reshape(g,[],1);
+
 
 inc_idx = walk_idx & cue_idx & rho_idx; %create an inclusion index. had to walk, cue had to be working, bump had to be detectable
 
@@ -292,29 +304,65 @@ linkaxes(get(gcf,"Children"),'x')
 
 %% for each fly, find the optimal lag
 
-
+opt_lags = nan(length(all_data),1);
+opt_r     = nan(length(all_data),1);
 rho_thresh = .2;
+r_thresh = .1;
 
-
-
-dr = all_data(i).ft.r_speed;
-mu = unwrap(all_data(i).im.mu);
-mu(all_data(i).im.rho < rho_thresh) = nan;
-mu = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
-dm = gradient(mu)*60;
-
-
-lags    = 1:100;
-r       = nan(size(lags));
-for k = 1:length(lags)
-    lag = lags(k);
-
-    x = dr(1:end-lag);
-    y = dm(1+lag:end);
-    idx = ~isnan(x) & ~isnan(y);
-
-    r(k) = sum(x(idx) .* y(idx));
+for i = 1:length(all_data)
+    dr = all_data(i).ft.r_speed;
+    mu = unwrap(all_data(i).im.mu);
+    mu(all_data(i).im.rho < rho_thresh) = nan;
+    mu = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+    dm = gradient(mu)*60;
+    
+    
+    lags    = 1:100;
+    r       = nan(size(lags));
+    for k = 1:length(lags)
+        lag = lags(k);
+    
+        x = dr(1:end-lag);
+        y = dm(1+lag:end);
+        idx = ~isnan(x) & ~isnan(y) & x > r_thresh;
+    
+        r(k) = sum(x(idx) .* y(idx));
+    end
+    [opt_r(i),tmp] = max(r);
+    opt_lags(i) = lags(tmp);
 end
 
+%%
 figure(1); clf
-stem(lags,r)
+group_idx = [fly_num,empty_idx,mcherry_idx,vglut_idx,dark_idx];
+
+tmp = 1:length(all_data);
+
+a1 = subplot(2,1,1); hold on
+a2 = subplot(2,2,3); hold on
+a3 = subplot(2,2,4); hold on
+
+idx = ~empty_idx & ~mcherry_idx & ~vglut_idx & ~dark_idx & walk_idx;
+scatter(a1,tmp(idx),opt_lags(idx))
+scatter(a2,1*ones(sum(idx),1),opt_lags(idx),'filled','markerfacealpha',.1)
+scatter(a3,1*ones(sum(idx),1),opt_r(idx),'filled','markerfacealpha',.1)
+idx = empty_idx & ~mcherry_idx & ~vglut_idx & ~dark_idx & walk_idx;
+scatter(a1,tmp(idx),opt_lags(idx))
+scatter(a2,2*ones(sum(idx),1),opt_lags(idx),'filled','markerfacealpha',.1)
+scatter(a3,2*ones(sum(idx),1),opt_r(idx),'filled','markerfacealpha',.1)
+idx = ~empty_idx & mcherry_idx & ~vglut_idx & ~dark_idx & walk_idx;
+scatter(a1,tmp(idx),opt_lags(idx))
+scatter(a2,3*ones(sum(idx),1),opt_lags(idx),'filled','markerfacealpha',.1)
+scatter(a3,3*ones(sum(idx),1),opt_r(idx),'filled','markerfacealpha',.1)
+idx = ~empty_idx & ~mcherry_idx & vglut_idx & ~dark_idx & walk_idx;
+scatter(a1,tmp(idx),opt_lags(idx))
+scatter(a2,4*ones(sum(idx),1),opt_lags(idx),'filled','markerfacealpha',.1)
+scatter(a3,4*ones(sum(idx),1),opt_r(idx),'filled','markerfacealpha',.1)
+idx = empty_idx & ~mcherry_idx & vglut_idx & ~dark_idx & walk_idx;
+scatter(a1,tmp(idx),opt_lags(idx))
+scatter(a2,5*ones(sum(idx),1),opt_lags(idx),'filled','markerfacealpha',.1)
+scatter(a3,5*ones(sum(idx),1),opt_r(idx),'filled','markerfacealpha',.1)
+
+legend('lpsp th','empty th','lpsp mcherry','lpsp vglut','empty vglut')
+xlim(a2,[0,6]); plot(a2,xlim,[10,10],':k')
+xlim(a3,[0,6])

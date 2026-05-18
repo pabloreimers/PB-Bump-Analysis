@@ -4,8 +4,9 @@ clear all
 close all
 
 %% find path to all relevant files
-base_dir = ('Z:\pablo\lpsp_p2x2\todo\');
-all_files = dir([base_dir,'\**\*imagingData*.mat']);
+base_dir = ('Z:\pablo\dopamine_ionto_redo\');
+all_files = dir([base_dir,'\**\*imagingData.mat']);
+all_files = natsortfiles(all_files);
 
 %% make sure that each file has a mask
 for i = 1:length(all_files)
@@ -13,30 +14,44 @@ for i = 1:length(all_files)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
        
-ch1 = squeeze(mean(img{1},3));
-ch2 = squeeze(mean(img{2},3));
+        ch1 = squeeze(mean(img{1},3));
+        ch2 = squeeze(mean(img{2},3));
+        
+        t1 = prctile(ch1(:),90);
+        t2 = prctile(ch2(:),90);
+        b1 = prctile(ch1(:),5);
+        b2 = prctile(ch2(:),5);
+        %figure(1)
+        %image(256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2)); axis equal tight
 
-t1 = prctile(ch1(:),90);
-%t2 = prctile(ch2(:),90);
-b1 = prctile(ch1(:),5);
-%b2 = prctile(ch2(:),5);
-figure(1)
-%image(256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2)); axis equal tight
 
-
-        %imgData = 256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2);
+        imgData = 256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2);
         
         figure(1); clf; imagesc(mean(ch1,3)); axis equal tight; colormap(parula); drawnow;
         mask = roipoly();
         save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+        
+        % imgData = img{1};
+        % mask = mean(imgData,3) > mean(imgData,'all');
+        % tmp = regionprops(mask);
+        % tmp = sort([tmp.Area],'descend');
+        % if (tmp(1) / tmp(2)) > 1.5
+        %     mask = bwareafilt(mask,1);
+        % else
+        %     se = strel('line',10,0);
+        %     mask = imdilate(bwareafilt(mask,2),se);
+        % end
+
+        save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+
     end
 end
 
 %% process and store all values
 ft_type= 'gaussian'; %the type of smoothing for fictrac data
 ft_win = 30; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
-im_type= {'movmean','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {1,1};
+im_type= {'gaussian','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
+im_win = {5,1};
 
 n_centroid = 16;
 f0_pct = 7;
@@ -53,12 +68,15 @@ for i = 1:length(all_files)
     load([tmp2.folder,'\',tmp2.name])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_dat.mat']);
     load([tmp2.folder,'\',tmp2.name])
-
+    tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
+    tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
     %regProduct = img{1};
 
     all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
     all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).meta = all_files(i).folder;
+    all_data(i).ft.pattern = tmp2.patternPath{1}; 
+    all_data(i).ft.stims = ftData_DAQ.stim{1};
 
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
@@ -123,7 +141,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20240628\fly 2')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260506\fly 1')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -136,17 +154,17 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
-    xticks([])
+    %xticks([])
     
     set(gca,'color','none')
     hold on
-    [~,ind] = max(sum(all_data(idx(i)).atp.d,2));
+    [~,ind] = max(sum(all_data(idx(i)).atp.f,2));
     tmp_alpha = unwrap(all_data(i).im.alpha);
     scatter(0,tmp_alpha(ind),'r*')
-
+    
     a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m');
     a.YData(abs(diff(a.YData))>pi) = nan;
     a = plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'w');
@@ -155,10 +173,10 @@ for i = 1:length(idx)
 
     pos = get(gca,'Position');
     a3 = axes('Position',[pos(1),pos(2)+pos(4),pos(3),.03],'color','none'); 
-    plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)))   
+    plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)),'r','linewidth',2)   
     hold on
-    plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
-    plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
+    %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
+    %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
     yticks([]);xticks([])
     axis tight
     set(gca,'Color','none')
@@ -369,7 +387,7 @@ for i = 1:length(all_data)
         r_pulses{counter} = all_data(i).ft.r_speed(max(k+tmp_win2,1));
         a_pulses{counter} = all_data(i).atp.d(:,max(j+tmp_win,1));
         dark_idx{counter} = contains(all_data(i).meta,'dark');
-        exp_idx{counter} = ~contains(all_data(i).meta,'control');
+        exp_idx{counter} = ~contains(all_data(i).meta,'empty');
         
         counter = counter+1;
     end
@@ -454,8 +472,7 @@ end
 
 %% population average
 figure(6); clf
-t = win_start:.1:win_end;
-t2 = all_data(1).ft.xf(1:length(tmp_win2)) + win_start + 2;
+t = win_start:.1:win_end + 2;
 
 group_idx = right_idx + 2*exp_idx + 4*dark_idx;
 group_labels = {'left con cl','right con cl','left exp cl','right exp cl',...
@@ -465,24 +482,24 @@ m = cell(length(unique(group_idx)),1);
 c = cell(length(unique(group_idx)),1);
 x = cell(length(unique(group_idx)),1);
 
-cellfun
+m_pulses = reshape(cellfun(@(x)(interp1(1:length(x),x,1:length(t))),m_pulses,'UniformOutput',false),[],1);
+c_pulses = reshape(cellfun(@(x)(interp1(1:length(x),x,1:length(t))),c_pulses,'UniformOutput',false),[],1);
 
 for i = unique(group_idx)
     [~,tmp] = min(abs(t));
-    m{i+1} = unwrap(cell2mat(m_pulses(group_idx==i)));
+    m{i+1} = unwrap(cell2mat(m_pulses(group_idx==i))');
     m{i+1} = (m{i+1}-m{i+1}(tmp,:))';
 
-    [~,tmp] = min(abs(t2));
-    c{i+1} = -unwrap(cell2mat(c_pulses(group_idx==i)));
+    c{i+1} = -unwrap(cell2mat(c_pulses(group_idx==i))');
     c{i+1} = (c{i+1}-c{i+1}(tmp,:))';
 
-    x{i+1} = m{i+1} - interp1(t2,c{i+1}',t,'linear','extrap')';
+    x{i+1} = m{i+1} - c{i+1};
 end
 
 %% show pop avg
 dark_mode = false;
 figure(6); clf
-for i = 1:4
+for i = 1:2
 
 subplot(2,4,i); hold on
 plot(t,m{i*2-1},'r')
@@ -503,8 +520,8 @@ legend(group_labels((i*2-1):(i*2)),'Autoupdate','off')
 end
 
 ax = get(gcf,'Children');
-linkaxes(ax(2:3:12))
-linkaxes(ax(3:3:12))
+% linkaxes(ax(2:3:12))
+% linkaxes(ax(3:3:12))
 
 ax = get(gcf,'Children');
 
@@ -1908,33 +1925,42 @@ function x_white = whiten(x,dim)
     x_white = (x - mean(x,dim)) ./ range(x,dim);
 end
 
-function s = process_im(regProduct, im_win, im_type, mask, n_centroid, f0_pct)
+function s = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct)
     
-    imgData = squeeze(sum(smoothdata(regProduct,4,im_type{1},im_win{1}),3));
+    imgData = smoothdata(imgData,3,im_type{1},im_win{1});
     imgData = imgData - min(imgData,[],'all');
 
-    [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
-min_axis        = min(range(x_mask),range(y_mask));
-mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
-[y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
-ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
-[y0,x0]         = find(ep,1);
-
-[x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
-
-xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
-x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
-y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
-
-idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
-x_mid       = x_mid(idx);
-y_mid       = y_mid(idx);
-
-xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
-centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
-centroids   = centroids(2:2:end-1,:);                                                     %take every other so that we dont start at the edges, and all are same size
-%assign each pixel to a centroid
-[~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
+   [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
+    min_axis        = min(range(x_mask),range(y_mask));
+    mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+    
+    mask        = bwmorph(mask,'majority'); %fill in scraggly points
+    skel        = bwskel(mask); %initial skeleton of the mask
+    endpoints   = bwmorph(skel,'endpoints'); %find all possible endpoints of the multiple branches
+    D           = bwdistgeodesic(skel, find(endpoints, 1)); % Distance from first endpoint
+    [~, idx]    = max(D(:)); % Find the point furthest from start
+    D2          = bwdistgeodesic(skel, idx); % Distance from that furthest point
+    mid         = D+D2 == mode(D+D2,'all'); 
+    
+    [y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
+    ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
+    [y0,x0]         = find(ep,1);
+    
+    [x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
+    
+    xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
+    x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
+    y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
+    
+    idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
+    x_mid       = x_mid(idx);
+    y_mid       = y_mid(idx);
+    
+    xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
+    centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
+    centroids   = centroids(2:2:end-1,:);                                                     %take every other so that we dont start at the edges, and all are same size
+    %assign each pixel to a centroid
+    [~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 
     imgData_2d      = reshape(imgData,[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
     centroid_log    = false(2*n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
@@ -1965,9 +1991,11 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.mask = mask;
+    s.mid = mid;
+    s.centroids = centroids;
     %s.imgData = imgData;
 end
-
 function out = resample_pablo(N,x)
     idx = randi(length(x),length(x),N);
     out = x(idx);
@@ -2004,7 +2032,7 @@ function [gain,bias] = find_gain(fly_vel,mu,fr)
 end
 
 function h = plot_sem(ax,t,x)
-
+t = reshape(t,1,[]);
 m1 = mean(x,1,'omitnan');
 s1 = std(x,1,'omitnan')./sqrt(sum(~isnan(x),1));
 
@@ -2014,7 +2042,7 @@ s1 = s1(idx);
 t  = t(idx);
 
 
-h = patch(ax,[t;flipud(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
+h = patch(ax,[t,fliplr(t)],[m1+s1,fliplr(m1-s1)],'r','FaceAlpha',.5);
 end
 
 function rgb_image = mat2rgb(v,map)

@@ -21,9 +21,9 @@ last_id = '';
 fly_counter = 0;
 
 for_thresh = .1; %what is the minimum walking speed
-for_length = .2; %what percentage of the trial does the animal have to be walking that speed
+for_length = .5; %what percentage of the trial does the animal have to be walking that speed
 cue_thresh = 5;  %how much does the cue have to move to report that it was moving during the trial
-rho_thresh = 0.5; %what does the average pva rho have to be to label this brain as having a "bump" during the trial
+rho_thresh = .2; %what does the average pva rho have to be to label this brain as having a "bump" during the trial
 
 for i = 1:length(all_data)
     meta_parts  = split(all_data(i).meta,'\');
@@ -40,7 +40,8 @@ for i = 1:length(all_data)
     fly_num(i) = fly_counter;
     last_id = fly_id;
     
-    if (sum(all_data(i).ft.f_speed>for_thresh) > length(all_data(i).ft.f_speed)*for_length) 
+    if (sum((all_data(i).ft.f_speed>for_thresh) | (abs(all_data(i).ft.r_speed)*2 > for_thresh)) > length(all_data(i).ft.f_speed)*for_length)
+    %if (sum(all_data(i).ft.f_speed>for_thresh) > length(all_data(i).ft.f_speed)*for_length)
         walk_idx(i) = true;
     end
     
@@ -61,24 +62,36 @@ for i = 1:length(all_data)
     end
 
     if sum(abs(diff(unwrap(all_data(i).ft.cue)))) > cue_thresh
-        cue_idx = true;
+        cue_idx(i) = true;
     end
 
     if mean(all_data(i).im.rho) > rho_thresh
-        rho_idx = true;
+        rho_idx(i) = true;
     end
 end
 
 
 %% extract the integrative gain of each trial, group identical trials
 hv_thresh = .1; %what is the heading variability of specific integrative gain window have to be to be counted (low variability heading traces can have any gain and it'll work, becase the fly isn't rotating)
-v_thresh  = .1; %what is the maximum loss function value (circvar of circdist) to be counted as a reasonable estimate of the gain (the optimization "worked")
+v_thresh  = 1; %what is the maximum loss function value (circvar of circdist) to be counted as a reasonable estimate of the gain (the optimization "worked")
+r_thresh  = .5;
+rho_thresh= .5;
 
 g = {}; %create a cell array for each trial extracting the fit gains which pass the selection criteria
 for i = 1:length(all_data)
-    g{i} = all_data(i).gain.g(all_data(i).gain.hv > hv_thresh & all_data(i).gain.v < v_thresh);
+    tmp = all_data(i).gain.g;
+    tmp(all_data(i).gain.hv < hv_thresh | all_data(i).gain.v>v_thresh) = nan;
+    tmp = interp1(all_data(i).gain.xt,tmp,all_data(i).ft.xf);
+    rho = interp1(all_data(i).ft.xb,all_data(i).im.rho,all_data(i).ft.xf);
+    tmp(abs(all_data(i).ft.r_speed)<r_thresh & rho < rho_thresh) = nan;
+    tmp(all_data(i).ft.xf > 530) = nan;
+    if sum(~isnan(tmp)) > 500
+        g{i} = tmp;
+    end
+    %g{i} = all_data(i).gain.g(all_data(i).gain.hv > hv_thresh & all_data(i).gain.v < v_thresh);
 end
 g = reshape(g,[],1);
+
 
 inc_idx = walk_idx & cue_idx & rho_idx; %create an inclusion index. had to walk, cue had to be working, bump had to be detectable
 

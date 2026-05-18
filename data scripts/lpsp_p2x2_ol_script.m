@@ -4,7 +4,7 @@ close all
 
 %% find path to all relevant files
 base_dir = uigetdir(); %('Z:\pablo\lpsp_p2x2\todo\');
-all_files = dir([base_dir,'\**\*imagingData*.mat']);
+all_files = dir([base_dir,'\**\*imagingData.mat']);
 
 %% make sure that each file has a mask
 for i = 1:length(all_files)
@@ -30,7 +30,7 @@ im_win = {3,5};
 n_centroid = 16;
 f0_pct = 7;
 
-%all_data = struct();
+all_data = struct();
 
 tic
 for i = length(all_data):length(all_files)
@@ -205,8 +205,9 @@ for i = unique(group_idx)
     
         imagesc(tmp_win,unwrap(alpha),d_pulses{tmp_ind(j)})
         hold on
-        a = plot(tmp_win,m_pulses{tmp_ind(j)},'k');  a.YData(abs(diff(a.YData))>pi) = nan;
-        a = plot(tmp_win,-c_pulses{tmp_ind(j)},'m');  a.YData(abs(diff(a.YData))>pi) = nan;
+        a = plot(tmp_win,mod(m_pulses{tmp_ind(j)},2*pi)-pi,'k');  a.YData(abs(diff(a.YData))>pi) = nan;
+        if dark_idx(tmp_ind(j)); c = 'm'; else; c = 'c'; end
+        a = plot(tmp_win,-c_pulses{tmp_ind(j)},c);  a.YData(abs(diff(a.YData))>pi) = nan;
     end
     sgtitle(group_labels{i+1})
 end

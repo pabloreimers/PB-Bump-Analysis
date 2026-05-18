@@ -247,7 +247,7 @@ end
 %% create figure to show example
 %idx = find(cellfun(@(x)(contains(x,'20260216\fly 2\')),{all_data.meta})); %,6,'last');
 %i = idx(4);
-i = 129;
+i = 69;
 
 pre_smooth = 90;
 post_smooth = 90;
@@ -502,6 +502,9 @@ linkaxes(get(t,'Children'))
 
 %% show binned amp vs rotational speed for every fly
 
+pre_smooth = 90;
+post_smooth = 90; %these are in units of frames. so it's really 2s 
+
 [c,ia,fly_id] = unique(cellfun(@(x)(x(1:34)),{all_data.meta}','UniformOutput',false));
 
 figure(4); clf
@@ -511,6 +514,9 @@ t = tiledlayout("flow");
 edges = 0:.25:2;
 binned_amp = nan(length(edges)-1,3,max(fly_id));
 binned_sem = nan(length(edges)-1,3,max(fly_id));
+
+r_thresh = .1;
+rho_thresh = .1;
 
 amp_cell = cell(length(all_data));
 cr_cell  = cell(length(all_data));
@@ -822,40 +828,43 @@ linkaxes(get(t,'Children'))
 set(get(t,'Children'),'Color','none')
 
 %%
+
+edges_label = edges + mean(diff(edges))/2;
+
 figure(5); clf
 subplot(2,2,1); hold on
-plot(edges(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,1,:)),'-','Color',[.2,.2,.2])
+plot(edges_label(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,1,:)),'-','Color',[.2,.2,.2])
 m = mean(squeeze(binned_amp(:,2,:) - binned_amp(:,1,:)),2,'omitnan');
 s = std(squeeze(binned_amp(:,2,:) - binned_amp(:,1,:)),[],2,'omitnan') ./ sqrt(sum(~isnan(squeeze(binned_amp(:,2,:) - binned_amp(:,1,:))),2));
-errorbar(edges(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
+errorbar(edges_label(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
 
 plot(xlim,[0,0],':k','Linewidth',2)
 ylabel('dff moving - freeze'); xlabel('fly rot speed (rad/s)')
 
 
 subplot(2,2,2); hold on
-plot(edges(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,4,:)),'-','Color',[.2,.2,.2])
+plot(edges_label(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,4,:)),'-','Color',[.2,.2,.2])
 m = mean(squeeze(binned_amp(:,2,:) - binned_amp(:,4,:)),2,'omitnan');
 s = std(squeeze(binned_amp(:,2,:) - binned_amp(:,4,:)),[],2,'omitnan') ./ sqrt(sum(~isnan(squeeze(binned_amp(:,2,:) - binned_amp(:,4,:))),2));
-errorbar(edges(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
+errorbar(edges_label(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
 
 plot(xlim,[0,0],':k','Linewidth',2)
 ylabel('dff moving - dark'); xlabel('fly rot speed (rad/s)')
 
 subplot(2,2,3); hold on
-plot(edges(1:end-1),squeeze(binned_amp(:,1,:) - binned_amp(:,4,:)),'-','Color',[.2,.2,.2])
+plot(edges_label(1:end-1),squeeze(binned_amp(:,1,:) - binned_amp(:,4,:)),'-','Color',[.2,.2,.2])
 m = mean(squeeze(binned_amp(:,1,:) - binned_amp(:,4,:)),2,'omitnan');
 s = std(squeeze(binned_amp(:,1,:) - binned_amp(:,4,:)),[],2,'omitnan') ./ sqrt(sum(~isnan(squeeze(binned_amp(:,1,:) - binned_amp(:,4,:))),2));
-errorbar(edges(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
+errorbar(edges_label(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
 
 plot(xlim,[0,0],':k','Linewidth',2)
 ylabel('dff freeze - dark'); xlabel('fly rot speed (rad/s)')
 
 subplot(2,2,4); hold on
-plot(edges(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,3,:)),'-','Color',[.2,.2,.2])
+plot(edges_label(1:end-1),squeeze(binned_amp(:,2,:) - binned_amp(:,3,:)),'-','Color',[.2,.2,.2])
 m = mean(squeeze(binned_amp(:,2,:) - binned_amp(:,3,:)),2,'omitnan');
 s = std(squeeze(binned_amp(:,2,:) - binned_amp(:,3,:)),[],2,'omitnan') ./ sqrt(sum(~isnan(squeeze(binned_amp(:,2,:) - binned_amp(:,3,:))),2));
-errorbar(edges(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
+errorbar(edges_label(1:end-1),m,s,'-','Color',[1,.2,.2],'linewidth',2)
 
 plot(xlim,[0,0],':k','Linewidth',2)
 ylabel('dff moving - high'); xlabel('fly rot speed (rad/s)')

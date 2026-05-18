@@ -205,7 +205,7 @@ for i = unique(group_idx)
     
         imagesc(tmp_win,unwrap(alpha),d_pulses{tmp_ind(j)})
         hold on
-        a = plot(tmp_win,m_pulses{tmp_ind(j)},'k');  a.YData(abs(diff(a.YData))>pi) = nan;
+        a = plot(tmp_win,mod(m_pulses{tmp_ind(j)},2*pi)-pi,'k');  a.YData(abs(diff(a.YData))>pi) = nan;
         a = plot(tmp_win,-c_pulses{tmp_ind(j)},'m');  a.YData(abs(diff(a.YData))>pi) = nan;
     end
     sgtitle(group_labels{i+1})

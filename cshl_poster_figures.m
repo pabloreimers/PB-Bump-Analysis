@@ -245,6 +245,54 @@ imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).atp.z);
 linkaxes(h,'x')
 xlim([160,180])
 
+%% atp reredo figures
+%load('Z:\pablo\lpsp_p2x2_reredo\20260428\fly 4 _ lpsp\20260428-15_epg_syt8s_blind_p2x2\registration\imagingData.mat')
+%load('Z:\pablo\lpsp_p2x2_reredo\20260428\fly 4 _ lpsp\20260428-18_epg_syt8s_blind_p2x2\registration\imagingData.mat')
+
+i = 17;
+
+figure(4); clf
+
+
+a = max(squeeze(sum(img{2},3)),[],3);
+a = 1*a/max(a,[],'all');
+a = 1- a .* reshape([0,.7,.7],1,1,[]);
+
+d = max(squeeze(sum(img{1},3)),[],3);
+d = 4*d/max(d,[],'all');
+d = 1- d .* reshape([1,.2,.2],1,1,[]);
+
+figure(7); clf
+subplot(4,4,1)
+image(a+d - 1)
+xticks([]);yticks([])
+axis equal tight
+
+h(1) = subplot(4,1,2);
+b = [linspace(1,0,255)',linspace(1,0.7,255)',linspace(1,.7,255)'];
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z);
+% hold on
+% a = plot(all_data(i).ft.xb,all_data(i).im.mu,'b','linewidth',2);
+% a.YData(abs(diff(a.YData))>pi) = nan;
+% a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2);
+%a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta)
+pos = get(gca,'Position');
+colorbar
+
+set(gca,'Colormap',b,'Position',pos)
+set(gca,'Colormap',b,'CLim',clim+[0.1,-.2]*range(clim),'Position',pos)
+set(gca,'Colormap',b,'CLim',[-1,3],'Position',pos)
+
+h(2) = subplot(4,1,3);
+plot(all_data(i).ft.xb,sum(all_data(i).atp.d,1),'r','linewidth',2)
+
+h(3) = subplot(4,1,4);
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).atp.z);
+
+linkaxes(h,'x')
+xlim([100,120])
+
 %% kir figures
 ind = [23,31];
 
@@ -344,3 +392,225 @@ ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTick
 linkaxes([a1,a2],'x')
 xlim(a1,[200,400])
 end
+
+%% freezes (dlight)
+%load('Z:\pablo\epg_dlight\20260216\fly 3\20260216-9_epg_dLight\registration_001\imagingData.mat')
+i = 9;
+
+pre_smooth = 90;
+post_smooth = 90;
+binedges = 0:.05:5;
+dark_mode = false;
+r_thresh = .2;
+rho_thresh = .1;
+
+b = [linspace(1,0,255)',linspace(1,.7,255)',linspace(1,0,255)'];
+
+figure(2); clf
+
+
+a1 = subplot(6,1,3);
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+pos = get(gca,'Position');
+colorbar
+set(gca,'Position',pos,'CLim',[-3,5])
+
+colormap(b)
+
+subplot(6,1,4)
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+set(gca,'YDir','reverse')
+title(all_data(i).meta,'Interpreter','none')
+xlabel('time (s)')
+
+dff = interp1(all_data(i).ft.xb,all_data(i).im.z',all_data(i).ft.xf);
+amp = max(dff,[],2);
+dr  = smoothdata(all_data(i).ft.r_speed,'gaussian',pre_smooth); %smooth the rotational speed, partially to improve the accuracy of the metric and partially to match it to the kinetics of the indicator (smear it out)
+cr  = smoothdata(abs(dr),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+dc  = smoothdata([diff(unwrap(all_data(i).ft.cue)) * 60;0],'gaussian',pre_smooth);
+cc  = smoothdata(abs(dc),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+mu = unwrap(all_data(i).im.mu);
+mu(all_data(i).im.rho< rho_thresh) = nan;
+mu  = interp1(all_data(i).ft.xb,mu,all_data(i).ft.xf);
+dm  = smoothdata([diff(mu) * 60;0],'gaussian',1);
+cm  = smoothdata(abs(dm),'movmean',[post_smooth,0]); %calculate the cumulative rotational speed
+g   = round(medfilt1(-dc ./ dr,1e3),1);
+
+freeze_idx  = cr > 1e-1 & bwareaopen(cc < 1e-2,1);
+high_idx    = cr > 1e-1 & g > 1;
+
+subplot(6,1,5); hold on
+plot(all_data(i).ft.xf,abs(cr))
+y = ylim;
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*freeze_idx;-100*flipud(freeze_idx)],'r','FaceAlpha',.1,'edgecolor','none')
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*high_idx;-100*flipud(high_idx)],'c','FaceAlpha',.1,'edgecolor','none')
+ylim(y);
+ylabel('r speed (rad/s)')
+
+subplot(6,1,6); hold on
+plot(all_data(i).ft.xf,amp)
+y = ylim;
+ylabel('max dff z-scored')
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*freeze_idx;-100*flipud(freeze_idx)],'r','FaceAlpha',.1,'edgecolor','none')
+patch([all_data(i).ft.xf;flipud(all_data(i).ft.xf)],[100*high_idx;-100*flipud(high_idx)],'c','FaceAlpha',.1,'edgecolor','none')
+
+linkaxes(get(gcf,'Children'),'x')
+axis tight
+ylim(y);
+xlim([250,500])
+% all_pix = reshape(imgData,[],size(imgData,3))';
+% all_pix = interp1(all_data(i).ft.xb,double(all_pix),all_data(i).ft.xf);
+% r_corr  = reshape(corr(all_pix,abs(all_data(i).ft.r_speed),rows="complete"),size(imgData,1),size(imgData,2));
+
+subplot(3,2,1)
+imagesc(r_corr)
+axis equal tight
+
+tmp = ceil(max(cr));
+edges = 0:.25:tmp;
+binned_amp = nan(length(edges)-1,3);
+binned_sem = nan(length(edges)-1,3);
+for j = 1:(length(edges)-1)
+    idx1 = cr > edges(j) & cr < edges(j+1) & freeze_idx;
+    idx2 = cr > edges(j) & cr < edges(j+1) & ~freeze_idx & ~high_idx;
+    idx3 = cr > edges(j) & cr < edges(j+1) & high_idx;
+
+    idx1 = idx1 * (sum(idx1) / 60) > 5;
+    idx2 = idx2 * (sum(idx2) / 60) > 5;
+    idx3 = idx3 * (sum(idx3) / 60) > 5;
+
+    binned_amp(j,1) = mean(amp(idx1),'omitnan');
+    binned_amp(j,2) = mean(amp(idx2),'omitnan');
+    binned_amp(j,3) = mean(amp(idx3),'omitnan');
+    binned_sem(j,1) = std(amp(idx1),'omitnan') / sqrt(sum(~isnan(amp(idx1))));
+    binned_sem(j,2) = std(amp(idx2),'omitnan') / sqrt(sum(~isnan(amp(idx2))));
+    binned_sem(j,3) = std(amp(idx3),'omitnan') / sqrt(sum(~isnan(amp(idx3))));
+end
+
+subplot(3,2,2); hold on
+x_label = edges(1:end-1) + mean(diff(edges))/2;
+errorbar(x_label,binned_amp(:,1),binned_sem(:,1),'o-r')
+errorbar(x_label,binned_amp(:,2),binned_sem(:,2),'o-k')
+xlabel('binned rotational speed (rad/s)')
+ylabel('max dff (normalized)')
+
+%% thrnai figures
+i = 1;
+
+figure(1); clf; 
+subplot(3,3,1)
+c='k';
+hold on
+errorbar(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),mean_g(empty_idx & walk_idx & dark_idx==i),sem_g(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
+errorbar(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),mean_g(~empty_idx & walk_idx & dark_idx==i),sem_g(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
+xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Integrative Gain')
+plot(xlim,[.8,.8],':k')
+axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
+
+legend(sprintf('empty>TH-RNAi (%i)',length(unique(fly_num(walk_idx &empty_idx & dark_idx == i)))),...
+   sprintf('lpsp>TH-RNAi (%i)',length(unique(fly_num(walk_idx & ~empty_idx & dark_idx == i)))),...
+   'textcolor',c,'Location','best')
+
+
+subplot(3,3,2); hold on
+ scatter(0*ones(sum(empty_idx & walk_idx & dark_idx==i),1),var_o(empty_idx & walk_idx & dark_idx==i),'o','Color',[0,.5,1])
+scatter(1*ones(sum(~empty_idx & walk_idx & dark_idx==i),1),var_o(~empty_idx & walk_idx & dark_idx==i),'o','Color',[1,.5,0])
+xticks([0,1]); xticklabels({'Empty','LPsP'}); ylabel('Offset Variance (Circular)')
+axis padded; set(gca,'Color','none','ycolor',c,'xcolor',c)
+
+
+
+%%
+figure(3); clf
+
+ind=[248,189,522];
+b = {[linspace(1,0,255)',linspace(1,0.7,255)',linspace(1,.7,255)'];...
+    [linspace(1,1,255)',linspace(1,0.5,255)',linspace(1,0,255)'];...
+    [linspace(1,.7,255)',linspace(1,0,255)',linspace(1,0,255)']};
+for j = 1:3
+    i = ind(j);
+a1 = subplot(6,1,1+2*(j-1));
+
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+pos = get(gca,'Position');
+colorbar
+set(gca,'Colormap',b{j},'CLim',[-2,3],'Position',pos) %clim+[0.2,0]*range(clim))
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+idx = round(all_data(i).ft.cue,4) == -.2945;
+
+%a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',b{j}(end,:),'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta)
+xlabel('time (s)')
+
+
+a2 = subplot(6,1,2+2*(j-1)); hold on
+offset = circ_dist(-all_data(i).ft.cue,interp1(all_data(i).ft.xb,unwrap(all_data(i).im.mu),all_data(i).ft.xf));
+a=plot(all_data(i).ft.xf,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+ patch(all_data(i).ft.xf,2*pi*(all_data(i).ft.stims/10)-pi,'r','FaceAlpha',.1,'EdgeColor','none')
+ylabel('offset')
+a2.YTick = [-pi,0,pi]; a2.YTickLabels = {'-\pi','0','\pi'}; a2.YLim = [-pi,pi];
+pos = get(gca,'Position');
+pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos,'Color','none','XAxisLocation','top');
+histogram(offset,-pi:.1:pi,'Orientation','horizontal','edgeColor','none')
+box(ax,'off')
+ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+linkaxes([a1,a2],'x')
+xlim(a1,[200,400])
+end
+
+%%
+figure(3); clf
+
+i=10;
+
+b = {[linspace(1,0,255)',linspace(1,0.7,255)',linspace(1,0,255)'];...
+    [linspace(1,.7,255)',linspace(1,0,255)',linspace(1,0,255)'];...
+    [linspace(1,.7,255)',linspace(1,0,255)',linspace(1,0,255)']};
+
+a1 = subplot(3,1,1);
+
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).grab.alpha),all_data(i).grab.z)
+pos = get(gca,'Position');
+colorbar
+set(gca,'Colormap',b{1},'CLim',[-2,3],'Position',pos) %clim+[0.2,0]*range(clim))
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+
+%a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',b{j}(end,:),'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta)
+xlabel('time (s)')
+
+
+a2 = subplot(3,1,2);
+
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).geco.alpha),all_data(i).geco.z)
+pos = get(gca,'Position');
+colorbar
+set(gca,'Colormap',b{2},'CLim',[-2,3],'Position',pos) %clim+[0.2,0]*range(clim))
+hold on
+if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,'k','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+
+%a = plot(all_data(i).ft.xb,all_data(i).im.mu,'Color',b{j}(end,:),'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
+title(all_data(i).meta)
+xlabel('time (s)')
+
+
+
+a3 = subplot(3,1,3); hold on
+offset = circ_dist(all_data(i).grab.mu,all_data(i).geco.mu);
+a=plot(all_data(i).ft.xb,offset); a.YData(abs(diff(a.YData))>pi) =nan;
+ylabel('offset')
+a3.YTick = [-pi,0,pi]; a3.YTickLabels = {'-\pi','0','\pi'}; a3.YLim = [-pi,pi];
+pos = get(gca,'Position');
+pos = [pos(1)+pos(3)+.01,pos(2),.05,pos(4)];
+ax = axes('Position',pos,'Color','none','XAxisLocation','top');
+histogram(offset,-pi:.1:pi,'Orientation','horizontal','edgeColor','none')
+box(ax,'off')
+ax.YAxisLocation =  'right'; ax.YLim = [-pi,pi]; ax.YTick = [-pi,0,pi]; ax.YTickLabels = {'-\pi','0','\pi'};
+linkaxes([a1,a2,a3],'x')
+xlim(a1,[60,260 ])
