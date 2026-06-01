@@ -292,7 +292,7 @@ end
 
 
 %% create figure to show example
-i = 438;
+i = 111;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .5;
