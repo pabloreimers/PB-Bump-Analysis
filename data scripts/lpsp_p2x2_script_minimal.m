@@ -1,11 +1,12 @@
 
 %% clear all
-clear all
+%clear all
 close all
 
 %% find path to all relevant files
 base_dir = ('Z:\pablo\lpsp_p2x2_reredo\blind\');
 base_dir = ('Z:\pablo\dopamine_ionto_redo\');
+base_dir = ('Z:\pablo\lpsp_p2x2_walking\');
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 
@@ -57,10 +58,10 @@ im_win = {5,1};
 n_centroid = 16;
 f0_pct = 7;
 
-all_data = struct();
+%all_data = struct();
 
 tic
-for i = 1:length(all_files)
+for i = length(all_data):length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
     load([all_files(i).folder,'\',all_files(i).name])
@@ -142,7 +143,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20260515\fly 3')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260528\fly 1')),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];

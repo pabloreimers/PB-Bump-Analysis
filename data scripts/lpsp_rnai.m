@@ -3,7 +3,7 @@
 %clear all
 
 %% load in data
-base_dir = 'Z:\pablo\dopamine_ionto\new\'; %uigetdir(); %
+base_dir = 'Z:\pablo\lpsp_rnai\todo\';%dopamine_ionto\new\'; %uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 
@@ -34,25 +34,29 @@ for i = 1:length(all_files)
         % mask = roipoly();
         % save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
 
-        imgData = img{1};
+        %imgData = img{1};
          mask = mean(imgData,3) > mean(imgData,'all');
         tmp = regionprops(mask);
         tmp = sort([tmp.Area],'descend');
+        
+        if length(tmp) > 1
         if (tmp(1) / tmp(2)) > 1.5
             mask = bwareafilt(mask,1);
         else
             se = strel('line',10,0);
             mask = imdilate(bwareafilt(mask,2),se);
         end
-        save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+        end
+
+        save([fileparts(all_files(i).folder),'\mask_reanalyze.mat'],'mask')
     end
 end
 
 %% process and store all values
 ft_type= 'movmean'; %the type of smoothing for fictrac data
-ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
+ft_win = 1; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {5,5};
+im_win = {1,1};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
@@ -81,7 +85,7 @@ for i = length(all_data):length(all_files)
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
 
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
-    all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).ft.stims = ftData_DAQ.stim{1};
     all_data(i).ft.pattern = tmp2.patternPath{1};
 
