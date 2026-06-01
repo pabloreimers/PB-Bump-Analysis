@@ -8,6 +8,7 @@ all_files = dir([base_dir,'\**\*.tif']);
 
 
 for i = 1:length(all_files)
+    clear imgDataSeries
     filepath = all_files(i).folder;
     filename = all_files(i).name;
     fprintf('checking %s\n',filepath);
