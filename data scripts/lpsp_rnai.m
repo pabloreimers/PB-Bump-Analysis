@@ -296,7 +296,7 @@ end
 
 
 %% create figure to show example
-i = 345;
+i = 438;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .5;
@@ -347,7 +347,7 @@ a=scatter(all_data(i).gain.xt,all_data(i).gain.hv,'.');
 a3 = subplot(6,1,4); hold on
 scatter(all_data(i).ft.xb,all_data(i).gain.inst_g,'.')
 tmp = all_data(i).gain.g;
-tmp(all_data(i).gain.hv<.1 | all_data(i).gain.v>.1) = nan;
+%tmp(all_data(i).gain.hv<.1 | all_data(i).gain.v>.1) = nan;
 scatter(all_data(i).gain.xt,tmp,'.')
 ylabel('gain'); legend('instant','integ','autoupdate','off')
 
