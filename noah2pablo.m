@@ -13,7 +13,9 @@ for i = 1:length(all_files)
 end
 
 %%
-all_files = dir('Z:\pablo\lpsp_p2x2_reredo\**\imagingData*.mat');
+all_files = dir('Z:\pablo\gain_change\todo\**\imagingData*.mat');
+base_dir = uigetdir(); %
+all_files = dir([base_dir,'\**\*imagingData*.mat']);
 all_files = natsortfiles(all_files);
 % idx = cellfun(@(x)(contains(x,'exclusions') | contains(x,'open loop')),{all_files.folder}');
 % all_files(idx) = [];
@@ -23,13 +25,13 @@ for i = 1:length(all_files)
     try
     if ~isfile([all_files(i).folder,'\imagingData.mat']) || ~isfile([all_files(i).folder,'\imgData_reg.mat'])
         load([all_files(i).folder,'\',all_files(i).name]);
-        img{1} = squeeze(sum(img{1},3));
-        try img{2} = squeeze(sum(img{2},3)); end
-        save([all_files(i).folder,'\imagingData.mat'],'img','-v7.3')
-        % imgData = squeeze(sum(regProduct,3));
-        % save([all_files(i).folder,'\imagingData.mat'],'imgData')
-        % imgData = normcorre_regProduct(imgData,false);
-        % save([all_files(i).folder,'\imgData_reg.mat'],'imgData')
+        % img{1} = squeeze(sum(img{1},3));
+        % try img{2} = squeeze(sum(img{2},3)); end
+        % save([all_files(i).folder,'\imagingData.mat'],'img','-v7.3')
+        imgData = squeeze(sum(regProduct,3));
+        save([all_files(i).folder,'\imagingData.mat'],'imgData')
+        imgData = normcorre_regProduct(imgData,false);
+        save([all_files(i).folder,'\imgData_reg.mat'],'imgData')
     end
     catch
         fprintf('Error!!!!\n')

@@ -7,6 +7,7 @@ close all
 base_dir = ('Z:\pablo\lpsp_p2x2_reredo\blind\');
 base_dir = ('Z:\pablo\dopamine_ionto_redo\');
 base_dir = ('Z:\pablo\lpsp_p2x2_walking\');
+%base_dir = uigetdir();
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 
@@ -14,24 +15,25 @@ all_files = natsortfiles(all_files);
 for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
     if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
-        load([all_files(i).folder,'\',all_files(i).name])
-       
-        ch1 = squeeze(mean(img{1},3));
-        ch2 = squeeze(mean(img{2},3));
+        load([all_files(i).folder,'\','imgData_reg.mat'])
+    
+        ch1 = squeeze(mean(imgData_reg,3));
+%        ch1 = squeeze(mean(img{1},3));
+%        ch2 = squeeze(mean(img{2},3));
         
         t1 = prctile(ch1(:),90);
-        t2 = prctile(ch2(:),90);
+  %      t2 = prctile(ch2(:),90);
         b1 = prctile(ch1(:),5);
-        b2 = prctile(ch2(:),5);
+ %       b2 = prctile(ch2(:),5);
         %figure(1)
         %image(256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2)); axis equal tight
 
 
-        imgData = 256*(mean(ch1,3)-b1)/(t1-b1) - 256*(mean(ch2,3)-b2)/(t2-b2);
+        imgData = 256*(mean(ch1,3)-b1)/(t1-b1);% - 256*(mean(ch2,3)-b2)/(t2-b2);
         
         figure(1); clf; imagesc(mean(ch1,3)); axis equal tight; colormap(parula); drawnow;
         mask = roipoly();
-        save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+        save([fileparts(all_files(i).folder),'\mask_reg.mat'],'mask')
         
         % imgData = img{1};
         % mask = mean(imgData,3) > mean(imgData,'all');
@@ -53,7 +55,7 @@ end
 ft_type= 'gaussian'; %the type of smoothing for fictrac data
 ft_win = 30; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'gaussian','gaussian'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {5,1};
+im_win = {10,1};
 
 n_centroid = 16;
 f0_pct = 7;
@@ -62,9 +64,11 @@ f0_pct = 7;
 
 tic
 for i = length(all_data):length(all_files)
+    clear img imgData_reg
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
     load([all_files(i).folder,'\',all_files(i).name])
+    load([all_files(i).folder,'\','imgData_reg.mat'])
     load([fileparts(all_files(i).folder),'\mask.mat'])
     tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
@@ -75,7 +79,7 @@ for i = length(all_data):length(all_files)
     %regProduct = img{1};
 
     all_data(i).ft = process_ft(ftData_DAQ, ftData_dat, ft_win, ft_type);
-    all_data(i).im = process_im(img{1}, im_win, im_type, mask, n_centroid, f0_pct);
+    all_data(i).im = process_im(imgData_reg, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).meta = all_files(i).folder;
     all_data(i).ft.pattern = tmp2.patternPath{1}; 
     all_data(i).ft.stims = ftData_DAQ.stim{1};
@@ -83,9 +87,10 @@ for i = length(all_data):length(all_files)
     if ~ismember('xb',fieldnames(all_data(i).ft))
         xb = linspace(all_data(i).ft.xf(1),all_data(i).ft.xf(end),size(all_data(i).im.d,2));
     end
-
+    
+    try
     all_data(i).atp = process_im(img{2}, im_win, im_type, mask, n_centroid, f0_pct);
-
+    end
     fprintf('ETR: %.2f hours\n',toc/i * (length(all_files)-i) / 60 / 60)
 end
 
@@ -143,7 +148,7 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20260528\fly 1')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,['20260728\fly 17'])),{all_data.meta})); %,6,'last');
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -161,13 +166,15 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     %xticks([])
     
+    %set(gca,'CLim',[-.25,.5])
     set(gca,'color','none')
     hold on
     [~,ind] = max(sum(all_data(idx(i)).atp.f,2));
     tmp_alpha = unwrap(all_data(i).im.alpha);
     scatter(0,tmp_alpha(ind),'r*')
     
-    a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,'m');
+    if contains(all_data(idx(i)).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
+    a = plot(all_data(idx(i)).ft.xf,-all_data(idx(i)).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
     a.YData(abs(diff(a.YData))>pi) = nan;
     a = plot(all_data(idx(i)).ft.xb,all_data(idx(i)).im.mu,'w');
     a.YData(abs(diff(a.YData))>pi) = nan;
@@ -175,11 +182,15 @@ for i = 1:length(idx)
 
     pos = get(gca,'Position');
     a3 = axes('Position',[pos(1),pos(2)+pos(4),pos(3),.03],'color','none'); 
-    plot(all_data(idx(i)).ft.xb,sum(all_data(idx(i)).atp.f,1)/max(sum(all_data(idx(i)).atp.f,1)),'r','linewidth',2)   
+    tmp = zscore(sum(all_data(idx(i)).atp.f,1));
+    %plot(all_data(idx(i)).ft.xb,5*(tmp-min(tmp))/(max(tmp)-min(tmp)),'r','linewidth',2)   
+    plot(all_data(idx(i)).ft.xb,tmp,'r','linewidth',2)   
     hold on
     %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
     %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
+    plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed))
     yticks([]);xticks([])
+    ylim([0,5])
     axis tight
     set(gca,'Color','none')
     linkaxes([a1,a2,a3],'x')

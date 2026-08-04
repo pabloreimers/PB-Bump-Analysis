@@ -3,29 +3,30 @@ close all
 %clear all
 
 %% load in data
-base_dir = ('Z:\pablo\epg_gain_change\20250828\'); %uigetdir(); %
-all_files = dir([base_dir,'\**\*imagingData*.mat']);
+base_dir = ('Z:\pablo\epg_gain_change\'); %uigetdir(); %
+all_files = dir([base_dir,'\**\*denoised_srdtrans.mat']);
 all_files = natsortfiles(all_files);
 %% make sure that each file has a mask
 for i = 1:length(all_files)
     fprintf('checking mask: %s\n',all_files(i).folder)
     clear img regProduct 
 
-    if ~isfile([fileparts(all_files(i).folder),'\mask.mat'])
+    if ~isfile([fileparts(fileparts(all_files(i).folder)),'\mask.mat'])
         load([all_files(i).folder,'\',all_files(i).name])
 
         %imgData = squeeze(sum(regProduct,3));
 
+        imgData = movie;
 
         top_pct = prctile(imgData,98,'all');
         bot_pct = prctile(imgData,5,'all');
-        
+
         imgData(imgData>top_pct) = top_pct;
         imgData(imgData<bot_pct) = bot_pct;        
 
         figure(1); clf; imagesc(mean(imgData,3)); colormap(bone); axis equal tight; drawnow;
         mask = roipoly();
-        save([fileparts(all_files(i).folder),'\mask.mat'],'mask')
+        save([all_files(i).folder,'\mask.mat'],'mask')
     end
 end
 
@@ -33,7 +34,7 @@ end
 ft_type= 'movmean'; %the type of smoothing for fictrac data
 ft_win = 10; %the window over which smoothing of fictrac data occurs. gaussian windows have std = win/5.
 im_type= {'movmean','movmean'}; %there's two smoothing steps for the im data. one that smooths the summed z-stacks, another that smooths the estimated mu and rho
-im_win = {5,1};
+im_win = {1,1};
 n_centroid = 16;
 f0_pct = 7;
 r_thresh = .1;
@@ -48,14 +49,19 @@ for i = 1:length(all_files)
     tmp = strsplit(all_files(i).folder,'\');
     fprintf('processing: %s ',tmp{end-1})
     load([all_files(i).folder,'\',all_files(i).name])
-    load([fileparts(all_files(i).folder),'\mask.mat'])
-    tmp2 = dir([fileparts(all_files(i).folder),'\*ficTracData_DAQ.mat']);
+    load([fileparts(fileparts(all_files(i).folder)),'\mask.mat'])
+    tmp2 = dir([fileparts(fileparts(all_files(i).folder)),'\*ficTracData_DAQ.mat']);
     load([tmp2.folder,'\',tmp2.name])
-    tmp2 = dir([fileparts(all_files(i).folder),'\csv\trialSettings.csv']);
+    tmp2 = dir([fileparts(fileparts(all_files(i).folder)),'\csv\trialSettings.csv']);
     tmp2 = readtable([tmp2.folder,'\',tmp2.name]);
 
     %imgData = squeeze(sum(regProduct,3));
 
+    if size(mask,1) > size(movie,1)
+        mask = imresize(mask,.5);
+    end
+
+    imgData = movie;
     all_data(i).ft = process_ft(ftData_DAQ, ft_win, ft_type);
     all_data(i).im = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct);
     all_data(i).meta = all_files(i).folder;
@@ -237,12 +243,12 @@ end
 
 
 %% create figure to show example
-i = 8;
+i = 51;
 binedges = 0:.05:5;
 
 figure(1); clf
 a1 = subplot(3,1,1);
-imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.d)
 hold on
 if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
 a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c); a.YData(abs(diff(a.YData))>pi) = nan;
@@ -443,28 +449,37 @@ function s = process_im(imgData, im_win, im_type, mask, n_centroid, f0_pct)
     imgData = smoothdata(imgData,3,im_type{1},im_win{1});
     imgData = imgData - min(imgData,[],'all');
 
-    [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
-min_axis        = min(range(x_mask),range(y_mask));
-mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
-[y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
-ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
-[y0,x0]         = find(ep,1);
-
-[x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
-
-xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
-x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
-y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
-
-idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
-x_mid       = x_mid(idx);
-y_mid       = y_mid(idx);
-
-xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
-centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
-centroids   = centroids(2:2:end-1,:);                                                     %take every other so that we dont start at the edges, and all are same size
-%assign each pixel to a centroid
-[~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
+   [y_mask,x_mask] = find(mask);                                             %find the cartesian coordinates of points in the mask, just to find the minimum axis length
+    min_axis        = min(range(x_mask),range(y_mask));
+    mid             = bwskel(mask,'MinBranchLength',min_axis);  %find the midline as the skeleton, shaving out all sub branches that are smaller than the minimum axis length
+    
+    mask        = bwmorph(mask,'majority'); %fill in scraggly points
+    skel        = bwskel(mask); %initial skeleton of the mask
+    endpoints   = bwmorph(skel,'endpoints'); %find all possible endpoints of the multiple branches
+    D           = bwdistgeodesic(skel, find(endpoints, 1)); % Distance from first endpoint
+    [~, idx]    = max(D(:)); % Find the point furthest from start
+    D2          = bwdistgeodesic(skel, idx); % Distance from that furthest point
+    mid         = D+D2 == mode(D+D2,'all'); 
+    
+    [y_mid,x_mid]   = find(mid);                                              %by definition, the skeleton has to be at least as long as the min width of the roi, so shave out subbranches that are shorter than that.
+    ep              = bwmorph(mid,'endpoints');                               %find the endpoints of the midline
+    [y0,x0]         = find(ep,1);
+    
+    [x_mid,y_mid]   = graph_sort(x_mid,y_mid);                                      %align the points of the midline starting at the first pointpoint and going around in a circle. this requires that the midline be continuous!
+    
+    xq          = [-min_axis:(length(x_mid)+min_axis)];                             %extend the midline so that it reaches the border of the mask. extrapolate as many points as the minimum axis length
+    x_mid       = round(interp1(1:length(x_mid),x_mid,xq,'linear','extrap'));
+    y_mid       = round(interp1(1:length(y_mid),y_mid,xq,'linear','extrap'));
+    
+    idx         = ismember([x_mid',y_mid'],[x_mask,y_mask],'rows');                 %keep only the points that exist within the mask
+    x_mid       = x_mid(idx);
+    y_mid       = y_mid(idx);
+    
+    xq          = linspace(1,length(y_mid),2*(n_centroid*2) + 1)';                        %set query points for interpolation (the number of centroids we want). we'll create twice as many points and take every other so that clusters on the edges arent clipped
+    centroids   = [interp1(1:length(y_mid),y_mid,xq),interp1(1:length(x_mid),x_mid,xq)];  %interpolate x and y coordinates, now that they are ordered, into evenly spaced centroids (this allows one to oversample the number of pixels, if desired)
+    centroids   = centroids(2:2:end-1,:);                                                     %take every other so that we dont start at the edges, and all are same size
+    %assign each pixel to a centroid
+    [~,idx] = pdist2(centroids,[y_mask,x_mask],'euclidean','smallest',1); %find the index of the centroid that is closest to each pixel in the mask. using euclidean, but maybe chebychev (chessboard)
 
     imgData_2d      = reshape(imgData,[],size(imgData,3));                  %reshape the data into a 2D pixels with dimensions AllPixels x Frames, where each entry is an intensity
     centroid_log    = false(2*n_centroid,size(imgData_2d,1));               %initialize a logical matrix that is of dimensions Centroids  x AllPixels
@@ -495,6 +510,9 @@ centroids   = centroids(2:2:end-1,:);                                           
     s.d  = dff_cluster;
     s.f  = f_cluster;
     s.alpha = alpha;
+    s.mask = mask;
+    s.mid = mid;
+    s.centroids = centroids;
     %s.imgData = imgData;
 end
 
