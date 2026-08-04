@@ -1,10 +1,9 @@
 %% 
 %close all
-clear all
+%clear all
 
 %% load in data
 base_dir = 'Z:\pablo\lpsp_rnai\todo\';%dopamine_ionto\new\'; %uigetdir(); %
-base_dir = uigetdir(); %
 all_files = dir([base_dir,'\**\*imagingData.mat']);
 all_files = natsortfiles(all_files);
 
@@ -297,7 +296,7 @@ end
 
 
 %% create figure to show example
-i = 33;
+i = 111;
 binedges = 0:.05:5;
 dark_mode = false;
 r_thresh = .5;

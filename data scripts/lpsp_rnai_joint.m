@@ -21,7 +21,7 @@ last_id = '';
 fly_counter = 0;
 
 for_thresh = .1; %what is the minimum walking speed
-for_length = .5; %what percentage of the trial does the animal have to be walking that speed
+for_length = .2; %what percentage of the trial does the animal have to be walking that speed
 cue_thresh = 5;  %how much does the cue have to move to report that it was moving during the trial
 rho_thresh = .2; %what does the average pva rho have to be to label this brain as having a "bump" during the trial
 
@@ -60,8 +60,11 @@ for i = 1:length(all_data)
     if contains(geno,'vglut')
         vglut_idx(i) = true;
     end
+    
+    tmp2 = -cumsum(all_data(i).ft.r_speed)*.8/60;
+    idx = ~isnan(all_data(i).ft.cue) & ~isnan(tmp2);
 
-    if sum(abs(diff(unwrap(all_data(i).ft.cue)))) > cue_thresh
+    if sum(abs(diff(unwrap(all_data(i).ft.cue))),'omitnan') > cue_thresh && circ_corrcc(all_data(i).ft.cue(idx),tmp2(idx)) > .5
         cue_idx(i) = true;
     end
 
