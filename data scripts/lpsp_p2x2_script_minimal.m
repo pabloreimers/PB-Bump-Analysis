@@ -148,8 +148,8 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,['20260728\fly 17'])),{all_data.meta})); %,6,'last');
-dark_mode = true;
+idx = find(cellfun(@(x)(contains(x,['20260714\fly 1'])),{all_data.meta})); %,6,'last');
+dark_mode = false;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
 c2 = c1(:,[2,1,3]);
@@ -161,9 +161,9 @@ for i = 1:length(idx)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
-    colormap(a1,c1)
-    yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
+    % imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
+    % colormap(a1,c1)
+    % yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
     %xticks([])
     
     %set(gca,'CLim',[-.25,.5])
