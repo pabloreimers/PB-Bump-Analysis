@@ -68,6 +68,8 @@ min_walking_frames = .5*60; %minimum bout length to keep
 mov_ratio     = nan(n,1); %ratio of bump path length to heading path length, per trial
 frac_walking  = nan(n,1); %fraction of this trial the fly spent walking
 mean_rho      = nan(n,1); %mean bump vector strength (confidence) over this trial
+bout_mov_mu   = cell(n,1); %per-bout bump path length, this trial's raw data behind mov_ratio's regression
+bout_mov_cue  = cell(n,1); %per-bout heading path length, same
 
 for i = 1:n
     xf = all_data(i).ft.xf;
@@ -98,6 +100,8 @@ for i = 1:n
     mov_ratio(i)    = mov_cue \ mov_mu; %bump path length per unit heading path length, across all walking bouts in the trial
     frac_walking(i) = mean(is_walking,'omitnan');
     mean_rho(i)     = mean(all_data(i).im.rho,'omitnan');
+    bout_mov_mu{i}  = mov_mu;
+    bout_mov_cue{i} = mov_cue;
 end
 
 figure(2); clf; hold on
@@ -193,6 +197,36 @@ fprintf('\n%i of %i flies had exactly 2 detected pulse trials\n',sum(n_pulse_per
 is_typical = n_trials_per_fly==8;
 matches_expected = cellfun(@(p)(isequal(p,[5,7])),pulse_pos_per_fly);
 fprintf('of the %i flies with 9 trials, %i had pulses detected at exactly trials 6 and 8\n',sum(is_typical),sum(is_typical & matches_expected))
+
+%% how well-powered is the bump-mobility regression? show the exact scatter + fit behind mov_ratio for single trials
+%mov_ratio(i) = bout_mov_cue{i} \ bout_mov_mu{i} - this shows that same per-trial regression directly, not pooled
+n_bouts_per_trial = cellfun(@length,bout_mov_cue);
+
+n_example_trials = 6;
+[~,sort_ix] = sort(n_bouts_per_trial);
+example_ranks  = round(linspace(1,n,n_example_trials)); %span the full range of bout counts, from least- to best-powered
+example_trials = sort_ix(example_ranks);
+
+figure(12); clf
+for k = 1:n_example_trials
+    i = example_trials(k);
+    x = bout_mov_cue{i};
+    y = bout_mov_mu{i};
+    slope = mov_ratio(i); %the exact value this trial contributes to the rest of the analysis
+
+    subplot(2,3,k); hold on
+    scatter(x,y,'filled','MarkerFaceAlpha',.5)
+    xl = xlim; xl(1) = 0;
+    plot(xl,xl*slope,'r','LineWidth',1.5)
+    plot(xl,xl,':k') %reference: bump moves exactly as much as heading (slope = 1)
+    xlim(xl)
+
+    xlabel('heading path length per bout (rad)')
+    ylabel('bump path length per bout (rad)')
+    f = fly_ix(i);
+    title(sprintf('%s fly %i, trial %i (n=%i bouts, slope=%.2f)',fly_date{f},fly_num(f),trial_num(i),n_bouts_per_trial(i),slope))
+end
+sgtitle('bump-mobility regression for single trials - spanning least- to best-powered')
 
 %% sanity check: ejections should only ever happen during closed-loop trials
 dark_pulse_idx = find(has_pulse & is_dark(:));
@@ -302,8 +336,16 @@ for f = 1:n_flies
         post_this = post_idx(is_dark(post_idx) == (li==2));
         if isempty(pre_this) || isempty(post_this); continue; end
 
-        fly_pre(f,li)  = mean(mov_ratio(pre_this),'omitnan');
-        fly_post(f,li) = mean(mov_ratio(post_this),'omitnan');
+        %pool every walking bout across all trials in this condition and fit one regression, rather than
+        %averaging each trial's own (often underpowered) slope - this is the same fit mov_ratio(i) uses, just
+        %on the combined bout set, so each fly x lighting x pre/post cell gets as much data as it actually has
+        pre_cue  = vertcat(bout_mov_cue{pre_this});
+        pre_mu   = vertcat(bout_mov_mu{pre_this});
+        post_cue = vertcat(bout_mov_cue{post_this});
+        post_mu  = vertcat(bout_mov_mu{post_this});
+
+        if ~isempty(pre_cue);  fly_pre(f,li)  = pre_cue  \ pre_mu;  end
+        if ~isempty(post_cue); fly_post(f,li) = post_cue \ post_mu; end
 
         fly_pre_idx{f,li}  = pre_this;
         fly_post_idx{f,li} = post_this;
@@ -311,6 +353,56 @@ for f = 1:n_flies
 end
 
 fprintf('%i of %i flies had a detectable perturbation trial\n',sum(any(~isnan(fly_pre) | ~isnan(fly_post),2)),n_flies)
+
+%% show the pooled scatter + regression behind a few example fly x lighting x pre/post pools
+%same idea as the single-trial figure above, but now for the pooled fly_pre/fly_post cells themselves
+pool_list = {}; %columns: {cue, mu, slope, label}
+
+for f = 1:n_flies
+    for li = 1:2
+        if ~isempty(fly_pre_idx{f,li})
+            c = vertcat(bout_mov_cue{fly_pre_idx{f,li}});
+            m = vertcat(bout_mov_mu{fly_pre_idx{f,li}});
+            if ~isempty(c)
+                pool_list(end+1,:) = {c,m,fly_pre(f,li),sprintf('%s fly %i, %s, pre',fly_date{f},fly_num(f),lighting_labels{li})}; %#ok<AGROW>
+            end
+        end
+        if ~isempty(fly_post_idx{f,li})
+            c = vertcat(bout_mov_cue{fly_post_idx{f,li}});
+            m = vertcat(bout_mov_mu{fly_post_idx{f,li}});
+            if ~isempty(c)
+                pool_list(end+1,:) = {c,m,fly_post(f,li),sprintf('%s fly %i, %s, post',fly_date{f},fly_num(f),lighting_labels{li})}; %#ok<AGROW>
+            end
+        end
+    end
+end
+
+n_bouts_per_pool = cellfun(@length,pool_list(:,1));
+
+n_example_pools = 6;
+[~,sort_ix] = sort(n_bouts_per_pool);
+example_ranks = round(linspace(1,size(pool_list,1),n_example_pools)); %span the full range of pool sizes, least- to best-powered
+example_pools = sort_ix(example_ranks);
+
+figure(13); clf
+for k = 1:n_example_pools
+    p = example_pools(k);
+    x = pool_list{p,1};
+    y = pool_list{p,2};
+    slope = pool_list{p,3};
+
+    subplot(2,3,k); hold on
+    scatter(x,y,'filled','MarkerFaceAlpha',.5)
+    xl = xlim; xl(1) = 0;
+    plot(xl,xl*slope,'r','LineWidth',1.5)
+    plot(xl,xl,':k') %reference: bump moves exactly as much as heading (slope = 1)
+    xlim(xl)
+
+    xlabel('heading path length per bout (rad)')
+    ylabel('bump path length per bout (rad)')
+    title(sprintf('%s (n=%i bouts, slope=%.2f)',pool_list{p,4},n_bouts_per_pool(p),slope))
+end
+sgtitle('bump-mobility regression, pooled per fly x lighting x pre/post condition - spanning least- to best-powered')
 
 %% 5) plot pre vs post bump mobility, split by genotype and lighting condition
 figure(3); clf
