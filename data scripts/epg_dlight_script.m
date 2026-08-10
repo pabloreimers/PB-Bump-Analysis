@@ -1,5 +1,6 @@
 %% load in data
-base_dir = 'Z:\pablo\epg_dlight\'; %uigetdir(); %
+base_dir = 'Z:\pablo\epg_dlight\'; 
+base_dir = uigetdir(); %
 all_files = dir([base_dir,'\**\imagingData.mat']);
 %all_files = dir([base_dir,'\**\imgData_denoised.mat']);
 all_files = natsortfiles(all_files);
