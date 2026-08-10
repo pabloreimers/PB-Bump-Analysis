@@ -39,8 +39,10 @@ cue_thresh  = 1e-2;    % rad/s, cue must be moving less than this to count as fr
 pre_smooth  = 90;      % smoothing window (frames) applied to the raw speeds before thresholding
 post_smooth = 90;      % smoothing window (frames) used to accumulate recent speed into a slower "is moving" signal
 min_block_s = .5;      % minimum duration (s) for a freeze period to count as a real block, not noise
+max_gap_s   = 2;       % merge freeze periods separated by a gap shorter than this: a brief dip in |r_speed| below r_thresh looks like a gap in freeze_idx even though the cue never actually resumed moving, and would otherwise split one physical freeze block into several spurious ones
 
-freeze_idx_all  = cell(n_trials,1);
+freeze_idx_all  = cell(n_trials,1); % per-sample: confidently-detectable frozen samples (cue frozen AND fly rotating). used for all the per-timepoint binning above.
+block_mask_all  = cell(n_trials,1); % per-sample, gap-merged version of freeze_idx: used only to find genuine block boundaries/onsets below, so a block's start isn't falsely reset by the fly briefly stopping mid-freeze.
 frac_freeze     = nan(n_trials,1);
 n_blocks        = nan(n_trials,1);
 block_dur       = cell(n_trials,1);
@@ -57,6 +59,7 @@ for i = 1:n_trials
     if is_dark(i); continue; end
 
     min_block_frames = max(1,round(min_block_s/dt));
+    max_gap_frames    = max(1,round(max_gap_s/dt));
     c  = all_data(i).ft.cue;
 
     dc = smoothdata([diff(unwrap(c))/dt;0],'gaussian',pre_smooth);
@@ -66,7 +69,10 @@ for i = 1:n_trials
     freeze_idx_all{i} = freeze_idx;
     frac_freeze(i) = mean(freeze_idx);
 
-    labeled = bwlabel(freeze_idx);
+    block_mask = ~bwareaopen(~freeze_idx, max_gap_frames); % fill in gaps shorter than max_gap_frames
+    block_mask_all{i} = block_mask;
+
+    labeled = bwlabel(block_mask);
     n_blocks(i) = max(labeled);
     dur = nan(n_blocks(i),1);
     for b = 1:n_blocks(i)
@@ -200,19 +206,162 @@ end
 
 metric_names = {'summed dFF (z-scored, all clusters)','peak dFF (z-scored, all clusters)','peak amplitude, max-min dFF (z-scored, all clusters)'};
 metric_data  = {binned_sum, binned_peak, binned_range};
+cond_rgb     = {[0,0,0],[1,0,0],[0,0,1]};
 
 for m = 1:3
     figure('Name',metric_names{m}); clf; hold on
-    h = nan(3,1);
+
+    % faint individual-fly traces, one per fly per condition, drawn first so the
+    % mean +/- sem traces (with bin markers) sit on top and stay legible
     for c = 1:3
         y = squeeze(metric_data{m}(:,c,:)); % speed bins x flies
+        plot(speed_x,y,'Color',[cond_rgb{c},.15])
+    end
+
+    h = nan(3,1);
+    for c = 1:3
+        y = squeeze(metric_data{m}(:,c,:));
         plotsem(speed_x,y',cond_color{c});
-        h(c) = plot(speed_x,mean(y,2,'omitnan'),cond_color{c},'linewidth',2);
+        h(c) = plot(speed_x,mean(y,2,'omitnan'),'-o','Color',cond_rgb{c}, ...
+            'MarkerFaceColor',cond_rgb{c},'MarkerSize',4,'linewidth',2);
     end
     legend(h,conditions)
     xlabel('rotational speed (rad/s)')
     ylabel(metric_names{m})
+    title(sprintf('faint lines = individual flies (n=%d)',n_flies))
 end
+
+%% per-fly consistency: paired differences in summed dFF vs. rotational speed
+% one figure per pairwise comparison. each fly contributes one faint gray
+% difference trace (its own closed-loop/frozen/dark binned curves,
+% subtracted bin-by-bin), overlaid with the mean +/- sem across flies.
+
+diff_pairs = {[1,3],[1,2],[2,3]}; % {closed loop vs dark, closed loop vs frozen, frozen vs dark}
+diff_names = {'closed loop - dark','closed loop - frozen','frozen - dark'};
+
+for p = 1:length(diff_pairs)
+    a = diff_pairs{p}(1);
+    b = diff_pairs{p}(2);
+    d = squeeze(binned_sum(:,a,:) - binned_sum(:,b,:)); % speed bins x flies
+
+    figure('Name',sprintf('summed dFF: %s',diff_names{p})); clf; hold on
+    plot(speed_x,d,'Color',[.5,.5,.5,.5])
+    plotsem(speed_x,d','k');
+    plot(speed_x,mean(d,2,'omitnan'),'-ok','linewidth',2,'MarkerFaceColor','k','MarkerSize',4)
+    plot(xlim,[0,0],':k','linewidth',1)
+    xlabel('rotational speed (rad/s)')
+    ylabel(sprintf('summed dFF, %s',diff_names{p}))
+    title(sprintf('faint lines = individual flies (n=%d)',n_flies))
+end
+
+%% fluorescence deficit over the course of a freeze block, aligned to onset
+% for every detected freeze block, align a window of data to the block's
+% starting edge (t=0). at each aligned sample we know the instantaneous
+% rotational speed, so we look up "what summed dFF would be expected if
+% the cue were still moving at that speed" and compare it to what was
+% actually observed. one trace is plotted per rotational speed bin.
+%
+% the "expected if moving" value for a given block uses THAT FLY's own
+% closed-loop curve (binned_sum(:,1,fly)), not the population-average
+% curve: flies differ a lot in their overall closed-loop gain (see the
+% spread of faint lines in the sum/peak/range figures above), and flies
+% with more/longer freeze blocks are not a random sample of flies, so
+% comparing against the population average leaves a persistent
+% non-zero offset even before the freeze starts. matching each block to
+% its own fly's reference removes that. blocks are also first averaged
+% within each fly before averaging across flies (equal per-fly weight,
+% consistent with how the reference curves themselves were built),
+% rather than pooling every block equally.
+
+rel_t       = -15:.25:25;  % time relative to freeze onset (s)
+min_flies   = 5;           % require at least this many flies contributing at a given (time, speed bin) to trust it
+
+block_list = zeros(0,2); % [trial_idx, block_label]
+for i = 1:n_trials
+    if is_dark(i) || isnan(n_blocks(i)) || n_blocks(i)==0; continue; end
+    for b = 1:n_blocks(i)
+        block_list = [block_list; i, b]; %#ok<AGROW>
+    end
+end
+
+n_align      = size(block_list,1);
+diff_mat     = nan(n_align,length(rel_t));
+speed_mat    = nan(n_align,length(rel_t));
+fly_of_block = fly_id(block_list(:,1));
+
+for k = 1:n_align
+    i = block_list(k,1);
+    b = block_list(k,2);
+    ref_fly = squeeze(binned_sum(:,1,fly_of_block(k))); % this fly's own closed-loop reference curve
+
+    % onset is found from block_mask_all (gap-merged), not freeze_idx_all,
+    % so a momentary dip in rotation speed mid-freeze doesn't get mistaken
+    % for a return to closed loop followed by a fresh onset
+    labeled    = bwlabel(block_mask_all{i});
+    onset_idx  = find(labeled==b,1,'first');
+    onset_time = all_data(i).ft.xf(onset_idx);
+    xq = onset_time + rel_t;
+
+    cr_q    = interp1(all_data(i).ft.xf, cr_all{i},          xq);
+    amp_q   = interp1(all_data(i).ft.xf, sum_cell{i},        xq);
+    label_q = interp1(all_data(i).ft.xf, double(labeled), xq, 'nearest');
+
+    % keep only samples that are genuinely on the correct side of this
+    % specific freeze block: before t=0, only keep samples where the cue
+    % is not frozen at all (label==0); at/after t=0, only keep samples
+    % still inside THIS block's own frozen span (label==b) -- e.g. if the
+    % cue re-starts moving 2s into a block, later timepoints get dropped
+    % rather than silently counted as "observed while frozen"
+    keep = false(1,length(rel_t));
+    keep(rel_t<0)  = label_q(rel_t<0)==0;
+    keep(rel_t>=0) = label_q(rel_t>=0)==b;
+
+    speed_mat(k,:) = cr_q;
+    diff_mat(k,:)  = amp_q - interp1(speed_x, ref_fly, cr_q); % observed - expected
+    diff_mat(k,~keep)  = nan;
+    speed_mat(k,~keep) = nan;
+end
+
+fprintf('n freeze blocks aligned: %d\n', n_align);
+
+figure('Name','freeze-onset aligned fluorescence deficit','Position',[100,100,900,550]); clf; hold on
+cmap = parula(length(speed_x));
+h = []; leg_labels = {};
+smooth_win = 5; % ~1.25s of smoothing (rel_t step is .25s), for display only
+
+for j = 1:(length(speed_edges)-1)
+    bin_idx = speed_mat >= speed_edges(j) & speed_mat < speed_edges(j+1);
+    trace   = nan(1,length(rel_t));
+    for t = 1:length(rel_t)
+        col_idx = bin_idx(:,t);
+        flies_here = unique(fly_of_block(col_idx));
+        fly_vals = nan(length(flies_here),1);
+        for ff = 1:length(flies_here)
+            rows = col_idx & fly_of_block==flies_here(ff);
+            fly_vals(ff) = mean(diff_mat(rows,t),'omitnan');
+        end
+        if sum(~isnan(fly_vals)) >= min_flies
+            trace(t) = mean(fly_vals,'omitnan');
+        end
+    end
+    if all(isnan(trace)); continue; end
+
+    nan_mask = isnan(trace);
+    trace = smoothdata(trace,'movmean',smooth_win,'omitnan');
+    trace(nan_mask) = nan; % don't let smoothing bridge over bins that failed the min_flies cutoff
+
+    h(end+1)          = plot(rel_t,trace,'Color',cmap(j,:),'linewidth',1.5); %#ok<SAGROW>
+    leg_labels{end+1} = sprintf('%.2f-%.2f rad/s',speed_edges(j),speed_edges(j+1)); %#ok<SAGROW>
+end
+
+y = ylim;
+plot([0,0],y,':k','linewidth',1)
+ylim(y)
+plot(xlim,[0,0],':k','linewidth',1)
+legend(h,leg_labels,'Location','eastoutside')
+xlabel('time from freeze onset (s)')
+ylabel('summed dFF: observed - closed-loop expectation')
+title('freeze onset alignment (negative = below closed-loop expectation)')
 
 %% Functions
 
@@ -231,5 +380,8 @@ function h = plotsem(t,x,c)
     s = std(x,[],1,'omitnan') ./ sqrt(sum(~isnan(x),1));
     t = reshape(t,1,[]);
 
-    h = patch([t,fliplr(t)],[m+s,m-s],c,'FaceAlpha',.2,'EdgeColor','none');
+    valid = ~isnan(m) & ~isnan(s); % drop bins with no data so a trailing NaN doesn't blank the whole patch
+    t = t(valid); m = m(valid); s = s(valid);
+
+    h = patch([t,fliplr(t)],[m+s,fliplr(m-s)],c,'FaceAlpha',.2,'EdgeColor','none');
 end
