@@ -143,7 +143,8 @@ end
 
 
 %% plot heading traces
-idx = find(cellfun(@(x)(contains(x,'20260528\fly 1')),{all_data.meta})); %,6,'last');
+idx = find(cellfun(@(x)(contains(x,'20260601\fly 1')),{all_data.meta})); %,6,'last');
+
 dark_mode = true;
 figure(2); clf
 c1 = [zeros(256,1),linspace(0,1,256)',zeros(256,1)];
@@ -154,11 +155,13 @@ for i = 1:length(idx)
     imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).atp.d,'AlphaData',1);
     colormap(a2,c2)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
+    
 
     a1 = axes('Position',get(gca,  'Position')); 
-    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.z,'AlphaData',1);
+    imagesc(all_data(idx(i)).ft.xb,unwrap(all_data(idx(i)).im.alpha),all_data(idx(i)).im.d,'AlphaData',1);
     colormap(a1,c1)
     yticks([-pi,0,pi]); yticklabels({'-\pi','0','\pi'})
+    set(gca, 'Clim',[-.5,2])
     %xticks([])
     
     set(gca,'color','none')
@@ -179,9 +182,10 @@ for i = 1:length(idx)
     hold on
     %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.r_speed)/max(abs(all_data(idx(i)).ft.r_speed)))
     %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed)/max(abs(all_data(idx(i)).ft.f_speed)))
+    %plot(all_data(idx(i)).ft.xf,abs(all_data(idx(i)).ft.f_speed))
     yticks([]);xticks([])
     axis tight
-    set(gca,'Color','none')
+    %set(gca,'Color','none','Ylim',[0,2.5])
     linkaxes([a1,a2,a3],'x')
     linkaxes([a1,a2],'y')
 
