@@ -104,13 +104,13 @@ for i = 1:length(all_data)
 
     idx = abs(fly_vel) > vel_thresh & abs(bump_vel) < bump_thresh & rho > rho_thresh;
     vel_corr(i)    = corr(fly_vel(idx),bump_vel(idx));
-    inc_idx(i)   = sum(for_vel > 0) > sum(for_vel < 0);
+    inc_idx(i)     = sum(for_vel > 0) > sum(for_vel < 0);
 end
 
 [~,~,fly_num] = unique(fly_id);
 
 %% Plot results
-dark_mode = true;
+dark_mode = false;
 group_order = {'LPsP > syt8m (CL)','LPsP > syt8m (dark)'};
 ind = dark_idx + 1;
 
