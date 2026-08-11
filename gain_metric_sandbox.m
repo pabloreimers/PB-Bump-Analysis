@@ -8,15 +8,23 @@ while true
     imagesc(all_data(i).im.mask)
     title(i)
 
-    subplot(2,1,2);
-    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),all_data(i).im.z)
+    a2 = subplot(2,1,2);
+    tmp = all_data(i).im.z;
+    imagesc(all_data(i).ft.xb,unwrap(all_data(i).im.alpha),tmp)
     hold on
     if contains(all_data(i).ft.pattern,'background'); c = 'm'; else; c = 'c'; end
     a = plot(all_data(i).ft.xf,-all_data(i).ft.cue,c,'linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
     a = plot(all_data(i).ft.xb,all_data(i).im.mu,'w','linewidth',2); a.YData(abs(diff(a.YData))>pi) = nan;
-    title(all_data(i).meta,'Interpreter','none')
-    xlabel('time (s)')
+    xlabel(all_data(i).meta,'Interpreter','none')
+   
     set(gca,'CLim',[-2,3])
+
+    pos = get(gca,'Position');
+    a3 = axes('Position',[pos(1),pos(2)+pos(4),pos(3),.03],'color','none'); 
+    plot(all_data(i).ft.xb,sum(all_data(i).atp.f,1)/max(sum(all_data(i).atp.f,1)),'r','linewidth',2) 
+
+    linkaxes([a2,a3],'x')
+    axis tight
 
     w = waitforbuttonpress;
     if w == 1 % Check if it was a keyboard press
@@ -119,6 +127,71 @@ subplot(3,2,5);
 scatter(mov_cue,mov_mu)
 title(mov_ratio(i))
 
+%% create meta data indexes
+trial_num   = zeros(length(all_data),1);
+dark_idx    = false(length(all_data),1);
+empty_idx   = false(length(all_data),1);
+mcherry_idx = false(length(all_data),1);
+vglut_idx   = false(length(all_data),1);
+walk_idx    = false(length(all_data),1);
+cue_idx     = false(length(all_data),1);
+rho_idx     = false(length(all_data),1);
+fly_num     = nan(length(all_data),1);
+last_id = '';
+fly_counter = 0;
+
+for_thresh = .1; %what is the minimum walking speed
+for_length = .2; %what percentage of the trial does the animal have to be walking that speed
+cue_thresh = 5;  %how much does the cue have to move to report that it was moving during the trial
+rho_thresh = .2; %what does the average pva rho have to be to label this brain as having a "bump" during the trial
+
+for i = 1:length(all_data)
+    meta_parts  = split(all_data(i).meta,'\');
+    geno        = [meta_parts{end-2:end-1}];
+    fly_id      = [meta_parts{end-4:end-2}];
+
+    if ~strcmp(fly_id,last_id)
+        counter = 0;       
+        fly_counter = fly_counter+1;
+    end
+
+    counter = counter+1;
+    trial_num(i) = counter;
+    fly_num(i) = fly_counter;
+    last_id = fly_id;
+
+    if (sum((all_data(i).ft.f_speed>for_thresh) | (abs(all_data(i).ft.r_speed)*2 > for_thresh)) > length(all_data(i).ft.f_speed)*for_length)
+        %if (sum(all_data(i).ft.f_speed>for_thresh) > length(all_data(i).ft.f_speed)*for_length)
+        walk_idx(i) = true;
+    end
+
+    if contains(all_data(i).ft.pattern,'background')
+        dark_idx(i) = true;
+    end
+
+    if contains(geno,'mcherry')
+        mcherry_idx(i) = true;
+    end
+
+    if contains(geno,'empty')
+        empty_idx(i) = true;
+    end
+
+    if contains(geno,'vglut')
+        vglut_idx(i) = true;
+    end
+
+    tmp2 = -cumsum(all_data(i).ft.r_speed)*.8/60;
+    idx = ~isnan(all_data(i).ft.cue) & ~isnan(tmp2);
+
+    if sum(abs(diff(unwrap(all_data(i).ft.cue))),'omitnan') > cue_thresh && circ_corrcc(all_data(i).ft.cue(idx),tmp2(idx)) > .5
+        cue_idx(i) = true;
+    end
+
+    if mean(all_data(i).im.rho) > rho_thresh
+        rho_idx(i) = true;
+    end
+end
 
 %%
 % compare the movement ratios for each fly
@@ -233,6 +306,7 @@ group_labels= { 'LPsP\newlineTH-RNAi\newlineCL\newline',...
     'x'};
 
 figure(1); clf
+
 
 for i = unique(group_ind)'
     hold on
