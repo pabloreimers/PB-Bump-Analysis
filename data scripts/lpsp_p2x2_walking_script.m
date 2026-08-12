@@ -2,7 +2,7 @@
 %clear all
 close all
 
-load('.data/lpsp_p2x2_walking_20260728.mat') %loads all_data
+load('data/lpsp_p2x2_walking_20260728.mat') %loads all_data
 
 %% subset to trials collected on or after 7/8
 trial_date = cellfun(@(x)(str2double(regexp(x,'\d{8}','match','once'))),{all_data.meta});

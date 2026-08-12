@@ -1,6 +1,6 @@
 %% load in data
 base_dir = 'Z:\pablo\epg_dlight\';
-data_file = fullfile(fileparts(fileparts(mfilename('fullpath'))),'.data','epg_dlight_20260415.mat');
+data_file = fullfile(fileparts(fileparts(mfilename('fullpath'))),'data','epg_dlight_20260415.mat');
 load(data_file); % loads all_data
 
 n_trials = length(all_data);
@@ -86,7 +86,7 @@ has_freeze = ~is_dark & frac_freeze > .01 & n_blocks >= 1; % closed-loop trials 
 fprintf('closed loop trials with detectable freeze blocks: %d / %d\n', sum(has_freeze), sum(~is_dark));
 
 %% summary figure: fly/trial counts
-figure('Name','epg_dlight summary'); clf
+figure(1); clf; set(gcf,'Name','epg_dlight summary')
 
 subplot(2,2,1)
 trial_type = repmat({'closed loop'},n_trials,1);
@@ -119,7 +119,7 @@ ylabel('# blocks')
 %% example trial: fly heading, cue, and detected freeze blocks
 i = find(has_freeze,1);
 
-figure('Name','example freeze detection'); clf
+figure(2); clf; set(gcf,'Name','example freeze detection')
 a1 = subplot(2,1,1); hold on
 plot(all_data(i).ft.xf, all_data(i).ft.heading,'k')
 plot(all_data(i).ft.xf, -unwrap(all_data(i).ft.cue),'c')
@@ -156,16 +156,210 @@ speed_x     = speed_edges(1:end-1) + diff(speed_edges)/2;
 min_bin_s   = 5;                       % require this many seconds of data per bin to trust it
 nominal_dt  = mean(diff(all_data(1).ft.xf));
 
-sum_cell   = cell(n_trials,1);
-peak_cell  = cell(n_trials,1);
-range_cell = cell(n_trials,1);
+sum_cell        = cell(n_trials,1);
+peak_cell       = cell(n_trials,1); % peak fluorescence: max of the hemisphere-averaged clusters (no fit) -- drives the speed/consistency plots below
+peak_fit_cell   = cell(n_trials,1); % von Mises fit peak, hemisphere-averaged, kept for comparison below
+peak_raw_cell   = cell(n_trials,1); % previous peak definition: max(dFF,[],2) over all raw clusters, kept for comparison below
+peak_2hemi_cell = cell(n_trials,1); % alternative: no hemisphere averaging, two independent per-hemisphere fits, kept for comparison below
+range_cell      = cell(n_trials,1);
+dff_avg_cell    = cell(n_trials,1); % hemisphere-averaged (n_cluster/2) profile, kept below for the example fit figure
+bump_fit        = struct('mu',[],'kappa',[],'amp',[],'offset',[]);
+bump_fit(n_trials) = bump_fit(1);
+bump_fit_2hemi  = struct('muL',[],'kappaL',[],'ampL',[],'offsetL',[], ...
+                          'muR',[],'kappaR',[],'ampR',[],'offsetR',[]);
+bump_fit_2hemi(n_trials) = bump_fit_2hemi(1);
 
 for i = 1:n_trials
     dff = interp1(all_data(i).ft.xb, all_data(i).im.z', all_data(i).ft.xf);
-    sum_cell{i}   = sum(dff,2);
-    peak_cell{i}  = max(dff,[],2);
-    range_cell{i} = max(dff,[],2) - min(dff,[],2);
+    sum_cell{i}      = sum(dff,2);
+    range_cell{i}    = max(dff,[],2) - min(dff,[],2);
+    peak_raw_cell{i} = max(dff,[],2);
+
+    % average the two PB hemispheres cluster-for-cluster (cluster c with
+    % cluster c + n_cluster/2, e.g. cluster 1 with 17 of 32) before fitting
+    % the bump, so the fit sees one clean profile instead of two noisy,
+    % partially-redundant ones
+    n_cluster  = size(dff,2);
+    half       = n_cluster/2;
+    dff_avg    = (dff(:,1:half) + dff(:,half+1:end)) / 2;
+    alpha_half = linspace(-pi,pi,half);
+
+    [mu,kappa,amp,offset,peak] = fit_bump_vonmises(dff_avg,alpha_half);
+
+    dff_avg_cell{i}    = dff_avg;
+    bump_fit(i).mu     = mu;
+    bump_fit(i).kappa  = kappa;
+    bump_fit(i).amp    = amp;
+    bump_fit(i).offset = offset;
+
+    peak_fit_cell{i} = peak; % von Mises fit peak dFF, kept for comparison below
+    peak_cell{i}     = max(dff_avg,[],2); % peak fluorescence: max of the hemisphere-averaged clusters, no fit
+
+    % alternative: skip the averaging and fit each hemisphere's 16 clusters
+    % independently (same alpha_half domain for both, since it's the same
+    % local position around the bridge on each side) -- this is two
+    % separate, independently-located bumps instead of one, so unlike the
+    % averaged fit above, the profile across all 32 raw clusters can show
+    % two distinct peaks (one per hemisphere) rather than being forced into one
+    [muL,kappaL,ampL,offsetL,peakL] = fit_bump_vonmises(dff(:,1:half),      alpha_half);
+    [muR,kappaR,ampR,offsetR,peakR] = fit_bump_vonmises(dff(:,half+1:end),  alpha_half);
+
+    bump_fit_2hemi(i).muL     = muL;
+    bump_fit_2hemi(i).kappaL  = kappaL;
+    bump_fit_2hemi(i).ampL    = ampL;
+    bump_fit_2hemi(i).offsetL = offsetL;
+    bump_fit_2hemi(i).muR     = muR;
+    bump_fit_2hemi(i).kappaR  = kappaR;
+    bump_fit_2hemi(i).ampR    = ampR;
+    bump_fit_2hemi(i).offsetR = offsetR;
+
+    peak_2hemi_cell{i} = (peakL + peakR) / 2; % combine the two independent hemisphere peaks the same way averaging would have
 end
+
+%% example timepoint: hemisphere-averaged bump and its von Mises fit
+% pick the frame with the strongest population-vector bump, using im.rho
+% (computed independently during preprocessing -- see e.g. cshl_poster_figures.m
+% for the same pattern: rho = interp1(xb,all_data(i).im.rho,xf)) rather than
+% our own fit's amplitude, so the example isn't chosen by the very method
+% it's meant to illustrate
+
+ex_rho = -inf; ex_i = 1; ex_t = 1;
+for i = 1:n_trials
+    rho_i = interp1(all_data(i).ft.xb, all_data(i).im.rho, all_data(i).ft.xf);
+    [r,t] = max(rho_i);
+    if r > ex_rho
+        ex_rho = r; ex_i = i; ex_t = t;
+    end
+end
+
+ex_alpha  = linspace(-pi,pi,size(dff_avg_cell{ex_i},2));
+theta_grid = linspace(-pi,pi,200);
+ex_fit = bump_fit(ex_i).offset(ex_t) + bump_fit(ex_i).amp(ex_t) * ...
+    exp(bump_fit(ex_i).kappa(ex_t) * (cos(theta_grid - bump_fit(ex_i).mu(ex_t)) - 1));
+
+ex_fit_peak = max(ex_fit); % the "max value of the fit" for this example timepoint
+fprintf('example timepoint (trial %d, frame %d): fit peak dFF = %.3f\n', ex_i, ex_t, ex_fit_peak);
+
+figure(3); clf; set(gcf,'Name','example bump fit'); hold on
+plot(ex_alpha, dff_avg_cell{ex_i}(ex_t,:), 'ko', 'MarkerFaceColor','k', 'MarkerSize',6)
+plot(theta_grid, ex_fit, 'r-', 'linewidth',1.5)
+plot(bump_fit(ex_i).mu(ex_t), ex_fit_peak, 'rv', 'MarkerFaceColor','r')
+xlabel('cluster angle around PB (rad)')
+ylabel('hemisphere-averaged dFF (z-scored)')
+legend('hemisphere-averaged clusters','von Mises fit','fit peak','Location','best')
+title(sprintf('%s, frame %d',all_data(ex_i).meta,ex_t),'Interpreter','none')
+
+%% same example timepoint, fit without hemisphere averaging (two independent bumps)
+% same trial/frame as above, but now each hemisphere's 16 raw clusters are
+% fit on their own (bump_fit_2hemi, computed in the loop above) instead of
+% being averaged together first. plotted on the shared local-angle axis so
+% you can see directly whether the two hemispheres' bumps agree or not.
+
+half_ex = numel(ex_alpha);
+dff_ex  = interp1(all_data(ex_i).ft.xb, all_data(ex_i).im.z', all_data(ex_i).ft.xf(ex_t)); % raw (unaveraged) clusters, this one frame
+
+fitL = bump_fit_2hemi(ex_i).offsetL(ex_t) + bump_fit_2hemi(ex_i).ampL(ex_t) * ...
+    exp(bump_fit_2hemi(ex_i).kappaL(ex_t) * (cos(theta_grid - bump_fit_2hemi(ex_i).muL(ex_t)) - 1));
+fitR = bump_fit_2hemi(ex_i).offsetR(ex_t) + bump_fit_2hemi(ex_i).ampR(ex_t) * ...
+    exp(bump_fit_2hemi(ex_i).kappaR(ex_t) * (cos(theta_grid - bump_fit_2hemi(ex_i).muR(ex_t)) - 1));
+peakL_ex = max(fitL);
+peakR_ex = max(fitR);
+
+figure(4); clf; set(gcf,'Name','example bump fit, no hemisphere averaging'); hold on
+plot(ex_alpha, dff_ex(1:half_ex),         'o', 'Color',[0,.45,.74],  'MarkerFaceColor',[0,.45,.74])
+plot(ex_alpha, dff_ex(half_ex+1:end),     'o', 'Color',[.85,.33,.1], 'MarkerFaceColor',[.85,.33,.1])
+plot(theta_grid, fitL, '-', 'Color',[0,.45,.74],  'linewidth',1.5)
+plot(theta_grid, fitR, '-', 'Color',[.85,.33,.1], 'linewidth',1.5)
+plot(bump_fit_2hemi(ex_i).muL(ex_t), peakL_ex, 'v', 'Color',[0,.45,.74],  'MarkerFaceColor',[0,.45,.74])
+plot(bump_fit_2hemi(ex_i).muR(ex_t), peakR_ex, 'v', 'Color',[.85,.33,.1], 'MarkerFaceColor',[.85,.33,.1])
+xlabel('cluster angle around PB (rad)')
+ylabel('raw per-cluster dFF (z-scored)')
+legend('hemisphere L clusters','hemisphere R clusters','hemisphere L fit','hemisphere R fit','Location','best')
+title(sprintf('%s, frame %d -- no hemisphere averaging',all_data(ex_i).meta,ex_t),'Interpreter','none')
+
+%% compare the von Mises peak to the old max-cluster peak, and to summed dFF
+% "old" peak = max(dFF,[],2) over all raw clusters (the previous
+% definition); "fit" peak = the von Mises fit peak, computed above from the
+% hemisphere-averaged clusters. pooled across every behavioral sample from
+% every trial; subsampled just for the scatter plots since that pool is far
+% too dense to render usefully as individual points.
+
+all_peak_fit = cat(1,peak_fit_cell{:});
+all_peak_raw = cat(1,peak_raw_cell{:});
+all_sum      = cat(1,sum_cell{:});
+
+ok = ~isnan(all_peak_fit) & ~isnan(all_peak_raw) & ~isnan(all_sum);
+
+r_fit_vs_raw = corr(all_peak_fit(ok),all_peak_raw(ok));
+r_fit_vs_sum = corr(all_peak_fit(ok),all_sum(ok));
+
+fprintf('von Mises peak vs. old max-cluster peak: r = %.3f (n = %d samples)\n', r_fit_vs_raw, sum(ok));
+fprintf('von Mises peak vs. summed dFF:           r = %.3f (n = %d samples)\n', r_fit_vs_sum, sum(ok));
+
+n_plot = min(20000,sum(ok));
+plot_idx = randsample(find(ok),n_plot);
+
+figure(5); clf; set(gcf,'Name','von Mises peak vs. old peak & summed dFF','Position',[100,100,900,420])
+
+subplot(1,2,1); hold on
+scatter(all_peak_raw(plot_idx),all_peak_fit(plot_idx),4,'filled','MarkerFaceAlpha',.15,'MarkerFaceColor','k')
+axis equal
+lims = [min([xlim,ylim]),max([xlim,ylim])];
+plot(lims,lims,':k')
+xlim(lims); ylim(lims)
+xlabel('old peak: max(dFF), all raw clusters')
+ylabel('von Mises fit peak')
+title(sprintf('r = %.2f, n = %d',r_fit_vs_raw,sum(ok)))
+
+subplot(1,2,2); hold on
+scatter(all_sum(plot_idx),all_peak_fit(plot_idx),4,'filled','MarkerFaceAlpha',.15,'MarkerFaceColor','k')
+xlabel('summed dFF, all raw clusters')
+ylabel('von Mises fit peak')
+title(sprintf('r = %.2f, n = %d',r_fit_vs_sum,sum(ok)))
+
+%% compare the no-averaging (two-hemisphere) peak to the other three peak definitions
+% peak_2hemi = mean of the two independent per-hemisphere fit peaks (no
+% pre-averaging of the raw clusters). compared against: the hemisphere-
+% averaged fit peak used above, the old max-cluster peak, and summed dFF.
+
+all_peak_2hemi = cat(1,peak_2hemi_cell{:});
+ok2 = ok & ~isnan(all_peak_2hemi);
+
+r_2hemi_vs_fit = corr(all_peak_2hemi(ok2),all_peak_fit(ok2));
+r_2hemi_vs_raw = corr(all_peak_2hemi(ok2),all_peak_raw(ok2));
+r_2hemi_vs_sum = corr(all_peak_2hemi(ok2),all_sum(ok2));
+
+fprintf('no-averaging peak vs. hemisphere-averaged fit peak: r = %.3f (n = %d samples)\n', r_2hemi_vs_fit, sum(ok2));
+fprintf('no-averaging peak vs. old max-cluster peak:         r = %.3f (n = %d samples)\n', r_2hemi_vs_raw, sum(ok2));
+fprintf('no-averaging peak vs. summed dFF:                   r = %.3f (n = %d samples)\n', r_2hemi_vs_sum, sum(ok2));
+
+plot_idx2 = randsample(find(ok2),min(20000,sum(ok2)));
+
+figure(6); clf; set(gcf,'Name','no-averaging peak vs. other peak definitions','Position',[100,100,1300,420])
+
+subplot(1,3,1); hold on
+scatter(all_peak_fit(plot_idx2),all_peak_2hemi(plot_idx2),4,'filled','MarkerFaceAlpha',.15,'MarkerFaceColor','k')
+axis equal
+lims2 = [min([xlim,ylim]),max([xlim,ylim])];
+plot(lims2,lims2,':k')
+xlim(lims2); ylim(lims2)
+xlabel('fit peak, hemisphere-averaged')
+ylabel('fit peak, no averaging (mean of 2 hemispheres)')
+title(sprintf('r = %.2f, n = %d',r_2hemi_vs_fit,sum(ok2)))
+
+subplot(1,3,2); hold on
+scatter(all_peak_raw(plot_idx2),all_peak_2hemi(plot_idx2),4,'filled','MarkerFaceAlpha',.15,'MarkerFaceColor','k')
+xlabel('old peak: max(dFF), all raw clusters')
+ylabel('fit peak, no averaging')
+title(sprintf('r = %.2f, n = %d',r_2hemi_vs_raw,sum(ok2)))
+
+subplot(1,3,3); hold on
+scatter(all_sum(plot_idx2),all_peak_2hemi(plot_idx2),4,'filled','MarkerFaceAlpha',.15,'MarkerFaceColor','k')
+xlabel('summed dFF, all raw clusters')
+ylabel('fit peak, no averaging')
+title(sprintf('r = %.2f, n = %d',r_2hemi_vs_sum,sum(ok2)))
+
+%% fluorescence vs. rotational speed: closed loop vs. frozen vs. dark (continued)
 
 conditions = {'closed loop','frozen','dark'};
 cond_color = {'k','r','b'};
@@ -204,12 +398,12 @@ for f = 1:n_flies
     binned_range(:,3,f) = bin_by_speed(cr_dk,          rng_dk,           speed_edges, nominal_dt, min_bin_s);
 end
 
-metric_names = {'summed dFF (z-scored, all clusters)','peak dFF (z-scored, all clusters)','peak amplitude, max-min dFF (z-scored, all clusters)'};
+metric_names = {'summed dFF (z-scored, all clusters)','peak dFF (max, hemisphere-averaged)','peak amplitude, max-min dFF (z-scored, all clusters)'};
 metric_data  = {binned_sum, binned_peak, binned_range};
 cond_rgb     = {[0,0,0],[1,0,0],[0,0,1]};
 
 for m = 1:3
-    figure('Name',metric_names{m}); clf; hold on
+    figure(6+m); clf; set(gcf,'Name',metric_names{m}); hold on
 
     % faint individual-fly traces, one per fly per condition, drawn first so the
     % mean +/- sem traces (with bin markers) sit on top and stay legible
@@ -231,27 +425,32 @@ for m = 1:3
     title(sprintf('faint lines = individual flies (n=%d)',n_flies))
 end
 
-%% per-fly consistency: paired differences in summed dFF vs. rotational speed
-% one figure per pairwise comparison. each fly contributes one faint gray
-% difference trace (its own closed-loop/frozen/dark binned curves,
-% subtracted bin-by-bin), overlaid with the mean +/- sem across flies.
+%% per-fly consistency: paired differences in summed & peak dFF vs. rotational speed
+% one figure per pairwise comparison, per metric. each fly contributes one
+% faint gray difference trace (its own closed-loop/frozen/dark binned
+% curves, subtracted bin-by-bin), overlaid with the mean +/- sem across flies.
 
 diff_pairs = {[1,3],[1,2],[2,3]}; % {closed loop vs dark, closed loop vs frozen, frozen vs dark}
 diff_names = {'closed loop - dark','closed loop - frozen','frozen - dark'};
 
-for p = 1:length(diff_pairs)
-    a = diff_pairs{p}(1);
-    b = diff_pairs{p}(2);
-    d = squeeze(binned_sum(:,a,:) - binned_sum(:,b,:)); % speed bins x flies
+consistency_metrics = {'summed dFF','peak dFF'};
+consistency_data    = {binned_sum, binned_peak};
 
-    figure('Name',sprintf('summed dFF: %s',diff_names{p})); clf; hold on
-    plot(speed_x,d,'Color',[.5,.5,.5,.5])
-    plotsem(speed_x,d','k');
-    plot(speed_x,mean(d,2,'omitnan'),'-ok','linewidth',2,'MarkerFaceColor','k','MarkerSize',4)
-    plot(xlim,[0,0],':k','linewidth',1)
-    xlabel('rotational speed (rad/s)')
-    ylabel(sprintf('summed dFF, %s',diff_names{p}))
-    title(sprintf('faint lines = individual flies (n=%d)',n_flies))
+for q = 1:length(consistency_data)
+    for p = 1:length(diff_pairs)
+        a = diff_pairs{p}(1);
+        b = diff_pairs{p}(2);
+        d = squeeze(consistency_data{q}(:,a,:) - consistency_data{q}(:,b,:)); % speed bins x flies
+
+        figure(9 + (q-1)*length(diff_pairs) + p); clf; set(gcf,'Name',sprintf('%s: %s',consistency_metrics{q},diff_names{p})); hold on
+        plot(speed_x,d,'Color',[.5,.5,.5,.5])
+        plotsem(speed_x,d','k');
+        plot(speed_x,mean(d,2,'omitnan'),'-ok','linewidth',2,'MarkerFaceColor','k','MarkerSize',4)
+        plot(xlim,[0,0],':k','linewidth',1)
+        xlabel('rotational speed (rad/s)')
+        ylabel(sprintf('%s, %s',consistency_metrics{q},diff_names{p}))
+        title(sprintf('faint lines = individual flies (n=%d)',n_flies))
+    end
 end
 
 %% fluorescence deficit over the course of a freeze block, aligned to onset
@@ -324,7 +523,7 @@ end
 
 fprintf('n freeze blocks aligned: %d\n', n_align);
 
-figure('Name','freeze-onset aligned fluorescence deficit','Position',[100,100,900,550]); clf; hold on
+figure(16); clf; set(gcf,'Name','freeze-onset aligned fluorescence deficit','Position',[100,100,900,550]); hold on
 cmap = parula(length(speed_x));
 h = []; leg_labels = {};
 smooth_win = 5; % ~1.25s of smoothing (rel_t step is .25s), for display only
@@ -363,6 +562,27 @@ xlabel('time from freeze onset (s)')
 ylabel('summed dFF: observed - closed-loop expectation')
 title('freeze onset alignment (negative = below closed-loop expectation)')
 
+%% save all figures as PDF
+% one PDF per figure, named after that figure's 'Name' (set above via
+% set(gcf,'Name',...)), lowercased with non-alphanumeric runs collapsed to
+% a single underscore -- e.g. 'peak dFF: closed loop - frozen' ->
+% peak_dff_closed_loop_frozen.pdf
+
+save_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))),'ugly_figures','epg_dlight');
+if ~exist(save_dir,'dir'); mkdir(save_dir); end
+
+for fig_num = 1:16
+    fh = findobj('Type','figure','Number',fig_num);
+    if isempty(fh); continue; end
+
+    file_name = lower(get(fh,'Name'));
+    file_name = regexprep(file_name,'[^a-z0-9]+','_');
+    file_name = regexprep(file_name,'^_+|_+$','');
+
+    exportgraphics(fh, fullfile(save_dir,[file_name,'.pdf']))
+    fprintf('saved figure %d -> %s.pdf\n', fig_num, file_name);
+end
+
 %% Functions
 
 function m = bin_by_speed(cr, y, edges, dt, min_sec)
@@ -384,4 +604,82 @@ function h = plotsem(t,x,c)
     t = t(valid); m = m(valid); s = s(valid);
 
     h = patch([t,fliplr(t)],[m+s,fliplr(m-s)],c,'FaceAlpha',.2,'EdgeColor','none');
+end
+
+function [mu,kappa,amp,offset,peak] = fit_bump_vonmises(y,alpha)
+% fit_bump_vonmises  per-row (per-timepoint) von Mises "bump" fit:
+%   y(theta) = offset + amp * exp(kappa*(cos(theta-mu)-1))
+% where kappa is the concentration parameter (kappa = 1/width: larger kappa
+% -> narrower bump) and amp/offset set its height/baseline.
+%
+%   y      [n_time x n_cluster] signal at each of n_cluster fixed angles
+%   alpha  [1 x n_cluster] angle (rad) of each column of y
+%
+% mu and kappa come from the population vector (weighted circular mean) of
+% the non-negative part of y, converted to kappa with the same point
+% estimate circ_kappa.m uses (Fisher, 1993, eq. p.88) -- the resultant-length
+% -> kappa formula assumes non-negative "counts", so only the negative part
+% of the (z-scored) signal is clipped for this step; amp/offset below are
+% still fit to the real, signed data. Given mu/kappa, the model is linear in
+% [amp,offset], so that fit is closed-form (exact 2-parameter least squares)
+% rather than an iterative optimizer run at every timepoint of a whole
+% experiment's worth of data.
+
+n     = numel(alpha);
+alpha = reshape(alpha,1,n);
+
+w  = max(y,0);
+sw = sum(w,2);
+cx = w*cos(alpha)';
+cy = w*sin(alpha)';
+
+mu = atan2(cy,cx);
+R  = zeros(size(sw));
+R(sw>0) = hypot(cx(sw>0),cy(sw>0)) ./ sw(sw>0);
+
+kappa = kappa_from_R(R,n);
+
+basis = exp(kappa.*(cos(alpha-mu)-1)); % n_time x n_cluster
+
+Sb  = sum(basis,2);
+Sbb = sum(basis.^2,2);
+Sy  = sum(y,2);
+Sby = sum(basis.*y,2);
+
+det  = Sbb.*n - Sb.^2;
+flat = abs(det) < 1e-9; % basis is ~constant (kappa~0, no clear direction) -> amp/offset aren't separable
+
+amp    = nan(size(det));
+offset = nan(size(det));
+amp(~flat)    = (Sby(~flat).*n - Sb(~flat).*Sy(~flat)) ./ det(~flat);
+offset(~flat) = (Sbb(~flat).*Sy(~flat) - Sb(~flat).*Sby(~flat)) ./ det(~flat);
+
+amp(flat)    = 0;
+offset(flat) = mean(y(flat,:),2);
+
+theta_grid = linspace(-pi,pi,64);
+y_grid = offset + amp.*exp(kappa.*(cos(theta_grid-mu)-1));
+peak   = max(y_grid,[],2);
+end
+
+function kappa = kappa_from_R(R,N)
+% vectorized version of circ_kappa.m's point estimate (Fisher, 1993, eq.
+% p.88) for a fixed sample size N shared across every row of R
+
+R = min(R,1-1e-4); % avoid the R->1 singularity in the R>=.85 branch below
+
+kappa = zeros(size(R));
+lo  = R < .53;
+mid = R >= .53 & R < .85;
+hi  = R >= .85;
+
+kappa(lo)  = 2*R(lo) + R(lo).^3 + 5*R(lo).^5/6;
+kappa(mid) = -.4 + 1.39*R(mid) + .43./(1-R(mid));
+kappa(hi)  = 1./(R(hi).^3 - 4*R(hi).^2 + 3*R(hi));
+
+if N < 15
+    small = kappa < 2;
+    kappa(small)  = max(kappa(small) - 2./(N*kappa(small)), 0);
+    kappa(~small) = (N-1)^3 .* kappa(~small) ./ (N^3+N);
+end
 end
