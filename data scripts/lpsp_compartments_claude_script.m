@@ -1605,6 +1605,157 @@ legend([h_off,h_hdg],{'circ.var(heading - bump)','circ.var(heading)'},'Location'
 ylabel('circular variance (window mean)')
 title('one point per fly: offset variance (color) vs. heading variance alone (gray)')
 
+%% 8) EPG GRAB(DA2m) / jRGECo1a co-imaging: how well do the two channels' bump positions agree?
+% a separate dataset from the three combined above: two channels imaged
+% simultaneously from the same PB (same frames, same mask), so grab.mu and
+% geco.mu are directly comparable frame-for-frame with no cross-channel
+% registration needed. loading/processing follows epg_coimaging_script.m;
+% reuses this script's flash-detection helper and the rotation/discernable-
+% bump thresholds already established in section 7 (rot_thresh_track,
+% rho_thresh_track), for consistency with the rest of this analysis.
+coimg_file = 'epg_coimage_20260120.mat';
+tmp = load(fullfile(data_dir,coimg_file),'all_data');
+coimg = tmp.all_data(:);
+n_coimg = numel(coimg);
+fprintf('\nloaded %d co-imaging trials from %s\n', n_coimg, coimg_file);
+
+% fly ID: same "<date folder>\fly N" convention as trial_fly_id's
+% epg_dlight/lpsp_cl_redo case -- this dataset uses the same "fly N" subfolder layout.
+coimg_fly = cell(n_coimg,1);
+for i = 1:n_coimg
+    parts = strsplit(coimg(i).meta,filesep);
+    parts(cellfun(@isempty,parts)) = [];
+    fly_part = find(~cellfun(@isempty,regexpi(parts,'^fly\s*\d+$','once')));
+    coimg_fly{i} = strjoin(parts(1:fly_part(1)),filesep);
+end
+[~,~,coimg_fly_num] = unique(coimg_fly);
+
+% CL vs. dark: ft.pattern is already resolved at load time by
+% epg_coimaging_script.m ('cl_bar' when a bar is visible, 'background' otherwise).
+coimg_is_dark = arrayfun(@(s) contains(s.ft.pattern,'background','IgnoreCase',true), coimg);
+
+coimg_flash_grab = cell(n_coimg,1);
+coimg_flash_geco = cell(n_coimg,1);
+for i = 1:n_coimg
+    coimg_flash_grab{i} = detect_flash_frames(coimg(i).grab.f, flash_mad_thresh);
+    coimg_flash_geco{i} = detect_flash_frames(coimg(i).geco.f, flash_mad_thresh);
+end
+
+%% 8.1) how many flies are in this dataset
+n_flies_coimg   = numel(unique(coimg_fly_num));
+n_flies_by_cond = [numel(unique(coimg_fly_num(~coimg_is_dark))), numel(unique(coimg_fly_num(coimg_is_dark)))];
+
+figure(50); clf
+set(gcf,'Name','8.1) co-imaging dataset: number of flies','Position',[100,100,500,450])
+bar(categorical(cond_label,cond_label),n_flies_by_cond,'FaceColor',[.5,.5,.5])
+ylabel('number of flies (>=1 trial in this condition)')
+title(sprintf('%s: %d flies total, %d trials',coimg_file,n_flies_coimg,n_coimg),'Interpreter','none')
+
+%% 8.2)+8.3) how overlapped are the two channels' bump positions?
+% for every trial: interpolate both channels' mu/rho from the imaging clock
+% (xb) onto the behavior clock (xf) -- same direction of interpolation used
+% throughout section 7 -- after excluding frames either channel flagged as
+% a flash. restrict to discernable-bump-on-both-channels + rotating samples
+% (same thresholds as section 7), then take circ_dist(grab.mu, geco.mu).
+chunk_coimg_offset = cell(n_coimg,1);
+for i = 1:n_coimg
+    xf = coimg(i).ft.xf;
+    xb = coimg(i).ft.xb(:);
+
+    mu_g_im  = unwrap(coimg(i).grab.mu(:));
+    rho_g_im = coimg(i).grab.rho(:);
+    mu_r_im  = unwrap(coimg(i).geco.mu(:));
+    rho_r_im = coimg(i).geco.rho(:);
+    keep = ~coimg_flash_grab{i}(:) & ~coimg_flash_geco{i}(:);
+    if sum(keep) < 2
+        continue
+    end
+
+    mu_g_t  = interp1(xb(keep),mu_g_im(keep),xf);
+    rho_g_t = interp1(xb(keep),rho_g_im(keep),xf);
+    mu_r_t  = interp1(xb(keep),mu_r_im(keep),xf);
+    rho_r_t = interp1(xb(keep),rho_r_im(keep),xf);
+
+    r_speed = coimg(i).ft.r_speed;
+    ok = abs(r_speed) > rot_thresh_track & rho_g_t > rho_thresh_track & rho_r_t > rho_thresh_track & ...
+         ~isnan(mu_g_t) & ~isnan(mu_r_t);
+    if ~any(ok)
+        continue
+    end
+
+    chunk_coimg_offset{i} = circ_dist(mu_g_t(ok),mu_r_t(ok));
+end
+
+%% top ~5 trials per light condition: GRAB(DA2m) (green) / jRGECo1a (red) overlaid
+% same RGB-subtractive composite as epg_coimaging_script.m (white background
+% minus each channel's dF/F, so high dF/F shows as saturated color).
+% candidate trials chosen -- rather than just "most frames" -- to actually
+% show something informative: among trials with a fair amount of rotating,
+% discernable-bump-on-both-channels data (top quartile, WITHIN that light
+% condition, by numel(chunk_coimg_offset{i}), i.e. the fly turned a lot
+% while both channels showed a clear bump), take the n_top with the lowest
+% circ_var of that trial's own offset samples (tightest cross-channel agreement).
+coimg_trial_n   = cellfun(@numel,chunk_coimg_offset);
+coimg_trial_var = nan(n_coimg,1);
+for i = find(coimg_trial_n(:)>0)'
+    coimg_trial_var(i) = circ_var(chunk_coimg_offset{i});
+end
+
+n_top = 5;
+top_fig_num = [51,54]; % 52/53 (below) already used by the pooled histogram/per-fly scatter
+for c = 1:2
+    rows = find(coimg_is_dark(:)==(c==2) & coimg_trial_n(:)>0);
+    n_thresh_c = prctile(coimg_trial_n(rows),75);
+    candidates = rows(coimg_trial_n(rows) >= n_thresh_c);
+    [~,order]  = sort(coimg_trial_var(candidates));
+    top_trials = candidates(order(1:min(n_top,numel(candidates))));
+
+    figure(top_fig_num(c)); clf
+    set(gcf,'Name',sprintf('8.2) top %d %s trials: GRAB(DA2m) green, jRGECo1a red',numel(top_trials),cond_label{c}), ...
+        'Position',[100,100,1100,190*numel(top_trials)])
+    for k = 1:numel(top_trials)
+        i = top_trials(k);
+        subplot(numel(top_trials),1,k); hold on
+        [h_grab,h_geco] = plot_coimg_channels(coimg(i));
+        title(sprintf('%s (n=%d, circ.var=%.2f)',meta_display(coimg(i).meta),coimg_trial_n(i),coimg_trial_var(i)),'Interpreter','none')
+        if k == numel(top_trials)
+            xlabel('time (s)')
+        end
+    end
+    legend([h_grab,h_geco],{'GRAB(DA2m) bump (mu)','jRGECo1a bump (mu)'},'Location','eastoutside')
+end
+
+pooled_coimg_offset = cat(1,chunk_coimg_offset{:});
+figure(52); clf
+set(gcf,'Name','8.3) pooled circ_dist(GRAB(DA2m).mu, jRGECo1a.mu)','Position',[100,100,600,450])
+histogram(pooled_coimg_offset,-pi:pi/24:pi,'Normalization','probability')
+xlabel('circ\_dist(GRAB(DA2m) mu, jRGECo1a mu) (rad)'); ylabel('probability')
+title(sprintf('n=%d discernable-bump-on-both-channels samples, circ.var=%.2f',numel(pooled_coimg_offset),circ_var(pooled_coimg_offset)))
+
+%% 8.5) circular variance of that offset, one point per fly, by light condition
+fly_coimg_var = [];
+fly_coimg_x   = [];
+for c = 1:2
+    rows = find(coimg_is_dark==(c==2));
+    these_flies = unique(coimg_fly_num(rows));
+    for ff = 1:numel(these_flies)
+        trial_list = rows(coimg_fly_num(rows)==these_flies(ff));
+        off_f = cat(1,chunk_coimg_offset{trial_list});
+        if numel(off_f) < 100
+            continue
+        end
+        fly_coimg_var(end+1) = circ_var(off_f); %#ok<AGROW>
+        fly_coimg_x(end+1)   = c;               %#ok<AGROW>
+    end
+end
+
+coimg_colors = lines(2);
+figure(53); clf
+set(gcf,'Name','8.5) GRAB(DA2m) vs. jRGECo1a bump position agreement, per fly','Position',[100,100,600,600])
+groupplot(fly_coimg_x,fly_coimg_var,cond_label,coimg_colors)
+ylabel('circular variance of circ\_dist(GRAB(DA2m) mu, jRGECo1a mu)')
+title('one point per fly, pooled across that fly''s own discernable-bump samples')
+
 %% Functions
 
 function combined = combine_datasets(varargin)
@@ -2084,4 +2235,21 @@ function y = nan_at_wrap(x)
     y = x;
     jump = [false; abs(diff(x)) > pi];
     y(jump) = nan;
+end
+
+function [h_grab,h_geco] = plot_coimg_channels(s)
+    % draws one co-imaging trial into the current axes: the RGB-subtractive
+    % channel overlay (GRAB(DA2m) in green, jRGECo1a in red, same convention
+    % as epg_coimaging_script.m) with both channels' bump position (mu)
+    % traced on top in matching colors.
+    tmp_rgb = ones([size(s.geco.z),3]);
+    tmp_rgb(:,:,2:3) = tmp_rgb(:,:,2:3) - s.geco.d;
+    tmp_rgb(:,:,[1,3]) = tmp_rgb(:,:,[1,3]) - s.grab.d;
+    tmp_rgb = max(min(tmp_rgb,1),0); % dF/F occasionally dips slightly outside [0,1]; clip so image() doesn't silently wrap those pixels
+
+    image(s.ft.xb,unwrap(s.grab.alpha),tmp_rgb)
+    set(gca,'YDir','normal')
+    h_grab = plot(s.ft.xb,s.grab.mu,'Color',[0,.7,0],'LineWidth',1.2); h_grab.YData(abs(diff(h_grab.YData))>pi) = nan;
+    h_geco = plot(s.ft.xb,s.geco.mu,'Color',[.7,0,0],'LineWidth',1.2); h_geco.YData(abs(diff(h_geco.YData))>pi) = nan;
+    ylabel('angle (rad)')
 end
