@@ -4,7 +4,7 @@
 
 %% load in data
 base_dir = 'Z:\pablo\lpsp_rnai\todo\';%dopamine_ionto\new\'; %uigetdir(); %
-all_files = dir([base_dir,'\**\*imagingData.mat']);
+all_files = dir([base_dir,'\**\*imgData_reg.mat']);
 all_files = natsortfiles(all_files);
 
 %% register the image
