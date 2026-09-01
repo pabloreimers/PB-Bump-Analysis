@@ -122,7 +122,7 @@ plot(1:n_im,mu_new_plot+2*pi,'w','LineWidth',1)
 cb = colorbar; ylabel(cb,'z-score (5-frame moving average)')
 xlabel('imaging frame'); ylabel('PB angle (rad)')
 title(sprintf('trial %d (highest upstream mean rho=%.2f): upstream im.mu (cyan) vs 5-frame-movmean-PVA mu (white)',example_i,mean_rho_upstream(example_i)))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig1_bump_sanity_check.png'),'Resolution',150)
+export_fig('v2_fig1_bump_sanity_check')
 
 %% 3) sweep heading-smoothing window, minimize offset variability in empty controls, closed loop only
 % offset variability = circ_var(circ_dist(mu,heading)), after subtracting
@@ -178,6 +178,14 @@ for c = 1:n_cand
             valid  = abs(trial.ft.r_speed(:)) > r_thresh & rho_i > rho_thresh;
             pooled_offset = [pooled_offset; offset(valid)]; %#ok<AGROW>
         end
+        % strip NaN BEFORE the mean()/circ_var() calls below, not after --
+        % mean() and circ_var() don't ignore NaN by default, so a single
+        % dropped-frame NaN anywhere in cue/mu for this fly would otherwise
+        % silently poison its entire offset_mean/circ_var result to NaN,
+        % indistinguishable from "not enough data" (confirmed directly:
+        % this was happening for nearly every fly before this fix, despite
+        % pooled_offset routinely holding 10,000+ samples).
+        pooled_offset = pooled_offset(~isnan(pooled_offset));
         if numel(pooled_offset) < 10
             continue % not enough valid samples for this fly to trust a circ_var estimate
         end
@@ -201,7 +209,7 @@ plot(heading_smooth_opt_s,mean_offset_var(opt_c),'o','MarkerSize',12,'Color','r'
 xlabel('heading moving-average window (s)')
 ylabel('offset variability: circ\_var(circ\_dist(mu,heading))')
 title(sprintf('heading-smoothing sweep, empty>th + empty>vglut, closed loop (n=%d flies) -- optimum = %.2fs',numel(opt_flies),heading_smooth_opt_s))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig2_heading_smoothing_sweep.png'),'Resolution',150)
+export_fig('v2_fig2_heading_smoothing_sweep')
 
 % bout-detection constants used by both the mu-smoothing sweep below and
 % the full-dataset bout recomputation in step 4 -- declared once, here,
@@ -283,7 +291,7 @@ xlabel('additional mu moving-average window (s)')
 ylabel('mobility ratio (unweighted, mov\_mu ~ mov\_speed)')
 title(sprintf('mu-smoothing sweep, empty>th + empty>vglut, closed loop (n=%d flies) -- optimum = %.2fs (ratio=%.3f)', ...
     numel(opt_flies),mu_smooth_opt_s,mean_ratio_sweep(opt_mu_c)))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig10_mu_smoothing_sweep.png'),'Resolution',150)
+export_fig('v2_fig10_mu_smoothing_sweep')
 
 % apply the winning additional smoothing dataset-wide -- everything from
 % here on (step 4's bout recomputation, and every downstream figure) uses
@@ -378,7 +386,7 @@ end
 xticks(1:numel(weight_schemes)); xticklabels({weight_schemes.name})
 ylabel('per-fly-x-condition weighted R^2 (mov\_mu ~ mov\_speed, through origin)')
 title(sprintf('regression weighting comparison -- winner: %s',weight_schemes(best_s).name))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig3_weighting_comparison.png'),'Resolution',150)
+export_fig('v2_fig3_weighting_comparison')
 
 best_weight_fun = weight_schemes(best_s).fun;
 
@@ -445,7 +453,7 @@ for e = 1:numel(example_trials)
     xlabel('heading path length (rad)'); ylabel('bump path length (rad)')
     title(sprintf('%s fit: slope=%.2f, R^2=%.2f, adj R^2=%.2f',weight_schemes(best_s).name,ratio_ex,r2_ex,r2_adj_ex),'FontSize',9)
 end
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig5_bout_definition.png'),'Resolution',150)
+export_fig('v2_fig5_bout_definition')
 
 %% figure: imagesc + bump + heading overlay, for the high-slope ("busiest") example trial
 % same imagesc/overlay convention as lpsp_rnai_claude.m's diagnostic
@@ -480,7 +488,7 @@ r2_busiest = 1 - sum(w_busiest.*(mov_mu_busiest-pred_busiest).^2)/sum(w_busiest.
 plot_bump_heading_overlay(6,all_data(busiest_i),chunk_mu_final{busiest_i},chunk_fz{busiest_i},heading_smooth_opt_s, ...
     sprintf('trial %d, %s -- bump position (white) vs %.2fs-smoothed heading (-ft.cue, cyan) -- this is the busiest fly in figure 5 (slope=%.2f, R^2=%.2f)', ...
         busiest_i,fly_short_label(fly_list{fly_num(busiest_i)}),heading_smooth_opt_s,ratio_busiest,r2_busiest), ...
-    fullfile('ugly_figures','exports','v2_fig6_busiest_trial_overlay.png'))
+    'v2_fig6_busiest_trial_overlay')
 
 %% 6) final bump-mobility group plot, using the optimized pipeline + winning weighting scheme
 min_bouts_per_fly = 20;
@@ -535,7 +543,7 @@ cat_colors     = all_cat_colors(kept_idx,:);
 % as its own subset/remap so figure 8 (below) can keep showing the FULL,
 % unfiltered distribution of adjusted R^2 across every bout-count-
 % qualifying fly, including the ones this filter drops.
-min_adj_r2 = 0.6;
+min_adj_r2 = 0.5;
 r2_ok = fly_adj_r2 > min_adj_r2;
 
 keep_group_r2 = ismember(1:numel(group_defs_all),cat_x_mob(r2_ok))';
@@ -564,7 +572,7 @@ plot(xlim,[1,1],':k')
 ylabel('bump path length / heading path length (per fly, optimized weighting)')
 title(sprintf('bump mobility -- %d-frame bump smoothing, %.2fs heading smoothing, %s-weighted regression, adj R^2 > %.2f', ...
     bump_smooth_frames,heading_smooth_opt_s,weight_schemes(best_s).name,min_adj_r2))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig4_final_group_plot.png'),'Resolution',150)
+export_fig('v2_fig4_final_group_plot')
 
 %% figure: per-fly goodness of fit (adjusted R^2), by genotype and light condition
 % same flies/categories as figure 4 (fly_adj_r2 and fly_mob_ratio come out
@@ -581,7 +589,146 @@ plot(xlim,[1,1],':k')
 ylabel('adjusted R^2 (mov\_mu ~ mov\_speed, per fly, optimized weighting)')
 title(sprintf('bump mobility goodness of fit -- %d-frame bump smoothing, %.2fs heading smoothing, %s-weighted regression', ...
     bump_smooth_frames,heading_smooth_opt_s,weight_schemes(best_s).name))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig8_adj_r2_by_group.png'),'Resolution',150)
+export_fig('v2_fig8_adj_r2_by_group')
+
+%% figure: offset variability (circ_var(circ_dist(mu,heading))), for the SAME flies/trials as figure 4
+% restricted to exactly the fly x light-condition entries figure 4 plots
+% (r2_ok -- bout-count AND adj-R^2 qualified), not recomputed on a
+% different set.
+%
+% Smoothing AND sample restriction both match this pipeline's actual
+% mobility computation, not step 3's separate (and, tried first here,
+% much stricter) r_thresh/rho_thresh=.5 instantaneous masking -- that
+% combination was tuned for step 3's own sweep on healthy empty-control
+% closed-loop flies only, and confirmed directly to leave nearly every
+% fly in most OTHER genotype x light-condition groups with fewer than 10
+% valid samples (e.g. lpsp>th closed loop dropped from 35 r2_ok flies to
+% n=1) -- far too strict once applied dataset-wide. Instead, this reuses
+% trial_walking_bouts_v2's own is_walking mask (SAME turn_thresh,
+% max_gap_s, min_walking_s, bout_rho_thresh as step 4), so the offset
+% variability is computed over EXACTLY the walking-bout samples that
+% actually feed the mobility ratio itself. mu = chunk_mu_final (step 2 +
+% step 3b, used AS-IS). heading = movmean(unwrap(-ft.cue)) at
+% heading_smooth_opt_s -- the SAME window trial_walking_bouts_v2 applies
+% to r_speed, just applied here to the heading POSITION instead of its
+% derivative (smoothing a signal by window W and differentiating is the
+% same real-time-scale operation as smoothing the derivative by W
+% directly, for a moving-average kernel). Demeaned via
+% atan2(mean(sin),mean(cos)) before circ_var, same as step 3 -- a fixed
+% rotational offset between mu's zero and the cue's zero isn't noise,
+% only deviation AROUND it is.
+fly_offset_var_final = nan(size(fly_mob_ratio));
+included = find(r2_ok);
+for m = 1:numel(included)
+    idx = included(m);
+    gd  = cat_x_mob(idx);
+    f   = fly_mob_fly(idx);
+    trial_list = find(strcmp(genotype,group_defs_all(gd).geno) & is_dark==group_defs_all(gd).dark & fly_num==f);
+
+    pooled_offset = [];
+    for ti = trial_list'
+        trial = all_data(ti);
+        xf = trial.ft.xf;
+        dt = median(diff(xf));
+        heading_win = max(1,round(heading_smooth_opt_s/dt));
+        heading_smooth_full = movmean(unwrap(-trial.ft.cue(:)),heading_win);
+
+        n_im = numel(chunk_mu_final{ti});
+        xb = linspace(xf(1),xf(end),n_im)';
+        mu_i = interp1(xb,unwrap(chunk_mu_final{ti}(:)),xf,'linear','extrap');
+
+        [~,~,~,~,is_walking_ti] = trial_walking_bouts_v2( ...
+            trial,chunk_mu_final{ti},chunk_rho_new{ti},heading_smooth_opt_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh);
+
+        offset = circ_dist(heading_smooth_full,mu_i);
+        pooled_offset = [pooled_offset; offset(is_walking_ti)]; %#ok<AGROW>
+    end
+    % strip NaN BEFORE mean()/circ_var() -- see the identical fix (and the
+    % comment explaining why) in step 3's own offset-variability loop above.
+    pooled_offset = pooled_offset(~isnan(pooled_offset));
+    if numel(pooled_offset) < 10
+        continue % not enough valid samples for this fly to trust a circ_var estimate
+    end
+    offset_mean = atan2(mean(sin(pooled_offset)),mean(cos(pooled_offset)));
+    offset_demeaned = circ_dist(pooled_offset,offset_mean);
+    fly_offset_var_final(idx) = circ_var(offset_demeaned);
+end
+
+figure(13); clf
+set(gcf,'Name','offset variability (mu vs heading), figure-4 flies','Position',[100,100,max(700,120*numel(cat_labels_r2)),600])
+groupplot(cat_x_mob_r2_plot,fly_offset_var_final(r2_ok),cat_labels_r2,cat_colors_r2)
+ylabel('offset variability: circ\_var(circ\_dist(mu,heading))')
+title(sprintf('offset variability -- same flies as figure 4 -- mu: %d-frame + step-3b smoothing, heading: %.2fs movmean', ...
+    bump_smooth_frames,heading_smooth_opt_s))
+export_fig('v2_fig13_offset_variability_by_group')
+
+%% figure: offset variability over a 30s SLIDING WINDOW, mean per fly, same flies/trials as figure 4
+% figure 13 pools every walking-bout sample across a fly's whole trial(s)
+% into ONE circ_var, demeaned by that fly's OWN OVERALL mean offset -- so
+% slow drift in the offset over the course of a trial (a fixed bias
+% between mu's zero and the cue's zero can itself wander slowly) gets
+% counted as "variability" right alongside genuine moment-to-moment
+% tracking noise. This instead slides a 30s window across each trial,
+% computes circ_var within each window (demeaned by THAT WINDOW's own
+% mean offset, not the whole trial's), and averages the per-window values
+% for one fly -- so slow drift across windows no longer inflates the
+% result, only within-window jitter does. Same is_walking mask, mu, and
+% heading smoothing as figure 13 (and the same NaN-before-mean/circ_var
+% fix); windows are skipped if they don't have at least min_window_n
+% walking samples of their own to trust a circ_var estimate from.
+offset_window_s      = 30;
+offset_window_step_s = 5;
+min_window_n         = 30;
+
+fly_offset_var_window = nan(size(fly_mob_ratio));
+for m = 1:numel(included)
+    idx = included(m);
+    gd  = cat_x_mob(idx);
+    f   = fly_mob_fly(idx);
+    trial_list = find(strcmp(genotype,group_defs_all(gd).geno) & is_dark==group_defs_all(gd).dark & fly_num==f);
+
+    win_vars = [];
+    for ti = trial_list'
+        trial = all_data(ti);
+        xf = trial.ft.xf;
+        dt = median(diff(xf));
+        heading_win = max(1,round(heading_smooth_opt_s/dt));
+        heading_smooth_full = movmean(unwrap(-trial.ft.cue(:)),heading_win);
+
+        n_im = numel(chunk_mu_final{ti});
+        xb = linspace(xf(1),xf(end),n_im)';
+        mu_i = interp1(xb,unwrap(chunk_mu_final{ti}(:)),xf,'linear','extrap');
+
+        [~,~,~,~,is_walking_ti] = trial_walking_bouts_v2( ...
+            trial,chunk_mu_final{ti},chunk_rho_new{ti},heading_smooth_opt_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh);
+
+        offset = circ_dist(heading_smooth_full,mu_i);
+
+        window_starts = xf(1):offset_window_step_s:(xf(end)-offset_window_s);
+        for w = 1:numel(window_starts)
+            in_win = xf >= window_starts(w) & xf < window_starts(w)+offset_window_s;
+            win_offset = offset(in_win & is_walking_ti);
+            win_offset = win_offset(~isnan(win_offset));
+            if numel(win_offset) < min_window_n
+                continue
+            end
+            win_mean = atan2(mean(sin(win_offset)),mean(cos(win_offset)));
+            win_vars(end+1) = circ_var(circ_dist(win_offset,win_mean)); %#ok<AGROW>
+        end
+    end
+    if numel(win_vars) < 1
+        continue % no window for this fly had enough walking samples to trust
+    end
+    fly_offset_var_window(idx) = mean(win_vars);
+end
+
+figure(14); clf
+set(gcf,'Name','offset variability, 30s sliding window','Position',[100,100,max(700,120*numel(cat_labels_r2)),600])
+groupplot(cat_x_mob_r2_plot,fly_offset_var_window(r2_ok),cat_labels_r2,cat_colors_r2)
+ylabel('mean offset variability across 30s windows: mean(circ\_var(circ\_dist(mu,heading)))')
+title(sprintf('offset variability, %ds sliding window (step %ds) -- same flies as figure 4 -- mu: %d-frame + step-3b smoothing, heading: %.2fs movmean', ...
+    offset_window_s,offset_window_step_s,bump_smooth_frames,heading_smooth_opt_s))
+export_fig('v2_fig14_offset_variability_sliding_window')
 
 %% 7) figure: average bump vector strength (rho), by genotype and light condition
 % independent QC check, not gated by min_bouts_per_fly or by walking at
@@ -619,7 +766,7 @@ hold on
 yline(bout_rho_thresh,':k')
 ylabel('mean rho (bump vector strength), per fly, all frames')
 title(sprintf('average bump vector strength (rho), by genotype and light condition (dotted line = rho threshold %.2f)',bout_rho_thresh))
-exportgraphics(gcf,fullfile('ugly_figures','exports','v2_fig7_mean_rho_by_group.png'),'Resolution',150)
+export_fig('v2_fig7_mean_rho_by_group')
 
 %% figures: example empty>th closed-loop flies with mobility ratio > example_ratio_thresh
 % picks flies from the SAME set figure 4 actually plots (bout-count AND
@@ -657,8 +804,41 @@ for k = 1:numel(example_pool)
     plot_bump_heading_overlay(50+k,all_data(ti),chunk_mu_final{ti},chunk_fz{ti},heading_smooth_opt_s, ...
         sprintf('%s (%s), fly %s, trial %d -- fly ratio=%.2f, adj R^2=%.2f -- bump (white) vs %.2fs-smoothed heading (cyan)', ...
             example_geno,cond_label{example_dark+1},fly_short_label(fly_list{f}),ti,ratio_k,r2_k,heading_smooth_opt_s), ...
-        fullfile('ugly_figures','exports',sprintf('v2_fig9_example%d_%s_%s.png', ...
-            k,strrep(example_geno,'>','-'),strrep(cond_label{example_dark+1},' ','_'))))
+        sprintf('v2_fig9_example%d_%s_%s', ...
+            k,strrep(example_geno,'>','-'),strrep(cond_label{example_dark+1},' ','_')))
+end
+
+%% figures: every closed-loop trial, one figure per genotype (lpsp>th, empty>th), one subplot per trial
+% every trial gets its own subplot (not one per fly -- a fly with 2
+% closed-loop trials gets 2 subplots here), using the same
+% plot_bump_heading_overlay_ax drawing as figures 6/9, just laid out in a
+% grid instead of one trial per standalone figure. No per-subplot
+% colorbar (one shared colorbar for the whole figure instead) and a
+% terser per-subplot title (just fly + trial), since there isn't room for
+% the full single-trial title at this scale.
+grid_genos = {'lpsp>th','empty>th'};
+
+for g = 1:numel(grid_genos)
+    geno_g = grid_genos{g};
+    trial_list = find(strcmp(genotype,geno_g) & ~is_dark);
+
+    n_t = numel(trial_list);
+    ncols = ceil(sqrt(n_t));
+    nrows = ceil(n_t/ncols);
+
+    figure(20+g); clf
+    set(gcf,'Name',sprintf('%s: every closed-loop trial',geno_g),'Position',[50,50,min(1800,280*ncols),min(1000,200*nrows)])
+    t = tiledlayout(nrows,ncols,'TileSpacing','compact','Padding','compact');
+    for k = 1:n_t
+        ti = trial_list(k);
+        nexttile(t);
+        plot_bump_heading_overlay_ax(all_data(ti),chunk_mu_final{ti},chunk_fz{ti},heading_smooth_opt_s, ...
+            sprintf('%s, trial %d',fly_short_label(fly_list{fly_num(ti)}),ti))
+        xticks([]); yticks([]); xlabel(''); ylabel('')
+    end
+    cb = colorbar; cb.Layout.Tile = 'east'; ylabel(cb,'z-score')
+    title(t,sprintf('%s, closed loop -- every trial (n=%d) -- bump (white) vs %.2fs-smoothed heading (cyan)',geno_g,n_t,heading_smooth_opt_s))
+    export_fig(sprintf('v2_fig12_%s_all_closed_loop_trials',strrep(geno_g,'>','-')))
 end
 
 %% functions
@@ -707,6 +887,16 @@ function [mu_new,rho_new,f_z] = trial_pva_movmean(trial,smooth_frames)
     [mu_new,rho_new] = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
 end
 
+function export_fig(name)
+    % saves the CURRENT figure both as a quick-preview PNG
+    % (ugly_figures/exports/<name>.png) and as a PDF
+    % (ugly_figures/rnai/<name>.pdf) -- one call site for every figure in
+    % this script, so adding/changing an output format only needs editing
+    % here once.
+    exportgraphics(gcf,fullfile('ugly_figures','exports',[name '.png']),'Resolution',150)
+    exportgraphics(gcf,fullfile('ugly_figures','rnai',[name '.pdf']))
+end
+
 function y = wrap_break(x)
     % unwrap-safe display helper: wraps an unwrapped angle to -pi:pi and
     % breaks the line at the resulting circular jumps (NaN-inserted) so a
@@ -716,15 +906,29 @@ function y = wrap_break(x)
     y(find(abs(diff(y))>pi)+1) = nan;
 end
 
-function plot_bump_heading_overlay(fig_num,trial,mu,fz,heading_smooth_s,title_str,export_path)
-    % imagesc + bump + heading overlay for one trial -- shared by figure 6
-    % and any other single-trial diagnostic that wants the same view.
-    % alpha unwrapped to the continuous -pi:~3pi range (im.alpha repeats
-    % the same -pi:pi sequence once per PB hemisphere), bump/heading each
-    % drawn twice (as-is, and shifted +2*pi) so the overlay tracks both
-    % hemisphere bands, not just one. mu is used AS-IS (already smoothed
-    % upstream, via trial_pva_movmean, on the image timebase). heading =
-    % -ft.cue, smoothed at heading_smooth_s on the fictrac timebase, THEN
+function plot_bump_heading_overlay(fig_num,trial,mu,fz,heading_smooth_s,title_str,export_name)
+    % imagesc + bump + heading overlay for one trial, as its own standalone
+    % figure -- shared by figure 6 and any other single-trial diagnostic
+    % that wants the same view. See plot_bump_heading_overlay_ax for the
+    % actual drawing logic (used here, and reused as-is for multi-trial
+    % subplot grids).
+    figure(fig_num); clf
+    set(gcf,'Name','PB activity + bump + heading overlay','Position',[100,100,1100,400])
+    plot_bump_heading_overlay_ax(trial,mu,fz,heading_smooth_s,title_str)
+    cb = colorbar; ylabel(cb,'z-score (5-frame moving average)')
+    export_fig(export_name)
+end
+
+function plot_bump_heading_overlay_ax(trial,mu,fz,heading_smooth_s,title_str)
+    % draws imagesc + bump + heading overlay into the CURRENT axes (no
+    % figure()/clf(), no colorbar/export) -- call subplot(...) or
+    % nexttile(...) first to pick where this lands. alpha unwrapped to the
+    % continuous -pi:~3pi range (im.alpha repeats the same -pi:pi sequence
+    % once per PB hemisphere), bump/heading each drawn twice (as-is, and
+    % shifted +2*pi) so the overlay tracks both hemisphere bands, not just
+    % one. mu is used AS-IS (already smoothed upstream, via
+    % trial_pva_movmean, on the image timebase). heading = -ft.cue,
+    % smoothed at heading_smooth_s on the fictrac timebase, THEN
     % interpolated onto the image timebase -- smoothing must happen
     % before interpolation/wrapping, never after, or it would smear
     % across the circular variable's false -pi/pi discontinuities.
@@ -741,8 +945,6 @@ function plot_bump_heading_overlay(fig_num,trial,mu,fz,heading_smooth_s,title_st
     mu_plot      = wrap_break(mu);
     heading_plot = wrap_break(heading_on_xb);
 
-    figure(fig_num); clf
-    set(gcf,'Name','PB activity + bump + heading overlay','Position',[100,100,1100,400])
     hold on
     imagesc(1:n_im,alpha_disp,fz)
     set(gca,'YDir','normal','XLim',[1,n_im],'YLim',[alpha_disp(1),alpha_disp(end)])
@@ -750,10 +952,8 @@ function plot_bump_heading_overlay(fig_num,trial,mu,fz,heading_smooth_s,title_st
     plot(1:n_im,mu_plot+2*pi,'w','LineWidth',1)
     plot(1:n_im,heading_plot,'Color',[0,1,1],'LineWidth',1)
     plot(1:n_im,heading_plot+2*pi,'Color',[0,1,1],'LineWidth',1)
-    cb = colorbar; ylabel(cb,'z-score (5-frame moving average)')
     xlabel('imaging frame'); ylabel('PB angle (rad)')
     title(title_str,'Interpreter','none')
-    exportgraphics(gcf,export_path,'Resolution',150)
 end
 
 function [mov_mu,mov_speed,dur,r_speed_smooth,is_walking] = trial_walking_bouts_v2(trial,mu,rho,heading_smooth_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh)
