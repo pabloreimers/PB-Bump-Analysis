@@ -19,7 +19,7 @@
 addpath(fullfile(pwd,'circ_stats'));
 
 %% 1) load data
-data_dir    = fullfile('data');
+data_dir    = fullfile('.data'); % matches lpsp_kir_claude.m -- this repo checkout has ".data", not "data" (confirmed while testing the gain integration in step 8)
 source_file = 'lpsp_rnai_joint_nosmooth_reg_20260831.mat';
 
 tmp = load(fullfile(data_dir,source_file),'all_data');
@@ -841,6 +841,145 @@ for g = 1:numel(grid_genos)
     export_fig(sprintf('v2_fig12_%s_all_closed_loop_trials',strrep(geno_g,'>','-')))
 end
 
+%% 8) velocity gain (bump vs. visual cue, bump vs. fly's own rotation), every genotype x light-condition group
+% A SEPARATE gain metric from this script's own bump-mobility pipeline
+% above (steps 1-7): gain_cue/gain_fly are regression slopes between
+% bump velocity and cue/fly-rotation velocity, answering "does the bump
+% move at the right RATE relative to what it's tracking", rather than
+% mobility's "how much total path length does the bump cover relative to
+% heading, over a whole walking bout". Developed and parameter-swept
+% separately in gain_scratch_claude.m (not reproduced here) -- ported in
+% as the SETTLED result of that search, reusing this script's own
+% trial_pva_movmean/export_fig/groupplot rather than duplicating them.
+%
+% Why the smoothing constants below differ from this script's own
+% heading_smooth_opt_s/mu_smooth_opt_s (steps 2-3): those were tuned for
+% the mobility-ratio metric (integrated path length over whole bouts,
+% forgiving of frame-level velocity noise); gain_cue/gain_fly are
+% instantaneous velocity regressions, far more sensitive to per-frame
+% noise, and were sequentially/greedily swept on their OWN criterion
+% (per-fly combined MSE from gain_cue's target of 1 and gain_fly's target
+% of 0.8, pooled over empty-control flies, closed loop only) in
+% gain_scratch_claude.m's own section 10. bump/cue/fly_vel smoothing use
+% smoothdata(...,'gaussian',...), NOT this script's movmean, and cue/fly
+% rotation get INDEPENDENT windows (no reason a visual-scene signal and a
+% fictrac ball-rotation signal need the same amount of smoothing).
+%
+% gain_im_f_frames intentionally does NOT reuse bump_smooth_frames (this
+% script's own step-2 constant, 5 frames) -- the gain sweep found its own
+% winner (3 frames) independently and there's no reason the two should
+% coincide.
+gain_im_f_frames    = 3;    % frames, movmean on im.f before z-score+PVA (via trial_pva_movmean, same function as this script's own step 2)
+gain_bump_smooth_s  = 0.20; % s, single Gaussian pass on unwrapped mu (image timebase)
+gain_cue_smooth_s   = 0.75; % s, single Gaussian pass on unwrapped cue (fictrac timebase)
+gain_vel_smooth_s   = 1.00; % s, single Gaussian pass on r_speed directly (fictrac timebase)
+gain_lag_frames     = 8;    % fictrac frames (~0.13s): cue_vel/fly_vel led bump_vel by this much on the trial used to find it (gain_scratch_claude.m)
+gain_vel_thresh     = 0.2; gain_bump_thresh = 10; gain_rho_thresh = 0.2; gain_vel_max = 5; % rad/s, inherited starting point from lpsp_kir_claude.m's own gain-scatter section
+
+% light-condition-major group ordering (every closed-loop group, then
+% every dark group) rather than this script's own genotype-major
+% group_defs_all (step 5) -- easier to compare across genotypes within
+% one light condition at a glance. Dark groups are included deliberately:
+% gain_cue should drop toward 0 there (no visual pattern for the panel to
+% show, so cue_vel carries little real signal), a useful built-in
+% negative control rather than something to exclude.
+gain_group_defs = struct('geno',{},'dark',{},'label',{});
+for ci = 1:numel(cond_label)
+    for gi = 1:numel(geno_order)
+        gain_group_defs(end+1) = struct('geno',geno_order{gi},'dark',ci-1,'label',sprintf('%s (%s)',geno_order{gi},cond_label{ci})); %#ok<SAGROW>
+    end
+end
+
+gain_fly_list   = cell(1,numel(gain_group_defs));
+gain_fly_trials = cell(1,numel(gain_group_defs));
+for gd = 1:numel(gain_group_defs)
+    rows = find(strcmp(genotype,gain_group_defs(gd).geno) & is_dark==gain_group_defs(gd).dark);
+    these_flies = unique(fly_num(rows));
+    gain_fly_list{gd}   = these_flies;
+    gain_fly_trials{gd} = arrayfun(@(f) rows(fly_num(rows)==f), these_flies, 'UniformOutput',false);
+end
+
+% PVA cache at gain_im_f_frames, computed once per trial that's actually
+% used by any group above (every trial belonging to one of geno_order,
+% both light conditions) -- trial_pva_movmean is this script's own step-2
+% function, called here with a DIFFERENT frame count than chunk_mu_new
+% (which used bump_smooth_frames=5) since the gain sweep found its own
+% winner independently.
+gain_pva_mu  = cell(n_trials,1);
+gain_pva_rho = cell(n_trials,1);
+gain_all_trials = find(ismember(genotype,geno_order));
+for ti = gain_all_trials'
+    [gain_pva_mu{ti},gain_pva_rho{ti}] = trial_pva_movmean(all_data(ti),gain_im_f_frames);
+end
+
+base_colors_gain = lines(numel(geno_order));
+cat_colors_gain  = zeros(numel(gain_group_defs),3);
+for gd = 1:numel(gain_group_defs)
+    gi = find(strcmp(geno_order,gain_group_defs(gd).geno));
+    cat_colors_gain(gd,:) = base_colors_gain(gi,:);
+end
+cat_labels_gain = {gain_group_defs.label};
+
+fly_gain_cue_bygroup  = []; fly_gain_fly_bygroup  = []; cat_x_gain  = [];
+fly_gain_cue_noint    = []; fly_gain_fly_noint    = []; cat_x_gain_noint = [];
+fprintf('\n=== velocity gain (bump vs. cue, bump vs. fly rotation), every genotype x light-condition group ===\n');
+for gd = 1:numel(gain_group_defs)
+    these_flies = gain_fly_list{gd};
+    trial_lists = gain_fly_trials{gd};
+    gc  = nan(numel(these_flies),1); gf  = nan(numel(these_flies),1); % affine (with intercept)
+    gc0 = nan(numel(these_flies),1); gf0 = nan(numel(these_flies),1); % through-origin
+    for ff = 1:numel(these_flies)
+        [gc(ff),gf(ff)]   = fly_gain_v3(all_data,trial_lists{ff},gain_pva_mu,gain_pva_rho, ...
+            gain_bump_smooth_s,gain_cue_smooth_s,gain_vel_smooth_s,gain_lag_frames, ...
+            gain_vel_thresh,gain_bump_thresh,gain_rho_thresh,gain_vel_max,true);
+        [gc0(ff),gf0(ff)] = fly_gain_v3(all_data,trial_lists{ff},gain_pva_mu,gain_pva_rho, ...
+            gain_bump_smooth_s,gain_cue_smooth_s,gain_vel_smooth_s,gain_lag_frames, ...
+            gain_vel_thresh,gain_bump_thresh,gain_rho_thresh,gain_vel_max,false);
+    end
+    fprintf('  %-24s gain_cue = %.3f +/- %.3f, gain_fly = %.3f +/- %.3f (n=%d flies)\n', ...
+        gain_group_defs(gd).label, mean(gc,'omitnan'), std(gc,'omitnan')/sqrt(sum(~isnan(gc))), ...
+        mean(gf,'omitnan'), std(gf,'omitnan')/sqrt(sum(~isnan(gf))), sum(~isnan(gc)));
+
+    fly_gain_cue_bygroup = [fly_gain_cue_bygroup; gc]; %#ok<AGROW>
+    fly_gain_fly_bygroup = [fly_gain_fly_bygroup; gf]; %#ok<AGROW>
+    cat_x_gain           = [cat_x_gain; gd*ones(numel(these_flies),1)]; %#ok<AGROW>
+    fly_gain_cue_noint    = [fly_gain_cue_noint; gc0]; %#ok<AGROW>
+    fly_gain_fly_noint    = [fly_gain_fly_noint; gf0]; %#ok<AGROW>
+    cat_x_gain_noint      = [cat_x_gain_noint; gd*ones(numel(these_flies),1)]; %#ok<AGROW>
+end
+
+figure(30); clf
+set(gcf,'Name','velocity gain, every genotype x light-condition group','Position',[100,100,1200,800])
+subplot(2,1,1)
+groupplot(cat_x_gain,fly_gain_cue_bygroup,cat_labels_gain,cat_colors_gain)
+hold on; plot(xlim,[1,1],':k'); plot(xlim,[0,0],'-','Color',[.85,.85,.85])
+ylabel('gain\_cue = slope(bump\_vel ~ 1 + cue\_vel)')
+title('bump vs. visual cue (target=1 in closed loop, ~0 expected in dark)')
+subplot(2,1,2)
+groupplot(cat_x_gain,fly_gain_fly_bygroup,cat_labels_gain,cat_colors_gain)
+hold on; plot(xlim,[0.8,0.8],':k')
+ylabel('gain\_fly = slope(bump\_vel ~ 1 + fly\_vel)')
+title('bump vs. fly rotation (target=0.8 in closed loop)')
+sgtitle(sprintf('velocity gain: im.f=%d frames, bump=%.2fs, cue=%.2fs, fly\\_vel=%.2fs, lag=%d frames', ...
+    gain_im_f_frames,gain_bump_smooth_s,gain_cue_smooth_s,gain_vel_smooth_s,gain_lag_frames),'Interpreter','none')
+export_fig('v2_fig30_velocity_gain_by_group')
+
+figure(31); clf
+set(gcf,'Name','velocity gain (through-origin fit), every genotype x light-condition group','Position',[100,100,1200,800])
+subplot(2,1,1)
+groupplot(cat_x_gain_noint,fly_gain_cue_noint,cat_labels_gain,cat_colors_gain)
+hold on; plot(xlim,[1,1],':k'); plot(xlim,[0,0],'-','Color',[.85,.85,.85])
+ylabel('gain\_cue = slope(bump\_vel ~ cue\_vel)')
+title('bump vs. visual cue (target=1 in closed loop, ~0 expected in dark)')
+subplot(2,1,2)
+groupplot(cat_x_gain_noint,fly_gain_fly_noint,cat_labels_gain,cat_colors_gain)
+hold on; plot(xlim,[0.8,0.8],':k')
+ylabel('gain\_fly = slope(bump\_vel ~ fly\_vel)')
+title('bump vs. fly rotation (target=0.8 in closed loop)')
+sgtitle(sprintf('THROUGH-ORIGIN velocity gain: im.f=%d frames, bump=%.2fs, cue=%.2fs, fly\\_vel=%.2fs, lag=%d frames', ...
+    gain_im_f_frames,gain_bump_smooth_s,gain_cue_smooth_s,gain_vel_smooth_s,gain_lag_frames),'Interpreter','none')
+export_fig('v2_fig31_velocity_gain_by_group_through_origin')
+
 %% functions
 function [fly_seg,trial_seg] = meta_fly_and_trial_seg(meta_path)
     parts = strsplit(meta_path,{'\','/'});
@@ -885,6 +1024,129 @@ function [mu_new,rho_new,f_z] = trial_pva_movmean(trial,smooth_frames)
     alpha_row = trial.im.alpha(:)';
     [x_tmp,y_tmp] = pol2cart(alpha_row,f_z');
     [mu_new,rho_new] = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+end
+
+function x_filled = fill_nan_gaps_pi(x)
+    % ft.cue's scattered NaN dropouts happen almost exclusively at the
+    % wrapped +/-pi boundary (confirmed in gain_scratch_claude.m: 98.1% of
+    % gaps have a bracketing value within 0.3 rad of +/-pi, across every
+    % trial in this dataset) -- linear interpolation on the raw wrapped
+    % signal can walk the WRONG way around the circle across such a gap
+    % (a spurious jump of up to 2*pi, confirmed directly: 26.7% of all
+    % gaps produced a >1 rad linear jump despite a true circular distance
+    % <0.5 rad), so dropped samples are set to exactly pi -- landing them
+    % at the same boundary their neighbors already sit at, so unwrap()'s
+    % own +/-2*pi correction lines them up correctly -- rather than
+    % interpolated.
+    x_filled = x(:);
+    x_filled(isnan(x_filled)) = pi;
+end
+
+function [fly_vel,cue_vel,bump_vel,valid] = trial_gain_vectors_v3(trial,mu_raw,rho_raw,mu_smooth_s,cue_smooth_s,vel_smooth_s,lag_frames, ...
+        vel_thresh,bump_thresh,rho_thresh,vel_max)
+    % all three vectors on the fictrac timebase (ft.xf), GAUSSIAN
+    % smoothing (not this script's own movmean) with cue_smooth_s and
+    % vel_smooth_s as INDEPENDENT windows -- see step 8's header comment.
+    % lag_frames shifts cue_vel/fly_vel earlier relative to bump_vel (the
+    % bump/calcium signal lags behind behavior), same shift-and-trim
+    % convention as lpsp_kir_claude.m's own trial_gain_vectors.
+    xf = trial.ft.xf;
+    dt = median(diff(xf));
+    n_im = numel(mu_raw);
+    xb = linspace(xf(1),xf(end),n_im)';
+    dt_im = (xf(end)-xf(1)) / (n_im-1);
+
+    win_im = max(1,round(mu_smooth_s/dt_im));
+    mu_smoothed = smoothdata(unwrap(mu_raw(:)),'gaussian',win_im);
+    bump_vel_full = gradient(interp1(xb,mu_smoothed,xf,'linear','extrap'))/dt;
+    rho_full = interp1(xb,rho_raw(:),xf,'linear','extrap');
+
+    win_vel = max(1,round(vel_smooth_s/dt));
+    fly_vel_full = smoothdata(trial.ft.r_speed(:),'gaussian',win_vel);
+
+    win_cue = max(1,round(cue_smooth_s/dt));
+    cue_filled = fill_nan_gaps_pi(trial.ft.cue);
+    cue_smoothed = smoothdata(unwrap(-cue_filled),'gaussian',win_cue);
+    cue_vel_full = gradient(cue_smoothed)/dt;
+
+    if lag_frames == 0
+        fly_vel = fly_vel_full; cue_vel = cue_vel_full; bump_vel = bump_vel_full; rho_i = rho_full;
+    elseif lag_frames > 0
+        fly_vel  = fly_vel_full(1:end-lag_frames);
+        cue_vel  = cue_vel_full(1:end-lag_frames);
+        bump_vel = bump_vel_full(lag_frames+1:end);
+        rho_i    = rho_full(lag_frames+1:end);
+    else
+        fly_vel  = fly_vel_full(-lag_frames+1:end);
+        cue_vel  = cue_vel_full(-lag_frames+1:end);
+        bump_vel = bump_vel_full(1:end+lag_frames);
+        rho_i    = rho_full(1:end+lag_frames);
+    end
+
+    valid = abs(fly_vel) > vel_thresh & abs(fly_vel) < vel_max & abs(bump_vel) < bump_thresh & rho_i > rho_thresh;
+end
+
+function [gain_cue,gain_fly] = fly_gain_v3(all_data,trial_list,mu_cache,rho_cache,mu_smooth_s,cue_smooth_s,vel_smooth_s,lag_frames, ...
+        vel_thresh,bump_thresh,rho_thresh,vel_max,use_intercept)
+    % pools trial_gain_vectors_v3 across every trial in trial_list (one
+    % fly's own trials within a single genotype x light-condition group),
+    % then fits bump_vel ~ predictor_vel either with an intercept
+    % (use_intercept=true, matching lpsp_kir_claude.m's own gain-scatter
+    % convention -- an intercept absorbs any constant offset between the
+    % two, e.g. from a residual lag/calibration mismatch, so the slope
+    % alone isn't biased by it) or through the origin (use_intercept=false
+    % -- a different question, "bump velocity per unit predictor velocity
+    % with no allowance for a constant offset", more sensitive to such an
+    % offset since nothing else can absorb it).
+    fly_vel = []; cue_vel = []; bump_vel = []; valid = logical([]);
+    for k = 1:numel(trial_list)
+        ti = trial_list(k);
+        trial = all_data(ti);
+        [fv,cv,bv,vd] = trial_gain_vectors_v3(trial,mu_cache{ti},rho_cache{ti},mu_smooth_s,cue_smooth_s,vel_smooth_s,lag_frames, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+        fly_vel  = [fly_vel; fv]; %#ok<AGROW>
+        cue_vel  = [cue_vel; cv]; %#ok<AGROW>
+        bump_vel = [bump_vel; bv]; %#ok<AGROW>
+        valid    = [valid; vd]; %#ok<AGROW>
+    end
+
+    % conservative activity floor: this fly's own pooled trials (in this
+    % light condition) must show real turning (|fly_vel|>vel_thresh) for
+    % at least min_frac_moving of ALL samples, not just the "valid"-gated
+    % ones -- confirmed directly (gain_scratch_claude.m) on a fly moving
+    % above threshold for only 0.25% of a 600s dark trial (91/36006
+    % samples, confined to two brief blips): its "gain" was a regression
+    % fit to a handful of noise-dominated samples (slope -3.245), not a
+    % real tracking relationship. 1% is a deliberately loose floor -- this
+    % is about excluding near-total quiescence, not borderline cases.
+    min_frac_moving = 0.01;
+    n_valid = sum(valid);
+    if n_valid < 50 || mean(abs(fly_vel) > vel_thresh) < min_frac_moving
+        gain_cue = nan;
+        gain_fly = nan;
+        return
+    end
+
+    if use_intercept
+        b_cue = [ones(n_valid,1),cue_vel(valid)] \ bump_vel(valid);
+        gain_cue = b_cue(2);
+        b_fly = [ones(n_valid,1),fly_vel(valid)] \ bump_vel(valid);
+        gain_fly = b_fly(2);
+    else
+        % a through-origin slope is sum(x.*y)/sum(x.^2) -- with no
+        % intercept to absorb it, a predictor whose variance collapses
+        % toward zero (possible for cue_vel specifically, since "valid"
+        % above constrains fly_vel/bump_vel/rho but not cue_vel itself)
+        % drives sum(x.^2) toward zero and the slope toward +/-Inf.
+        min_predictor_std = 0.01; % rad/s
+        if std(cue_vel(valid)) < min_predictor_std || std(fly_vel(valid)) < min_predictor_std
+            gain_cue = nan;
+            gain_fly = nan;
+            return
+        end
+        gain_cue = cue_vel(valid) \ bump_vel(valid);
+        gain_fly = fly_vel(valid) \ bump_vel(valid);
+    end
 end
 
 function export_fig(name)

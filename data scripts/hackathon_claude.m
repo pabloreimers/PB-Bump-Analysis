@@ -27,7 +27,7 @@
 
 %% load data
 clear all
-repo_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+repo_root = fileparts(fileparts(mfilename('fullpath'))); % "data scripts" sits directly under the repo root
 addpath(repo_root) % for natsort.m
 load(fullfile(repo_root,'.data','hackathon_20250729.mat')) % loads variable "all_data"
 
