@@ -1657,26 +1657,53 @@ title(sprintf('%s: %d flies total, %d trials',coimg_file,n_flies_coimg,n_coimg),
 % throughout section 7 -- after excluding frames either channel flagged as
 % a flash. restrict to discernable-bump-on-both-channels + rotating samples
 % (same thresholds as section 7), then take circ_dist(grab.mu, geco.mu).
-chunk_coimg_offset = cell(n_coimg,1);
+% also, independently for each channel: circ_dist(channel mu, -cue) -- same
+% -cue sign convention used throughout this script -- restricted to that
+% channel's OWN discernable-bump criterion only (not requiring the other
+% channel to also show a bump), since this question ("does this channel
+% track heading") doesn't depend on the other channel at all.
+chunk_coimg_offset   = cell(n_coimg,1);
+chunk_coimg_grab_cue = cell(n_coimg,1);
+chunk_coimg_geco_cue = cell(n_coimg,1);
 for i = 1:n_coimg
     xf = coimg(i).ft.xf;
     xb = coimg(i).ft.xb(:);
+    cue_neg = -coimg(i).ft.cue;
+    r_speed = coimg(i).ft.r_speed;
 
     mu_g_im  = unwrap(coimg(i).grab.mu(:));
     rho_g_im = coimg(i).grab.rho(:);
     mu_r_im  = unwrap(coimg(i).geco.mu(:));
     rho_r_im = coimg(i).geco.rho(:);
-    keep = ~coimg_flash_grab{i}(:) & ~coimg_flash_geco{i}(:);
+    keep_g = ~coimg_flash_grab{i}(:);
+    keep_r = ~coimg_flash_geco{i}(:);
+
+    if sum(keep_g) >= 2
+        mu_g_t  = interp1(xb(keep_g),mu_g_im(keep_g),xf);
+        rho_g_t = interp1(xb(keep_g),rho_g_im(keep_g),xf);
+        ok_g = abs(r_speed) > rot_thresh_track & rho_g_t > rho_thresh_track & ~isnan(mu_g_t) & ~isnan(cue_neg);
+        if any(ok_g)
+            chunk_coimg_grab_cue{i} = circ_dist(mu_g_t(ok_g),cue_neg(ok_g));
+        end
+    end
+    if sum(keep_r) >= 2
+        mu_r_t  = interp1(xb(keep_r),mu_r_im(keep_r),xf);
+        rho_r_t = interp1(xb(keep_r),rho_r_im(keep_r),xf);
+        ok_r = abs(r_speed) > rot_thresh_track & rho_r_t > rho_thresh_track & ~isnan(mu_r_t) & ~isnan(cue_neg);
+        if any(ok_r)
+            chunk_coimg_geco_cue{i} = circ_dist(mu_r_t(ok_r),cue_neg(ok_r));
+        end
+    end
+
+    keep = keep_g & keep_r;
     if sum(keep) < 2
         continue
     end
-
     mu_g_t  = interp1(xb(keep),mu_g_im(keep),xf);
     rho_g_t = interp1(xb(keep),rho_g_im(keep),xf);
     mu_r_t  = interp1(xb(keep),mu_r_im(keep),xf);
     rho_r_t = interp1(xb(keep),rho_r_im(keep),xf);
 
-    r_speed = coimg(i).ft.r_speed;
     ok = abs(r_speed) > rot_thresh_track & rho_g_t > rho_thresh_track & rho_r_t > rho_thresh_track & ...
          ~isnan(mu_g_t) & ~isnan(mu_r_t);
     if ~any(ok)
@@ -1755,6 +1782,139 @@ set(gcf,'Name','8.5) GRAB(DA2m) vs. jRGECo1a bump position agreement, per fly','
 groupplot(fly_coimg_x,fly_coimg_var,cond_label,coimg_colors)
 ylabel('circular variance of circ\_dist(GRAB(DA2m) mu, jRGECo1a mu)')
 title('one point per fly, pooled across that fly''s own discernable-bump samples')
+
+%% 8.6) per-fly histograms: does each channel track the fly's heading (cue)?
+% one subplot per fly, pooling that fly's own samples across ALL of its
+% trials (both light conditions combined -- not split, since the question
+% here is just "does this channel track cue at all"). green = GRAB(DA2m) vs.
+% -cue, red = jRGECo1a vs. -cue, same -cue sign convention and per-channel
+% discernable-bump restriction as chunk_coimg_grab_cue/chunk_coimg_geco_cue above.
+fly_list_coimg = unique(coimg_fly_num);
+n_flies_grid   = numel(fly_list_coimg);
+n_cols_coimg   = ceil(sqrt(n_flies_grid));
+n_rows_coimg   = ceil(n_flies_grid/n_cols_coimg);
+
+figure(55); clf
+set(gcf,'Name','8.6) per-fly: GRAB(DA2m) (green) / jRGECo1a (red) vs. fly heading (-cue)','Position',[50,50,220*n_cols_coimg,170*n_rows_coimg])
+t55 = tiledlayout(n_rows_coimg,n_cols_coimg,'TileSpacing','compact','Padding','compact');
+for f = 1:n_flies_grid
+    trial_list = find(coimg_fly_num==fly_list_coimg(f));
+    grab_cue_f = cat(1,chunk_coimg_grab_cue{trial_list});
+    geco_cue_f = cat(1,chunk_coimg_geco_cue{trial_list});
+
+    nexttile(t55); hold on
+    histogram(grab_cue_f,-pi:pi/12:pi,'Normalization','probability','FaceColor',[0,.7,0],'EdgeColor','none')
+    histogram(geco_cue_f,-pi:pi/12:pi,'Normalization','probability','FaceColor',[.7,0,0],'EdgeColor','none')
+    xlim([-pi,pi]); xticks([]); yticks([])
+    title(sprintf('fly %d',fly_list_coimg(f)),'FontSize',8)
+end
+xlabel(t55,'circ\_dist(channel mu, -cue) (rad)')
+ylabel(t55,'probability')
+
+%% 8.7) per-fly histograms: GRAB(DA2m) vs. jRGECo1a bump position agreement
+% one subplot per fly, reusing chunk_coimg_offset (already restricted to
+% discernable-bump-on-both-channels + rotating samples, section 8.3/8.4),
+% pooled across that fly's own trials.
+figure(56); clf
+set(gcf,'Name','8.7) per-fly: circ\_dist(GRAB(DA2m) mu, jRGECo1a mu)','Position',[50,50,220*n_cols_coimg,170*n_rows_coimg])
+t56 = tiledlayout(n_rows_coimg,n_cols_coimg,'TileSpacing','compact','Padding','compact');
+for f = 1:n_flies_grid
+    trial_list = find(coimg_fly_num==fly_list_coimg(f));
+    off_f = cat(1,chunk_coimg_offset{trial_list});
+
+    nexttile(t56); hold on
+    histogram(off_f,-pi:pi/12:pi,'Normalization','probability','FaceColor',[.4,.4,.4],'EdgeColor','none')
+    xlim([-pi,pi]); xticks([]); yticks([])
+    title(sprintf('fly %d (n=%d)',fly_list_coimg(f),numel(off_f)),'FontSize',8)
+end
+xlabel(t56,'circ\_dist(GRAB(DA2m) mu, jRGECo1a mu) (rad)')
+ylabel(t56,'probability')
+
+%% 8.8) summary: mean +/- std of each fly's circ_dist(GRAB(DA2m) mu, jRGECo1a mu), one tick per fly
+% circular mean/std (not ordinary linear mean/std), since this is a circular
+% quantity -- same convention as circ_mean/circ_std used throughout this script.
+fly_coimg_mean = nan(n_flies_grid,1);
+fly_coimg_std  = nan(n_flies_grid,1);
+for f = 1:n_flies_grid
+    trial_list = find(coimg_fly_num==fly_list_coimg(f));
+    off_f = cat(1,chunk_coimg_offset{trial_list});
+    if isempty(off_f)
+        continue
+    end
+    fly_coimg_mean(f) = circ_mean(off_f);
+    fly_coimg_std(f)  = circ_std(off_f);
+end
+
+figure(57); clf
+set(gcf,'Name','8.8) GRAB(DA2m) vs. jRGECo1a offset: mean +/- circular SD, per fly','Position',[100,100,900,500])
+errorbar(1:n_flies_grid,fly_coimg_mean,fly_coimg_std,'o','Color',[.3,.3,.3],'MarkerFaceColor',[.3,.3,.3])
+xticks(1:n_flies_grid); xticklabels(arrayfun(@(f) sprintf('fly %d',f),fly_list_coimg,'UniformOutput',false)); xtickangle(90)
+xlim([0.5,n_flies_grid+0.5])
+yline(0,':k')
+ylabel('circ\_dist(GRAB(DA2m) mu, jRGECo1a mu): circular mean +/- circular SD (rad)')
+title('one tick per fly, pooled across that fly''s own discernable-bump-on-both-channels samples')
+
+%% 8.9) same as 8.6, but one subplot per TRIAL instead of pooling per fly
+n_cols_trial = ceil(sqrt(n_coimg));
+n_rows_trial = ceil(n_coimg/n_cols_trial);
+
+figure(58); clf
+set(gcf,'Name','8.9) per-trial: GRAB(DA2m) (green) / jRGECo1a (red) vs. fly heading (-cue)','Position',[50,50,150*n_cols_trial,120*n_rows_trial])
+t58 = tiledlayout(n_rows_trial,n_cols_trial,'TileSpacing','compact','Padding','compact');
+for i = 1:n_coimg
+    nexttile(t58); hold on
+    histogram(chunk_coimg_grab_cue{i},-pi:pi/12:pi,'Normalization','probability','FaceColor',[0,.7,0],'EdgeColor','none')
+    histogram(chunk_coimg_geco_cue{i},-pi:pi/12:pi,'Normalization','probability','FaceColor',[.7,0,0],'EdgeColor','none')
+    xlim([-pi,pi]); xticks([]); yticks([])
+    if coimg_is_dark(i); cond_str = 'dark'; else; cond_str = 'CL'; end
+    title(sprintf('fly %d (%s)',coimg_fly_num(i),cond_str),'FontSize',7)
+end
+xlabel(t58,'circ\_dist(channel mu, -cue) (rad)')
+ylabel(t58,'probability')
+
+%% 8.10) same as 8.7, but one subplot per TRIAL instead of pooling per fly
+figure(59); clf
+set(gcf,'Name','8.10) per-trial: circ\_dist(GRAB(DA2m) mu, jRGECo1a mu)','Position',[50,50,150*n_cols_trial,120*n_rows_trial])
+t59 = tiledlayout(n_rows_trial,n_cols_trial,'TileSpacing','compact','Padding','compact');
+for i = 1:n_coimg
+    nexttile(t59); hold on
+    histogram(chunk_coimg_offset{i},-pi:pi/12:pi,'Normalization','probability','FaceColor',[.4,.4,.4],'EdgeColor','none')
+    xlim([-pi,pi]); xticks([]); yticks([])
+    if coimg_is_dark(i); cond_str = 'dark'; else; cond_str = 'CL'; end
+    title(sprintf('fly %d (%s)',coimg_fly_num(i),cond_str),'FontSize',7)
+end
+xlabel(t59,'circ\_dist(GRAB(DA2m) mu, jRGECo1a mu) (rad)')
+ylabel(t59,'probability')
+
+%% 8.11) same summary as 8.8 (mean +/- circular SD per fly), split into closed-loop/dark
+% -- per-fly pooling here uses only that light condition's own trials, not
+% both combined, unlike figure 57 above.
+figure(60); clf
+set(gcf,'Name','8.11) GRAB(DA2m) vs. jRGECo1a offset: mean +/- circular SD, per fly, by light condition','Position',[100,100,900,700])
+for c = 1:2
+    rows = find(coimg_is_dark(:)==(c==2));
+    these_flies = unique(coimg_fly_num(rows));
+    m_c = nan(numel(these_flies),1);
+    s_c = nan(numel(these_flies),1);
+    for ff = 1:numel(these_flies)
+        trial_list = rows(coimg_fly_num(rows)==these_flies(ff));
+        off_f = cat(1,chunk_coimg_offset{trial_list});
+        if isempty(off_f)
+            continue
+        end
+        m_c(ff) = circ_mean(off_f);
+        s_c(ff) = circ_std(off_f);
+    end
+
+    subplot(2,1,c)
+    errorbar(1:numel(these_flies),m_c,s_c,'o','Color',[.3,.3,.3],'MarkerFaceColor',[.3,.3,.3])
+    xticks(1:numel(these_flies)); xticklabels(arrayfun(@(f) sprintf('fly %d',f),these_flies,'UniformOutput',false)); xtickangle(90)
+    xlim([0.5,numel(these_flies)+0.5])
+    yline(0,':k')
+    ylabel('mean +/- circ SD (rad)')
+    title(cond_label{c})
+end
+sgtitle('circ\_dist(GRAB(DA2m) mu, jRGECo1a mu): per fly, split by light condition')
 
 %% Functions
 

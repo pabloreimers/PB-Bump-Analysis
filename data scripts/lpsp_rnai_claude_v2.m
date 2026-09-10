@@ -980,6 +980,320 @@ sgtitle(sprintf('THROUGH-ORIGIN velocity gain: im.f=%d frames, bump=%.2fs, cue=%
     gain_im_f_frames,gain_bump_smooth_s,gain_cue_smooth_s,gain_vel_smooth_s,gain_lag_frames),'Interpreter','none')
 export_fig('v2_fig31_velocity_gain_by_group_through_origin')
 
+%% 9) bump amplitude vs. rotational speed: individual flies (faint) + group mean +/- SEM (thick), by genotype
+% same "does bump amplitude scale with rotational speed" analysis as
+% lpsp_kir_claude.m / lpsp_tnt_claude.m: amplitude is the "actual" peak
+% z-score across glomeruli each frame (not a model fit), |rotational
+% speed| is ft.r_speed, and amplitude is shifted `gain_lag_frames` (step
+% 8's already-established "behavior leads bump" lag, ~0.13s) later than
+% speed -- reused here rather than running a separate amplitude-specific
+% lag sweep, since that wasn't asked for.
+%
+% amplitude is built from chunk_fz (step 2's 5-frame-movmean z-scored
+% fluorescence, the same signal this script's own bump-position PVA is
+% fit from), NOT a fresh smoothing choice. im.f/chunk_fz is
+% hemisphere-resolved -- confirmed directly (im.alpha's two 16-element
+% halves are bit-for-bit identical) -- so the two hemispheres are averaged
+% together first in trial_speed_amp_v2, matching the "actual peak (max of
+% 16 wedges)" convention lpsp_compartments_claude_script.m used for this
+% same hemisphere-resolved shape, before taking the peak across wedges
+% (same approach as lpsp_tnt_claude.m's own trial_speed_amp).
+%
+% TWO genotype groupings, per explicit request, since mcherry is the
+% shared lpsp-driver-only control for both RNAi lines: {empty>th, lpsp>th,
+% lpsp>mcherry} and {empty>vglut, lpsp>vglut, lpsp>mcherry}. Colors are
+% consistent across both plots: empty>X (wild-type-like control) = black,
+% lpsp>X (the RNAi being tested) = red, lpsp>mcherry (driver-only control,
+% shared by both groupings) = blue. THREE figures per grouping (closed
+% loop only, dark only, closed loop + dark pooled per fly), same
+% three-figure layout as lpsp_kir_claude.m/lpsp_tnt_claude.m -- six
+% figures total.
+amp_speed_edges = 0:0.2:3; % rad/s, matching lpsp_compartments_claude_script.m
+amp_speed_x     = amp_speed_edges(1:end-1) + diff(amp_speed_edges)/2;
+min_bin_n_fly   = 10; % minimum per-fly pooled samples required to trust a bin
+
+chunk_speed_amp = cell(n_trials,1);
+chunk_peak_amp  = cell(n_trials,1);
+for i = 1:n_trials
+    [chunk_speed_amp{i},chunk_peak_amp{i}] = trial_speed_amp_v2(all_data(i),chunk_fz{i},gain_lag_frames);
+end
+
+amp_groupings = struct('name',{'th','vglut'}, ...
+    'genos',{{'empty>th','lpsp>th','lpsp>mcherry'},{'empty>vglut','lpsp>vglut','lpsp>mcherry'}});
+amp_colors = [0,0,0; 1,0,0; 0,0.4470,0.7410]; % empty>X = black, lpsp>X = red, lpsp>mcherry = blue
+
+for gi = 1:numel(amp_groupings)
+    genos_g = amp_groupings(gi).genos;
+    n_g = numel(genos_g);
+
+    binned_cl   = cell(1,n_g);
+    binned_dark = cell(1,n_g);
+    binned_all  = cell(1,n_g);
+    for k = 1:n_g
+        binned_cl{k}   = fly_binned_amp(genos_g{k},0,genotype,is_dark,fly_num,chunk_speed_amp,chunk_peak_amp,amp_speed_edges,amp_speed_x,min_bin_n_fly);
+        binned_dark{k} = fly_binned_amp(genos_g{k},1,genotype,is_dark,fly_num,chunk_speed_amp,chunk_peak_amp,amp_speed_edges,amp_speed_x,min_bin_n_fly);
+        binned_all{k}  = fly_binned_amp(genos_g{k},[],genotype,is_dark,fly_num,chunk_speed_amp,chunk_peak_amp,amp_speed_edges,amp_speed_x,min_bin_n_fly); % [] = both light conditions pooled per fly
+    end
+
+    fig_base = 40 + 3*(gi-1);
+
+    figure(fig_base); clf
+    set(gcf,'Name',sprintf('bump amplitude vs speed: %s group, closed loop only',amp_groupings(gi).name),'Position',[100,100,700,550])
+    plot_amp_by_genotype(binned_cl,genos_g,amp_colors,amp_speed_x)
+    title(sprintf('bump amplitude vs. rotational speed -- %s genotypes, closed loop only',amp_groupings(gi).name),'Interpreter','none')
+    export_fig(sprintf('v2_fig%d_amp_speed_%s_closedloop',fig_base,amp_groupings(gi).name))
+
+    figure(fig_base+1); clf
+    set(gcf,'Name',sprintf('bump amplitude vs speed: %s group, dark only',amp_groupings(gi).name),'Position',[100,100,700,550])
+    plot_amp_by_genotype(binned_dark,genos_g,amp_colors,amp_speed_x)
+    title(sprintf('bump amplitude vs. rotational speed -- %s genotypes, dark only',amp_groupings(gi).name),'Interpreter','none')
+    export_fig(sprintf('v2_fig%d_amp_speed_%s_dark',fig_base+1,amp_groupings(gi).name))
+
+    figure(fig_base+2); clf
+    set(gcf,'Name',sprintf('bump amplitude vs speed: %s group, CL+dark pooled',amp_groupings(gi).name),'Position',[100,100,700,550])
+    plot_amp_by_genotype(binned_all,genos_g,amp_colors,amp_speed_x)
+    title(sprintf('bump amplitude vs. rotational speed -- %s genotypes, closed loop + dark pooled within each fly',amp_groupings(gi).name),'Interpreter','none')
+    export_fig(sprintf('v2_fig%d_amp_speed_%s_combined',fig_base+2,amp_groupings(gi).name))
+end
+
+%% 10) bump occupancy: does the bump cover as much of the circle as heading does, or does it cluster at a few preferred positions?
+% same "bump occupancy / stickiness" analysis as lpsp_kir_claude.m /
+% lpsp_tnt_claude.m, ported onto this script's own optimized pipeline
+% rather than copied verbatim:
+%   mu      = chunk_mu_final (step 2's PVA + step 3b's additional smoothing)
+%   heading = movmean(unwrap(-ft.cue)) at heading_smooth_opt_s (step 3's optimum)
+%   samples restricted to trial_walking_bouts_v2's own is_walking mask --
+%     the SAME "discernable bump" convention already used by this script's
+%     own offset-variability figures (13/14), NOT step 3's stricter
+%     instantaneous r_thresh/rho_thresh=.5 masking, which that step's own
+%     header comment already found "far too strict" once applied
+%     dataset-wide (e.g. lpsp>th closed loop dropped to n=1 fly).
+%   NO lag shift between mu and heading -- matching figures 13/14's own
+%     convention for this exact comparison (unlike lpsp_kir_claude.m/
+%     lpsp_tnt_claude.m, which shift bump signals by a velocity-gain-
+%     derived lag): heading_smooth_opt_s's 1.5s window was itself chosen
+%     in step 3 specifically to minimize this same offset's variability,
+%     so adding a separate lag on top would be re-optimizing with an
+%     extra free parameter this script never swept for.
+%
+% grouped by ALL 10 genotype x light-condition categories (group_defs_all,
+% the same convention as this script's own figures 4/7/8/13/14), not the
+% 2-genotype-plus-mcherry line-plot grouping used for the amplitude-vs-
+% speed figures above -- a groupplot's categorical x-axis handles 10
+% categories fine, unlike overlaying 10 sets of individual-fly lines on
+% one plot.
+%
+% three comparisons, all per fly:
+%   1) stickiness = 1 - circ_var(mu)/circ_var(heading)
+%   2) circular concentration (1-circ_var), bump vs. heading side by side
+%   3) circ_var(mu) - circ_var(heading) -- the same comparison as a plain
+%      subtraction instead of a ratio (explicitly requested alongside kir/tnt)
+chunk_mu_ok  = cell(n_trials,1);
+chunk_cue_ok = cell(n_trials,1);
+for i = 1:n_trials
+    [chunk_mu_ok{i},chunk_cue_ok{i}] = trial_bumpok_samples_v2( ...
+        all_data(i),chunk_mu_final{i},chunk_rho_new{i},heading_smooth_opt_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh);
+end
+
+% entropy-based counterparts to the circ_var-based quantities below (see
+% the header comment on the entropy figures, further down, for why
+% circ_var alone can be misleading here): H = -sum(p.*log(p)) of each
+% fly's own histogram over occ_edges, via the circ_entropy helper. Unlike
+% circ_var, entropy only depends on how mass is spread across bins, not
+% their angular position, so it isn't fooled by a symmetric multimodal
+% (e.g. antipodal two-peaked) distribution the way a resultant-vector-
+% based statistic can be. occ_edges wasn't previously needed in this
+% script (unlike lpsp_kir_claude.m/lpsp_tnt_claude.m, this step never
+% built a per-fly histogram-overlay figure), so it's defined here for the
+% first time, matching those scripts' own 32-bin PB-wedge resolution.
+occ_edges   = -pi:pi/16:pi; % 32 bins, matching the PB's own wedge resolution
+n_occ_bins  = numel(occ_edges)-1;
+max_entropy = log(n_occ_bins); % entropy of a perfectly uniform distribution over n_occ_bins bins -- normalizer for the "concentration" figures below
+
+min_samples_stick = 100;
+fly_stickiness   = [];
+fly_mu_conc      = [];
+fly_heading_conc = [];
+fly_var_diff     = [];
+fly_stickiness_ent   = []; % entropy-based stickiness: 1 - H(mu)/H(heading)
+fly_mu_conc_ent      = []; % entropy-based concentration of mu: 1 - H(mu)/max_entropy
+fly_heading_conc_ent = []; % entropy-based concentration of heading, for reference
+fly_var_diff_ent     = []; % H(mu) - H(heading)
+cat_x_stick      = [];
+for gd = 1:numel(group_defs_all)
+    rows = find(strcmp(genotype,group_defs_all(gd).geno) & is_dark==group_defs_all(gd).dark);
+    these_flies = unique(fly_num(rows));
+    for f = these_flies'
+        trial_list = rows(fly_num(rows)==f);
+        mu_f  = cat(1,chunk_mu_ok{trial_list});
+        cue_f = cat(1,chunk_cue_ok{trial_list});
+        if numel(mu_f) < min_samples_stick
+            continue
+        end
+        cue_var = circ_var(cue_f);
+        if cue_var < 1e-3
+            % this fly's heading barely varied at all within its own
+            % walking-bout-restricted samples (near-delta-function
+            % clustering) -- dividing by ~0 blows the ratio up to +/-Inf
+            % (confirmed directly: this happened for a real empty>th dark
+            % fly, poisoning that group's entire mean to -Inf), so the
+            % ratio is skipped (left NaN, same as groupplot already
+            % excludes) rather than trusted here. fly_mu_conc/
+            % fly_heading_conc/fly_var_diff don't divide by cue_var, so
+            % they're unaffected and still computed.
+            fly_stickiness(end+1) = nan; %#ok<AGROW>
+        else
+            fly_stickiness(end+1) = 1 - circ_var(mu_f)/cue_var; %#ok<AGROW>
+        end
+        fly_mu_conc(end+1)      = 1 - circ_var(mu_f); %#ok<AGROW>
+        fly_heading_conc(end+1) = 1 - cue_var; %#ok<AGROW>
+        fly_var_diff(end+1)     = circ_var(mu_f) - cue_var; %#ok<AGROW>
+
+        % unlike lpsp_kir_claude.m/lpsp_tnt_claude.m (whose cue_f is
+        % already confined to [-pi,pi], coming straight from -ft.cue with
+        % no unwrap), this script's own trial_bumpok_samples_v2 unwraps
+        % BOTH mu and heading before smoothing (needed to smooth correctly
+        % across wrap boundaries), so both mu_f and cue_f here are
+        % cumulative/unbounded -- histcounts with fixed occ_edges doesn't
+        % wrap modularly, so both need to be wrapped back into [-pi,pi]
+        % before binning, unlike the circ_var-based quantities above
+        % (which don't care about wrapping either way).
+        mu_f_wrapped  = mod(mu_f+pi,2*pi)-pi;
+        cue_f_wrapped = mod(cue_f+pi,2*pi)-pi;
+        Hm = circ_entropy(mu_f_wrapped,occ_edges);
+        Hh = circ_entropy(cue_f_wrapped,occ_edges);
+        if Hh < 1e-3
+            % same near-zero-denominator guard as the circ_var ratio above
+            fly_stickiness_ent(end+1) = nan; %#ok<AGROW>
+        else
+            fly_stickiness_ent(end+1) = 1 - Hm/Hh; %#ok<AGROW>
+        end
+        fly_mu_conc_ent(end+1)      = 1 - Hm/max_entropy; %#ok<AGROW>
+        fly_heading_conc_ent(end+1) = 1 - Hh/max_entropy; %#ok<AGROW>
+        fly_var_diff_ent(end+1)     = Hm - Hh; %#ok<AGROW>
+
+        cat_x_stick(end+1)      = gd; %#ok<AGROW>
+    end
+end
+
+keep_group_stick = ismember(1:numel(group_defs_all),cat_x_stick)';
+kept_idx_stick = find(keep_group_stick);
+gd_to_plot_idx_stick = zeros(numel(group_defs_all),1);
+gd_to_plot_idx_stick(kept_idx_stick) = 1:numel(kept_idx_stick);
+
+cat_x_stick_plot = gd_to_plot_idx_stick(cat_x_stick);
+cat_labels_stick = {group_defs_all(kept_idx_stick).label};
+cat_colors_stick = all_cat_colors(kept_idx_stick,:);
+
+fprintf('\n=== bump occupancy / stickiness index (1 - circ.var(mu)/circ.var(heading)), per group ===\n');
+for gd = 1:numel(group_defs_all)
+    y = fly_stickiness(cat_x_stick==gd);
+    y = y(~isnan(y)); % same NaN exclusion as groupplot's own embedded n= label, so the count printed here matches what's actually plotted
+    if isempty(y); continue; end
+    fprintf('  %-28s n=%2d flies   mean=%.3f\n', group_defs_all(gd).label, numel(y), mean(y));
+end
+
+figure(46); clf
+set(gcf,'Name','bump occupancy: stickiness index per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+groupplot(cat_x_stick_plot,fly_stickiness,cat_labels_stick,cat_colors_stick)
+ylabel('stickiness = 1 - circ\_var(mu) / circ\_var(heading)')
+title('bump occupancy: how much less of the circle the bump covers vs. heading, one point per fly')
+export_fig('v2_fig46_occupancy_stickiness')
+
+%% figure: circular occupancy -- bump concentration vs. heading concentration, per fly
+figure(47); clf
+set(gcf,'Name','bump occupancy: circular concentration per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+hold on
+gray = [.6,.6,.6];
+labels_conc_n = cell(1,numel(cat_labels_stick)); % n embedded in xtick label, same rationale as this script's own groupplot
+for cIdx = 1:numel(cat_labels_stick)
+    y_mu  = fly_mu_conc(cat_x_stick_plot==cIdx);
+    y_hdg = fly_heading_conc(cat_x_stick_plot==cIdx);
+    labels_conc_n{cIdx} = sprintf('%s (n=%d)',cat_labels_stick{cIdx},numel(y_mu));
+    if ~isempty(y_mu)
+        jit = (rand(size(y_mu))-.5)*.25;
+        scatter(cIdx-0.18+jit,y_mu,20,cat_colors_stick(cIdx,:),'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx-0.18,mean(y_mu),std(y_mu)/sqrt(numel(y_mu)),'o','Color',cat_colors_stick(cIdx,:)*.6, ...
+            'MarkerFaceColor',cat_colors_stick(cIdx,:)*.6,'LineWidth',2,'MarkerSize',7)
+    end
+    if ~isempty(y_hdg)
+        jit = (rand(size(y_hdg))-.5)*.25;
+        scatter(cIdx+0.18+jit,y_hdg,20,gray,'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx+0.18,mean(y_hdg),std(y_hdg)/sqrt(numel(y_hdg)),'o','Color',gray*.6, ...
+            'MarkerFaceColor',gray*.6,'LineWidth',2,'MarkerSize',7)
+    end
+end
+xticks(1:numel(cat_labels_stick)); xticklabels(labels_conc_n); xtickangle(15)
+xlim([0.5,numel(cat_labels_stick)+0.5])
+h_mu  = scatter(nan,nan,20,[0,0,0],'filled');
+h_hdg = scatter(nan,nan,20,gray,'filled');
+legend([h_mu,h_hdg],{'bump concentration','heading concentration'},'Location','eastoutside')
+ylabel('circular concentration, 1-circ\_var (0=uniform, 1=one point)')
+title('bump occupancy: circular concentration (color) vs. heading concentration alone (gray), one point per fly')
+export_fig('v2_fig47_occupancy_concentration')
+
+%% figure: circ_var(mu) - circ_var(heading), per fly
+% same comparison as figure 46's ratio, but a plain subtraction: positive
+% means the bump varies MORE (is LESS concentrated/stuck) than heading --
+% the opposite direction from "stickiness", which is framed so higher = more stuck.
+figure(48); clf
+set(gcf,'Name','bump occupancy: circ_var(mu) - circ_var(heading) per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+groupplot(cat_x_stick_plot,fly_var_diff,cat_labels_stick,cat_colors_stick)
+ylabel('circ\_var(mu) - circ\_var(heading)')
+title('bump occupancy: circ\_var(mu) - circ\_var(heading), by genotype and light condition (one point per fly)')
+export_fig('v2_fig48_occupancy_var_diff')
+
+%% figure: bump occupancy, entropy-based stickiness (same comparison as figure 46, using Shannon entropy instead of circ_var)
+figure(49); clf
+set(gcf,'Name','bump occupancy: entropy stickiness index per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+groupplot(cat_x_stick_plot,fly_stickiness_ent,cat_labels_stick,cat_colors_stick)
+ylabel('entropy stickiness = 1 - H(mu) / H(heading)')
+title('bump occupancy (entropy-based): how much less of the circle the bump covers vs. heading, one point per fly')
+export_fig('v2_fig49_occupancy_entropy_stickiness')
+
+%% figure: circular occupancy -- entropy-based concentration, bump vs. heading, per fly
+figure(50); clf
+set(gcf,'Name','bump occupancy: entropy concentration per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+hold on
+gray = [.6,.6,.6];
+labels_conc_ent_n = cell(1,numel(cat_labels_stick));
+for cIdx = 1:numel(cat_labels_stick)
+    y_mu  = fly_mu_conc_ent(cat_x_stick_plot==cIdx);
+    y_hdg = fly_heading_conc_ent(cat_x_stick_plot==cIdx);
+    labels_conc_ent_n{cIdx} = sprintf('%s (n=%d)',cat_labels_stick{cIdx},numel(y_mu));
+    if ~isempty(y_mu)
+        jit = (rand(size(y_mu))-.5)*.25;
+        scatter(cIdx-0.18+jit,y_mu,20,cat_colors_stick(cIdx,:),'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx-0.18,mean(y_mu),std(y_mu)/sqrt(numel(y_mu)),'o','Color',cat_colors_stick(cIdx,:)*.6, ...
+            'MarkerFaceColor',cat_colors_stick(cIdx,:)*.6,'LineWidth',2,'MarkerSize',7)
+    end
+    if ~isempty(y_hdg)
+        jit = (rand(size(y_hdg))-.5)*.25;
+        scatter(cIdx+0.18+jit,y_hdg,20,gray,'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx+0.18,mean(y_hdg),std(y_hdg)/sqrt(numel(y_hdg)),'o','Color',gray*.6, ...
+            'MarkerFaceColor',gray*.6,'LineWidth',2,'MarkerSize',7)
+    end
+end
+xticks(1:numel(cat_labels_stick)); xticklabels(labels_conc_ent_n); xtickangle(15)
+xlim([0.5,numel(cat_labels_stick)+0.5])
+h_mu  = scatter(nan,nan,20,[0,0,0],'filled');
+h_hdg = scatter(nan,nan,20,gray,'filled');
+legend([h_mu,h_hdg],{'bump concentration','heading concentration'},'Location','eastoutside')
+ylabel('entropy concentration, 1 - H/max entropy (0=uniform, 1=one bin)')
+title('bump occupancy (entropy-based): concentration (color) vs. heading concentration alone (gray), one point per fly')
+export_fig('v2_fig50_occupancy_entropy_concentration')
+
+%% figure: H(mu) - H(heading), per fly
+% same comparison as figure 49's ratio, but a plain subtraction: positive
+% means the bump is MORE spread out (LESS concentrated) than heading --
+% the opposite direction from "stickiness", which is framed so higher = more stuck.
+figure(51); clf
+set(gcf,'Name','bump occupancy: H(mu) - H(heading) per fly','Position',[100,100,max(700,120*numel(cat_labels_stick)),600])
+groupplot(cat_x_stick_plot,fly_var_diff_ent,cat_labels_stick,cat_colors_stick)
+ylabel('H(mu) - H(heading) (nats)')
+title('bump occupancy (entropy-based): H(mu) - H(heading), by genotype and light condition (one point per fly)')
+export_fig('v2_fig51_occupancy_entropy_H_diff')
+
 %% functions
 function [fly_seg,trial_seg] = meta_fly_and_trial_seg(meta_path)
     parts = strsplit(meta_path,{'\','/'});
@@ -1154,9 +1468,21 @@ function export_fig(name)
     % (ugly_figures/exports/<name>.png) and as a PDF
     % (ugly_figures/rnai/<name>.pdf) -- one call site for every figure in
     % this script, so adding/changing an output format only needs editing
-    % here once.
-    exportgraphics(gcf,fullfile('ugly_figures','exports',[name '.png']),'Resolution',150)
-    exportgraphics(gcf,fullfile('ugly_figures','rnai',[name '.pdf']))
+    % here once. Each write is wrapped so a locked destination (e.g. the
+    % PDF open in a viewer) only warns and skips that one file instead of
+    % throwing and aborting the rest of this multi-minute script -- a real
+    % failure mode hit repeatedly in practice, since these exported files
+    % get reopened often to check them.
+    try
+        exportgraphics(gcf,fullfile('ugly_figures','exports',[name '.png']),'Resolution',150)
+    catch ME
+        warning('could not save %s.png (%s) -- is it open in another program?', name, ME.message);
+    end
+    try
+        exportgraphics(gcf,fullfile('ugly_figures','rnai',[name '.pdf']))
+    catch ME
+        warning('could not save %s.pdf (%s) -- is it open in another program?', name, ME.message);
+    end
 end
 
 function y = wrap_break(x)
@@ -1304,4 +1630,136 @@ function groupplot(cat_x, values, cat_labels, colors)
     end
     xticks(1:n_cat); xticklabels(labels_with_n); xtickangle(15)
     xlim([0.5,n_cat+0.5])
+end
+
+function [speed_l,amp_l] = trial_speed_amp_v2(trial,fz,lag)
+    % |rotational speed| (behavior) and peak bump amplitude (max z-score
+    % across glomeruli each imaging frame, not a model fit), both on the
+    % fictrac timebase, with amplitude shifted `lag` frames later than
+    % speed -- same shift-and-trim convention as trial_gain_vectors_v3
+    % above. fz is hemisphere-resolved (confirmed: im.alpha's two
+    % 16-element halves are identical), so the two hemispheres are
+    % averaged together first, matching lpsp_tnt_claude.m's own
+    % trial_speed_amp for this same data shape.
+    xf   = trial.ft.xf;
+    n_im = size(fz,2);
+    xb   = linspace(xf(1),xf(end),n_im)';
+
+    n_hemi  = size(fz,1)/2;
+    z_hemi  = (fz(1:n_hemi,:) + fz(n_hemi+1:end,:))/2;
+    peak_im = max(z_hemi,[],1)';
+
+    speed_full = abs(trial.ft.r_speed);
+    amp_full   = interp1(xb,peak_im,xf,'linear','extrap');
+
+    if lag == 0
+        speed_l = speed_full;
+        amp_l   = amp_full;
+    elseif lag > 0
+        speed_l = speed_full(1:end-lag);
+        amp_l   = amp_full(lag+1:end);
+    else
+        speed_l = speed_full(-lag+1:end);
+        amp_l   = amp_full(1:end+lag);
+    end
+end
+
+function binned = fly_binned_amp(geno,dark_val,genotype,is_dark,fly_num,chunk_speed,chunk_amp,speed_edges,speed_x,min_bin_n_fly)
+    % per-fly binned amplitude-vs-|speed| tuning curve for ONE genotype,
+    % restricted to one light condition (dark_val = 0 or 1) or pooling
+    % both if dark_val is []. one row per fly; a bin is left NaN for a fly
+    % whose own pooled samples don't clear min_bin_n_fly there.
+    if isempty(dark_val)
+        rows = find(strcmp(genotype,geno));
+    else
+        rows = find(strcmp(genotype,geno) & is_dark==dark_val);
+    end
+    these_flies = unique(fly_num(rows));
+    n_f = numel(these_flies);
+    binned = nan(n_f,numel(speed_x));
+    for ff = 1:n_f
+        trial_list = rows(fly_num(rows)==these_flies(ff));
+        speed_f = []; amp_f = [];
+        for ti = trial_list(:)'
+            speed_f = [speed_f; chunk_speed{ti}]; %#ok<AGROW>
+            amp_f   = [amp_f; chunk_amp{ti}]; %#ok<AGROW>
+        end
+        for j = 1:numel(speed_x)
+            idx = speed_f>=speed_edges(j) & speed_f<speed_edges(j+1);
+            if sum(idx) >= min_bin_n_fly
+                binned(ff,j) = mean(amp_f(idx),'omitnan');
+            end
+        end
+    end
+end
+
+function plot_amp_by_genotype(binned_by_geno, geno_labels, geno_colors, speed_x)
+    % binned_by_geno{k}: [n_flies x numel(speed_x)] binned amplitude
+    % curves for genotype k. draws every fly's own curve faintly in that
+    % genotype's color (not a distinct color per fly), plus a thick mean
+    % +/- SEM line per genotype on top, all on the current axes -- one
+    % shared plot per genotype comparison, not one subplot per genotype.
+    % n is embedded in the legend label (same rationale as this script's
+    % own groupplot: a floating text() n= label risks colliding with data).
+    hold on
+    h = gobjects(1,numel(geno_labels));
+    legend_labels = cell(1,numel(geno_labels));
+    for k = 1:numel(geno_labels)
+        binned = binned_by_geno{k};
+        for ff = 1:size(binned,1)
+            plot(speed_x,binned(ff,:),'-','Color',[geno_colors(k,:),0.25],'LineWidth',0.75)
+        end
+        m = mean(binned,1,'omitnan');
+        s = std(binned,0,1,'omitnan') ./ sqrt(sum(~isnan(binned),1));
+        h(k) = errorbar(speed_x,m,s,'-o','Color',geno_colors(k,:),'LineWidth',2.5, ...
+            'MarkerFaceColor',geno_colors(k,:),'MarkerSize',5);
+        legend_labels{k} = sprintf('%s (n=%d)',geno_labels{k},size(binned,1));
+    end
+    legend(h,legend_labels,'Location','best','Interpreter','none')
+    xlabel('|rotational speed| (rad/s)')
+    ylabel('peak bump amplitude')
+end
+
+function [mu_ok,cue_ok] = trial_bumpok_samples_v2(trial,mu,rho,heading_smooth_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh)
+    % pooled (mu, heading) samples for one trial, restricted to
+    % trial_walking_bouts_v2's own is_walking mask -- the SAME
+    % "discernable bump" restriction this script's own offset-variability
+    % figures (13/14) already use, reused here rather than inventing a
+    % separate instantaneous threshold (see this function's call site for
+    % why). mu is interpolated onto the fictrac timebase and used AS-IS
+    % (already smoothed upstream); heading is -ft.cue smoothed at
+    % heading_smooth_s via movmean, same construction as everywhere else
+    % in this script that needs a smoothed heading trace. No lag shift
+    % between the two (see call site).
+    xf = trial.ft.xf;
+    dt = median(diff(xf));
+    n_im = numel(mu);
+    xb = linspace(xf(1),xf(end),n_im)';
+
+    mu_i = interp1(xb,unwrap(mu(:)),xf,'linear','extrap');
+
+    heading_win = max(1,round(heading_smooth_s/dt));
+    heading_smooth_full = movmean(unwrap(-trial.ft.cue(:)),heading_win);
+
+    [~,~,~,~,is_walking] = trial_walking_bouts_v2(trial,mu,rho,heading_smooth_s,turn_thresh,max_gap_s,min_walking_s,bout_rho_thresh);
+
+    valid = is_walking & ~isnan(mu_i) & ~isnan(heading_smooth_full);
+    mu_ok  = mu_i(valid);
+    cue_ok = heading_smooth_full(valid);
+end
+
+function H = circ_entropy(x, edges)
+    % Shannon entropy (natural log, nats) of a wrapped circular variable's
+    % histogram -- a modality-agnostic "how peaky is this distribution"
+    % measure, unlike circ_var (1 - resultant vector length), which is
+    % based on VECTOR AVERAGING and can be fooled by a symmetric
+    % multimodal distribution: two sharp peaks exactly opposite each other
+    % on the circle sum to a near-zero resultant vector (circ_var near 1,
+    % "looks nearly uniform") even though the distribution is actually
+    % tightly concentrated in two spots, not spread out at all. Entropy
+    % only looks at how mass is distributed across bins, not their angular
+    % position, so it doesn't have this blind spot.
+    p = histcounts(x,edges,'Normalization','probability');
+    p = p(p>0); % 0*log(0) is defined as 0 by convention -- just drop empty bins rather than computing 0*(-Inf) = NaN
+    H = -sum(p.*log(p));
 end

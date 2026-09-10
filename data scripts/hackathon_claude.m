@@ -57,6 +57,21 @@ for i = 1:numel(all_data)
     all_data(i).im.d   = dff;
 end
 
+%% separate bump-position cache for the velocity-gain calculation (ported from lpsp_rnai_claude_v2.m)
+% Deliberately independent from the dF/F-based im.mu/im.rho recomputed just
+% above: lpsp_rnai_claude_v2.m's own velocity-gain code (its step 8,
+% gain_cue/gain_fly) was settled separately from that script's bump-mobility
+% pipeline, on a raw-fluorescence z-score (no dF/F) with its own smoothing
+% amount (3 frames, not 5) -- there's no reason the two should coincide, so
+% this is ported as its own cache rather than reusing im.mu/im.rho above.
+gain_im_f_frames = 3; % frames, matches lpsp_rnai_claude_v2.m's settled value
+
+gain_mu  = cell(numel(all_data),1);
+gain_rho = cell(numel(all_data),1);
+for i = 1:numel(all_data)
+    [gain_mu{i},gain_rho{i}] = pva_raw_zscore(all_data(i).im.f,all_data(i).im.alpha,gain_im_f_frames);
+end
+
 %% assign each trial to a fly, a closed-loop/dark/mixed category, and a closed-loop gain label
 n_trials = numel(all_data);
 fly_id   = cell(n_trials,1);
@@ -150,7 +165,7 @@ legend(h,{'closed loop','dark','mixed'},'Location','eastoutside')
 fontsize(gcf,14,'points')
 
 %% export
-exportgraphics(gcf, fullfile(repo_root,'ugly_figures','exports','hackathon_claude.png'), 'Resolution', 300)
+exportgraphics(gcf, fullfile(repo_root,'ugly_figures','hackathon','hackathon_claude.png'), 'Resolution', 300)
 
 %% pick the heading-side (r_speed) smoothing that makes closed-loop gain=0.8 mobility track a 1:1 slope
 % Bump mobility (below) regresses bump path length (from im.mu) against
@@ -204,7 +219,7 @@ xlabel('r_{speed} smoothing window (s)')
 title('heading-smoothing sweep, closed-loop gain=0.8 walking bouts')
 xline(smooth_window_r/60,':k','chosen')
 fontsize(gcf,14,'points')
-exportgraphics(gcf, fullfile(repo_root,'ugly_figures','exports','hackathon_claude_smoothing_sweep.png'), 'Resolution', 300)
+exportgraphics(gcf, fullfile(repo_root,'ugly_figures','hackathon','hackathon_claude_smoothing_sweep.png'), 'Resolution', 300)
 
 %% quantify bump mobility for closed-loop (constant-gain) blocks and dark blocks, using the chosen smoothing
 % Bump mobility is the path-length gain metric from lpsp_p2x2_walking_script.m:
@@ -220,11 +235,33 @@ exportgraphics(gcf, fullfile(repo_root,'ugly_figures','exports','hackathon_claud
 % local_measured_gain above); each dark block is labeled with the most
 % recently active closed-loop gain for that fly, which can carry over from
 % an earlier trial (e.g. a whole-trial "background" dark trial).
+%
+% For each of these same blocks, also compute the two velocity-based "gain"
+% metrics ported from lpsp_rnai_claude_v2.m's step 8 (trial_gain_vectors_v3 /
+% fly_gain_v3): gain_fly = slope(bump_vel ~ 1 + fly_r_speed) and gain_cue =
+% slope(bump_vel ~ 1 + cue_vel), an INSTANTANEOUS per-frame regression
+% (answering "does the bump move at the right rate") rather than mobility's
+% integrated-path-length-per-bout ratio. The smoothing/lag/threshold
+% constants below are ported as-is (lpsp_rnai_claude_v2.m's own settled
+% values from a separate parameter sweep on the LPsP-RNAi dataset, not
+% re-tuned here) -- revisit if the resulting gain_cue/gain_fly values look
+% systematically biased on this dataset.
+vel_params.mu_smooth_s  = 0.20; % s, gaussian smoothing on unwrapped bump position (image timebase)
+vel_params.cue_smooth_s = 0.75; % s, gaussian smoothing on unwrapped cue position (fictrac timebase)
+vel_params.vel_smooth_s = 1.00; % s, gaussian smoothing on r_speed directly (fictrac timebase)
+vel_params.lag_frames   = 8;    % fictrac frames (~0.13s @ 60Hz): cue_vel/fly_vel lead bump_vel by this much
+vel_params.vel_thresh   = 0.2;  % rad/s, minimum |fly_vel| to keep a sample
+vel_params.bump_thresh  = 10;   % rad/s, maximum |bump_vel| to keep a sample (excludes PVA-wrap artifacts)
+vel_params.rho_thresh   = 0.2;  % minimum bump vector strength to keep a sample
+vel_params.vel_max      = 5;    % rad/s, maximum |fly_vel| to keep a sample
+vel_params.min_valid    = 60;   % minimum valid samples in a block to trust its gain_fly/gain_cue estimate
 
-[block_dark,block_gain,block_mov,block_trial,block_start,block_end] = compute_gain_blocks( ...
-    all_data,fly_id,flies,n_flies,smooth_window_mu,smooth_window_r,turn_thresh,max_gap_frames,min_walking_frames,min_block_dur);
+[block_dark,block_gain,block_mov,block_trial,block_start,block_end,~,block_gain_fly,block_gain_cue] = compute_gain_blocks( ...
+    all_data,fly_id,flies,n_flies,smooth_window_mu,smooth_window_r,turn_thresh,max_gap_frames,min_walking_frames,min_block_dur, ...
+    gain_mu,gain_rho,vel_params);
 
 fprintf('%d closed-loop blocks, %d dark blocks with a usable mobility estimate\n',sum(~block_dark),sum(block_dark))
+fprintf('%d of those blocks also have a usable gain_fly/gain_cue estimate\n',sum(~isnan(block_gain_fly)))
 
 %% group plot: bump mobility vs. closed-loop gain (own gain if closed loop, preceding gain if dark)
 gain_group = round(block_gain,1); % bin to the experiment's ~0.1 gain-step resolution
@@ -254,7 +291,59 @@ h(2) = scatter(nan,nan,30,colors2(2,:),'filled');
 legend(h,{'closed loop','dark'},'Location','best')
 fontsize(gcf,14,'points')
 
-exportgraphics(gcf, fullfile(repo_root,'ugly_figures','exports','hackathon_claude_mobility.png'), 'Resolution', 300)
+exportgraphics(gcf, fullfile(repo_root,'ugly_figures','hackathon','hackathon_claude_mobility.png'), 'Resolution', 300)
+
+%% group plot: velocity gain (bump vs. fly rotation, bump vs. cue) vs. closed-loop gain
+% Same x-axis convention as the mobility plot above (own gain if closed
+% loop, preceding closed-loop gain if dark), but the y-axis is now the
+% ported instantaneous velocity-gain metric instead of path-length mobility:
+% gain_fly (top) is "how much does the bump move per unit the fly itself
+% turns" and gain_cue (bottom) is "how much does the bump move per unit the
+% visual cue moves". In dark blocks gain_cue is expected to fall toward 0
+% (no visual pattern actually shown, so cue_vel carries little real signal)
+% -- a built-in negative control rather than something to exclude.
+figure('color','w','Position',[100 100 1000 900]); clf
+
+subplot(2,1,1); hold on
+for gi = 1:numel(groups)
+    for is_dark = 0:1
+        idx = gain_group==groups(gi) & block_dark==is_dark & ~isnan(block_gain_fly);
+        if ~any(idx); continue; end
+        x = gi + jit*(2*is_dark-1);
+        swarmchart(x*ones(sum(idx),1),block_gain_fly(idx),15,colors2(is_dark+1,:),'filled','MarkerFaceAlpha',.5,'XJitterWidth',jit)
+        errorbar(x,mean(block_gain_fly(idx)),std(block_gain_fly(idx))/sqrt(sum(idx)),'o','Color',colors2(is_dark+1,:)*.5,'LineWidth',1.5,'MarkerFaceColor',colors2(is_dark+1,:)*.5)
+    end
+end
+plot(xlim,[1,1],':k')
+xticks(1:numel(groups)); xticklabels(compose('%.1f',groups))
+ylabel('gain_{fly} = slope(bump vel ~ 1 + fly r_{speed})')
+title('bump vs. fly rotation (target=1)')
+
+h = gobjects(2,1);
+h(1) = scatter(nan,nan,30,colors2(1,:),'filled');
+h(2) = scatter(nan,nan,30,colors2(2,:),'filled');
+legend(h,{'closed loop','dark'},'Location','best')
+
+subplot(2,1,2); hold on
+for gi = 1:numel(groups)
+    for is_dark = 0:1
+        idx = gain_group==groups(gi) & block_dark==is_dark & ~isnan(block_gain_cue);
+        if ~any(idx); continue; end
+        x = gi + jit*(2*is_dark-1);
+        swarmchart(x*ones(sum(idx),1),block_gain_cue(idx),15,colors2(is_dark+1,:),'filled','MarkerFaceAlpha',.5,'XJitterWidth',jit)
+        errorbar(x,mean(block_gain_cue(idx)),std(block_gain_cue(idx))/sqrt(sum(idx)),'o','Color',colors2(is_dark+1,:)*.5,'LineWidth',1.5,'MarkerFaceColor',colors2(is_dark+1,:)*.5)
+    end
+end
+plot(xlim,[1,1],':k'); plot(xlim,[0,0],'-','Color',[.85,.85,.85])
+xticks(1:numel(groups)); xticklabels(compose('%.1f',groups))
+xlabel('closed-loop gain (own gain if closed loop, preceding closed-loop gain if dark)')
+ylabel('gain_{cue} = slope(bump vel ~ 1 + cue vel)')
+title('bump vs. visual cue (target=1 in closed loop, ~0 expected in dark)')
+
+sgtitle('velocity gain (ported from lpsp\_rnai\_claude\_v2.m), by closed-loop gain condition')
+fontsize(gcf,14,'points')
+
+exportgraphics(gcf, fullfile(repo_root,'ugly_figures','hackathon','hackathon_claude_velocity_gain.png'), 'Resolution', 300)
 
 %% example plots: imagesc + bump + heading overlay, for gain 0.8 & 1.6, closed loop vs dark
 % For each of the 4 (gain x lighting) combinations, pick the block (from the
@@ -308,7 +397,7 @@ end
 sgtitle('example bump (white) vs heading (color) traces, by closed-loop gain condition')
 fontsize(gcf,12,'points')
 
-exportgraphics(gcf, fullfile(repo_root,'ugly_figures','exports','hackathon_claude_examples.png'), 'Resolution', 300)
+exportgraphics(gcf, fullfile(repo_root,'ugly_figures','hackathon','hackathon_claude_examples.png'), 'Resolution', 300)
 
 %% functions
 function g = local_measured_gain(ft)
@@ -347,8 +436,9 @@ function s = format_gain(g)
     end
 end
 
-function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pooled] = compute_gain_blocks( ...
-        all_data,fly_id,flies,n_flies,smooth_window_mu,smooth_window_r,turn_thresh,max_gap_frames,min_walking_frames,min_block_dur)
+function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pooled,block_gain_fly,block_gain_cue] = compute_gain_blocks( ...
+        all_data,fly_id,flies,n_flies,smooth_window_mu,smooth_window_r,turn_thresh,max_gap_frames,min_walking_frames,min_block_dur, ...
+        gain_mu,gain_rho,vel_params)
     % Segment every trial into closed-loop (constant-gain) / dark blocks and
     % compute the path-length bump-mobility ratio for each, clipping walking
     % bouts to block boundaries. Also returns "pooled", the raw per-bout
@@ -356,12 +446,28 @@ function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pool
     % attached, so a caller can pool bouts across blocks (e.g. to fit a
     % single slope for "all closed-loop gain=0.8 bouts") rather than being
     % limited to one regression per block.
+    %
+    % gain_mu/gain_rho/vel_params (all optional, default [] = skip) are the
+    % ingredients for the SEPARATE velocity-gain metric ported from
+    % lpsp_rnai_claude_v2.m (block_gain_fly, block_gain_cue): an
+    % instantaneous bump-velocity-vs-fly/cue-velocity regression, computed
+    % for the same blocks as the mobility ratio above but otherwise
+    % independent of it. Skipped (left NaN) during the heading-smoothing
+    % sweep, which doesn't need it and would otherwise pay its cost on every
+    % candidate window.
+    if nargin < 11
+        gain_mu = []; gain_rho = []; vel_params = [];
+    end
+    do_vel_gain = ~isempty(gain_mu);
+
     block_dark  = [];
     block_gain  = [];
     block_mov   = [];
     block_trial = [];
     block_start = [];
     block_end   = [];
+    block_gain_fly = [];
+    block_gain_cue = [];
 
     pooled_mu   = [];
     pooled_cue  = [];
@@ -390,6 +496,13 @@ function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pool
             d = diff([false;is_walking;false]);
             bout_starts = find(d==1);
             bout_ends   = find(d==-1)-1;
+
+            % velocity-gain signals over the whole trial (once), reused by every block below
+            if do_vel_gain
+                [fly_vel,cue_vel,bump_vel,vel_valid,vel_idx] = trial_velocity_gain_signals( ...
+                    ft,gain_mu{i},gain_rho{i},vel_params.mu_smooth_s,vel_params.cue_smooth_s,vel_params.vel_smooth_s, ...
+                    vel_params.lag_frames,vel_params.vel_thresh,vel_params.bump_thresh,vel_params.rho_thresh,vel_params.vel_max);
+            end
 
             % split this trial into closed-loop (constant-gain) / dark blocks
             pattern = ft.pattern;
@@ -427,6 +540,17 @@ function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pool
                     mov_ratio = (w.*mov_cue) \ (w.*mov_mu);
                 end
 
+                % velocity gain (bump vs. fly rotation, bump vs. cue) for this same block
+                gain_fly_blk = nan; gain_cue_blk = nan;
+                if do_vel_gain
+                    blk_mask = vel_valid & vel_idx>=s & vel_idx<=e;
+                    if sum(blk_mask) >= vel_params.min_valid
+                        y = bump_vel(blk_mask);
+                        coef_f = [ones(sum(blk_mask),1), fly_vel(blk_mask)] \ y; gain_fly_blk = coef_f(2);
+                        coef_c = [ones(sum(blk_mask),1), cue_vel(blk_mask)] \ y; gain_cue_blk = coef_c(2);
+                    end
+                end
+
                 if run_isdark(k)
                     label_gain    = last_gain;
                     is_dark_block = true;
@@ -445,6 +569,8 @@ function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pool
                     block_trial(end+1,1) = i;
                     block_start(end+1,1) = s;
                     block_end(end+1,1)   = e;
+                    block_gain_fly(end+1,1) = gain_fly_blk;
+                    block_gain_cue(end+1,1) = gain_cue_blk;
 
                     n_b = numel(mov_mu);
                     pooled_mu   = [pooled_mu;   mov_mu];   %#ok<AGROW>
@@ -458,6 +584,92 @@ function [block_dark,block_gain,block_mov,block_trial,block_start,block_end,pool
     end
 
     pooled = struct('mu',pooled_mu,'cue',pooled_cue,'dur',pooled_dur,'gain',pooled_gain,'dark',pooled_dark);
+end
+
+function [mu_new,rho_new] = pva_raw_zscore(f,alpha,smooth_frames)
+    % Ported from lpsp_rnai_claude_v2.m's trial_pva_movmean: a plain
+    % sample-count moving average of raw fluorescence, z-scored per
+    % glomerulus -- deliberately NOT dF/F, unlike this script's own bump
+    % recompute above; this is the settled recipe behind that script's
+    % velocity-gain metric specifically, kept separate on purpose.
+    f_smooth = movmean(f,smooth_frames,2);
+    f_z = (f_smooth - mean(f_smooth,2)) ./ std(f_smooth,0,2);
+
+    alpha_row = alpha(:)';
+    [x_tmp,y_tmp] = pol2cart(alpha_row,f_z');
+    [mu_new,rho_new] = cart2pol(mean(x_tmp,2),mean(y_tmp,2));
+end
+
+function x_filled = fill_nan_gaps_pi(x)
+    % Ported from lpsp_rnai_claude_v2.m: ft.cue's scattered NaN dropouts
+    % happen almost exclusively at the wrapped +/-pi boundary, where linear
+    % interpolation on the raw wrapped signal can walk the WRONG way around
+    % the circle -- so dropped samples are set to exactly pi (landing them
+    % at the same boundary their neighbors already sit at) rather than
+    % interpolated, and unwrap() takes it from there.
+    x_filled = x(:);
+    x_filled(isnan(x_filled)) = pi;
+end
+
+function [fly_vel,cue_vel,bump_vel,valid,orig_idx] = trial_velocity_gain_signals( ...
+        ft,mu_raw,rho_raw,mu_smooth_s,cue_smooth_s,vel_smooth_s,lag_frames,vel_thresh,bump_thresh,rho_thresh,vel_max)
+    % Ported from lpsp_rnai_claude_v2.m's trial_gain_vectors_v3, adapted to
+    % use this dataset's real imaging timebase (ft.xb) in place of that
+    % script's fabricated linspace (it didn't have real imaging timestamps
+    % to work with; we do). orig_idx maps each returned row back onto the
+    % ORIGINAL ft.xf sample index, so a caller can intersect these vectors
+    % with block boundaries defined on that same original index despite the
+    % lag-shift trimming below.
+    %
+    % r_speed's sign relative to the bump was verified (via berg4 trials
+    % whose ft.gain is known directly) to be FLIPPED between the two visual
+    % arenas in this dataset -- berg4 (Reiser lab G4/panels rig) vs. the
+    % older G4-pattern-file rig (0004_8px_vgrating.mat etc). v2's original
+    % dataset only ever saw one rig, so its port didn't need to (and
+    % didn't) account for this; cue's own sign convention, by contrast,
+    % checked out the same across both rigs (no branch needed there).
+    xf = ft.xf(:);
+    dt = median(diff(xf));
+    xb = ft.xb(:);
+    dt_im = median(diff(xb));
+
+    win_im = max(1,round(mu_smooth_s/dt_im));
+    mu_smoothed = smoothdata(unwrap(mu_raw(:)),'gaussian',win_im);
+    bump_vel_full = gradient(interp1(xb,mu_smoothed,xf,'linear','extrap'))/dt;
+    rho_full = interp1(xb,rho_raw(:),xf,'linear','extrap');
+
+    if strcmpi(ft.pattern,'berg4')
+        fly_sign = -1;
+    else
+        fly_sign = 1;
+    end
+    win_vel = max(1,round(vel_smooth_s/dt));
+    fly_vel_full = fly_sign * smoothdata(ft.r_speed(:),'gaussian',win_vel);
+
+    win_cue = max(1,round(cue_smooth_s/dt));
+    cue_filled = fill_nan_gaps_pi(ft.cue);
+    cue_smoothed = smoothdata(unwrap(-cue_filled),'gaussian',win_cue);
+    cue_vel_full = gradient(cue_smoothed)/dt;
+
+    n = numel(xf);
+    if lag_frames == 0
+        fly_vel = fly_vel_full; cue_vel = cue_vel_full; bump_vel = bump_vel_full; rho_i = rho_full;
+        orig_idx = (1:n)';
+    elseif lag_frames > 0
+        fly_vel  = fly_vel_full(1:end-lag_frames);
+        cue_vel  = cue_vel_full(1:end-lag_frames);
+        bump_vel = bump_vel_full(lag_frames+1:end);
+        rho_i    = rho_full(lag_frames+1:end);
+        orig_idx = (1:n-lag_frames)';
+    else
+        fly_vel  = fly_vel_full(-lag_frames+1:end);
+        cue_vel  = cue_vel_full(-lag_frames+1:end);
+        bump_vel = bump_vel_full(1:end+lag_frames);
+        rho_i    = rho_full(1:end+lag_frames);
+        orig_idx = (1:n+lag_frames)' - lag_frames;
+    end
+
+    valid = abs(fly_vel) > vel_thresh & abs(fly_vel) < vel_max & abs(bump_vel) < bump_thresh & rho_i > rho_thresh;
 end
 
 function [run_starts,run_ends,run_vals] = find_runs(x)

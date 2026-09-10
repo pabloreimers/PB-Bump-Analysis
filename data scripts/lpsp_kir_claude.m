@@ -596,10 +596,28 @@ end
 occ_edges   = -pi:pi/16:pi; % 32 bins, matching the PB's own wedge resolution
 occ_centers = occ_edges(1:end-1) + diff(occ_edges)/2;
 
+% entropy-based counterparts to the circ_var-based quantities below (see
+% the header comment on the entropy figures, further down, for why
+% circ_var alone can be misleading here): H = -sum(p.*log(p)) of each
+% fly's own histogram (occ_edges, same 32 bins as fly_mu_hist), via the
+% circ_entropy helper. Unlike circ_var, entropy only depends on how mass
+% is spread across bins, not their angular position, so it isn't fooled
+% by a symmetric multimodal (e.g. antipodal two-peaked) distribution the
+% way a resultant-vector-based statistic can be -- directly relevant here,
+% since this dataset's own bump-position histograms (figure 15) show
+% exactly that two-peaked, near-antipodal structure.
+n_occ_bins = numel(occ_edges)-1;
+max_entropy = log(n_occ_bins); % entropy of a perfectly uniform distribution over n_occ_bins bins -- normalizer for the "concentration" figures below
+
 fly_stickiness   = [];
 fly_mu_conc      = []; % per-fly circular concentration (1-circ_var) of mu alone
 fly_heading_conc = []; % per-fly circular concentration of heading alone, for reference
+fly_var_diff     = []; % per-fly circ_var(mu) - circ_var(heading) -- the same comparison as the ratio above, but a plain subtraction instead
 fly_mu_hist      = []; % per-fly normalized histogram of wrapped mu (one row per fly), for the overlay figure below
+fly_stickiness_ent   = []; % entropy-based stickiness: 1 - H(mu)/H(heading)
+fly_mu_conc_ent      = []; % entropy-based concentration of mu: 1 - H(mu)/max_entropy
+fly_heading_conc_ent = []; % entropy-based concentration of heading, for reference
+fly_var_diff_ent     = []; % H(mu) - H(heading)
 fly_cat_x_stick  = [];
 for gd = 1:numel(group_defs)
     rows = find(strcmp(genotype,group_defs(gd).geno) & is_dark==group_defs(gd).dark);
@@ -612,10 +630,37 @@ for gd = 1:numel(group_defs)
             continue
         end
         mu_f_wrapped = mod(mu_f+pi,2*pi)-pi;
-        fly_stickiness(end+1)   = 1 - circ_var(mu_f)/circ_var(cue_f); %#ok<AGROW>
+        cue_var = circ_var(cue_f);
+        if cue_var < 1e-3
+            % this fly's heading barely varied at all within its own
+            % discernable-bump samples (near-delta-function clustering) --
+            % dividing by ~0 blows the ratio up to +/-Inf (confirmed
+            % directly: this happened for a real fly, poisoning that
+            % group's entire mean to -Inf), so the ratio is skipped
+            % (left NaN, same as groupplot already excludes) rather than
+            % trusted here. fly_mu_conc/fly_heading_conc/fly_var_diff
+            % don't divide by cue_var, so they're unaffected and still computed.
+            fly_stickiness(end+1) = nan; %#ok<AGROW>
+        else
+            fly_stickiness(end+1) = 1 - circ_var(mu_f)/cue_var; %#ok<AGROW>
+        end
         fly_mu_conc(end+1)      = 1 - circ_var(mu_f_wrapped); %#ok<AGROW>
-        fly_heading_conc(end+1) = 1 - circ_var(cue_f); %#ok<AGROW>
+        fly_heading_conc(end+1) = 1 - cue_var; %#ok<AGROW>
+        fly_var_diff(end+1)     = circ_var(mu_f) - cue_var; %#ok<AGROW>
         fly_mu_hist(end+1,:)    = histcounts(mu_f_wrapped,occ_edges,'Normalization','probability'); %#ok<AGROW>
+
+        Hm = circ_entropy(mu_f_wrapped,occ_edges);
+        Hh = circ_entropy(cue_f,occ_edges);
+        if Hh < 1e-3
+            % same near-zero-denominator guard as the circ_var ratio above
+            fly_stickiness_ent(end+1) = nan; %#ok<AGROW>
+        else
+            fly_stickiness_ent(end+1) = 1 - Hm/Hh; %#ok<AGROW>
+        end
+        fly_mu_conc_ent(end+1)      = 1 - Hm/max_entropy; %#ok<AGROW>
+        fly_heading_conc_ent(end+1) = 1 - Hh/max_entropy; %#ok<AGROW>
+        fly_var_diff_ent(end+1)     = Hm - Hh; %#ok<AGROW>
+
         fly_cat_x_stick(end+1)  = gd; %#ok<AGROW>
     end
 end
@@ -864,6 +909,531 @@ plot(xlim,[1,1],':k') % reference: bump moves exactly as much as heading
 ylabel('bump path length / heading path length (per fly, bout-duration-weighted)')
 title('bump mobility relative to fly turning, by genotype and light condition')
 
+%% bump vector strength (im.rho), one point per fly, by genotype x light condition
+% mean im.rho across each fly's own trials within a light condition (raw
+% frames concatenated across trials before averaging, so a longer trial
+% naturally counts for more, then a single mean per fly -- same per-fly
+% convention as every other group comparison in this script). unlike the
+% accuracy/occupancy sections above, this is NOT restricted to
+% "discernable bump"/rotating periods -- it's meant as a general readout
+% of how strong/concentrated the fitted bump is overall, the same
+% quantity lpsp_kir_script_minimal.m plotted as its own "mean vector
+% strength" diagnostic (mean_rho(i) = mean(all_data(i).im.rho)), just
+% computed per fly here instead of per trial.
+fly_rho   = [];
+cat_x_rho = [];
+for gd = 1:numel(group_defs)
+    rows = find(strcmp(genotype,group_defs(gd).geno) & is_dark==group_defs(gd).dark);
+    these_flies = unique(fly_num(rows));
+    for f = these_flies
+        trial_list = rows(fly_num(rows)==f);
+        rho_f = [];
+        for i = trial_list(:)'
+            rho_f = [rho_f; all_data(i).im.rho(:)]; %#ok<AGROW>
+        end
+        fly_rho(end+1)   = mean(rho_f,'omitnan'); %#ok<AGROW>
+        cat_x_rho(end+1) = gd; %#ok<AGROW>
+    end
+end
+
+fprintf('\n=== bump vector strength (mean im.rho), per group ===\n');
+for gd = 1:numel(group_defs)
+    y = fly_rho(cat_x_rho==gd);
+    fprintf('  %-24s n=%2d flies   mean rho=%.3f\n', group_defs(gd).label, numel(y), mean(y,'omitnan'));
+end
+
+figure(22); clf
+set(gcf,'Name','bump vector strength (im.rho) by genotype x light condition','Position',[100,100,900,600])
+groupplot(cat_x_rho,fly_rho,cat_labels,cat_colors)
+ylabel('mean vector strength (im.rho)')
+title('bump vector strength, by genotype and light condition (one point per fly)')
+
+%% bump amplitude vs. rotational speed: binned tuning curve and per-fly slope, by genotype x light condition
+% same "does bump amplitude scale with rotational speed" analysis as
+% lpsp_compartments_claude_script.m's own question-1 section, but
+% amplitude alone (not also baseline/trough): amplitude is the "actual"
+% peak z-score across wedges each frame (max(im.z,[],1) -- not a
+% model fit; matches the "actual peak (max of 16 wedges)" trace in that
+% script, and kir's im.z is already the single hemisphere-equivalent set
+% of 16 wedges, so no hemisphere-averaging step is needed first, unlike
+% datasets where im.z is hemisphere-resolved). |rotational speed| is
+% ft.r_speed. amplitude is shifted by that trial's own group's optimal lag
+% (group_lag_frames(cat_x(i)), from the velocity-gain lag sweep above --
+% there's no separate amplitude-specific lag sweep here) later than
+% speed, same "behavior leads, fluorescence lags" convention used
+% throughout this script.
+%
+% two views: 1) a binned tuning curve (mean amplitude per 0.2 rad/s speed
+% bin, pooled across every trial in a group, same speed_edges/min_bin_n as
+% the compartments script), one line per genotype x light-condition group;
+% 2) a per-fly linear-fit slope (amplitude ~ 1 + speed, unbinned, on that
+% fly's own pooled samples) compared via groupplot, since a slope estimated
+% from binned group means alone doesn't give one value per fly to compare
+% statistically the way every other metric in this script does.
+speed_edges = 0:0.2:3; % rad/s, matching lpsp_compartments_claude_script.m
+speed_x     = speed_edges(1:end-1) + diff(speed_edges)/2;
+min_bin_n   = 50; % minimum pooled samples required to trust a speed bin
+
+chunk_speed_amp = cell(1,n_trials);
+chunk_peak_amp  = cell(1,n_trials);
+for i = find(~isnan(is_dark))
+    [chunk_speed_amp{i},chunk_peak_amp{i}] = trial_speed_amp(all_data(i),group_lag_frames(cat_x(i)));
+end
+
+figure(23); clf
+set(gcf,'Name','bump amplitude vs. rotational speed, by genotype x light condition','Position',[100,100,800,650])
+hold on
+line_styles = {'-','--'}; % closed loop = solid, dark = dashed
+h_lines = gobjects(1,numel(group_defs));
+for gd = 1:numel(group_defs)
+    rows = strcmp(genotype,group_defs(gd).geno) & is_dark==group_defs(gd).dark;
+    speed_pool = cat(1,chunk_speed_amp{rows});
+    amp_pool   = cat(1,chunk_peak_amp{rows});
+
+    binned_amp = nan(size(speed_x));
+    for j = 1:numel(speed_x)
+        idx = speed_pool>=speed_edges(j) & speed_pool<speed_edges(j+1);
+        if sum(idx) >= min_bin_n
+            binned_amp(j) = mean(amp_pool(idx),'omitnan');
+        end
+    end
+
+    gi = find(strcmp(geno_order,group_defs(gd).geno));
+    ci = group_defs(gd).dark+1;
+    h_lines(gd) = plot(speed_x,binned_amp,line_styles{ci},'Color',base_colors(gi,:),'LineWidth',2, ...
+        'Marker','o','MarkerFaceColor',base_colors(gi,:));
+end
+legend(h_lines,cat_labels,'Location','best')
+xlabel('|rotational speed| (rad/s)')
+ylabel('peak bump amplitude (max z-score across wedges)')
+title('bump amplitude vs. rotational speed, by genotype and light condition')
+
+% per-fly slope: reuses group_fly_list/group_fly_trials from the
+% gain-scatter section above, so a fly's trials are concatenated the same
+% way as everywhere else in this script.
+fly_amp_slope   = [];
+cat_x_ampslope  = [];
+for gd = 1:numel(group_defs)
+    these_flies = group_fly_list{gd};
+    trial_lists = group_fly_trials{gd};
+    for ff = 1:numel(these_flies)
+        trial_list = trial_lists{ff};
+        speed_f = []; amp_f = [];
+        for i = trial_list(:)'
+            speed_f = [speed_f; chunk_speed_amp{i}]; %#ok<AGROW>
+            amp_f   = [amp_f; chunk_peak_amp{i}]; %#ok<AGROW>
+        end
+        if numel(speed_f) < 100
+            continue
+        end
+        b = [ones(numel(speed_f),1),speed_f] \ amp_f;
+        fly_amp_slope(end+1)  = b(2); %#ok<AGROW>
+        cat_x_ampslope(end+1) = gd; %#ok<AGROW>
+    end
+end
+
+fprintf('\n=== bump amplitude vs. |rotational speed| slope (z-score / (rad/s)), per group ===\n');
+for gd = 1:numel(group_defs)
+    y = fly_amp_slope(cat_x_ampslope==gd);
+    fprintf('  %-24s n=%2d flies   mean slope=%.3f\n', group_defs(gd).label, numel(y), mean(y,'omitnan'));
+end
+
+figure(24); clf
+set(gcf,'Name','bump amplitude vs. rotational speed: slope per fly','Position',[100,100,900,600])
+groupplot(cat_x_ampslope,fly_amp_slope,cat_labels,cat_colors)
+ylabel('slope: peak bump amplitude vs. |rotational speed| (z-score / (rad/s))')
+title('bump amplitude-speed slope, by genotype and light condition (one point per fly)')
+
+%% figure: bump amplitude vs. speed -- individual flies (faint, one color each) + group mean +/- SEM (thick), one subplot per genotype x light-condition group
+% same speed bins as figure 23, but now binned PER FLY first (that fly's
+% own pooled samples, reusing group_fly_trials from the gain-scatter
+% section) rather than pooling every trial in a group directly -- shows
+% the per-fly variability that figure 23's single pooled-samples curve
+% collapses away. min_bin_n_fly is much lower than figure 23's min_bin_n
+% since one fly's own data is a small fraction of a whole group's.
+min_bin_n_fly = 10;
+
+fly_binned_amp_grp = cell(1,numel(group_defs)); % each cell: [n_flies_in_group x numel(speed_x)]
+for gd = 1:numel(group_defs)
+    trial_lists = group_fly_trials{gd};
+    n_f = numel(trial_lists);
+    binned = nan(n_f,numel(speed_x));
+    for ff = 1:n_f
+        trial_list = trial_lists{ff};
+        speed_f = []; amp_f = [];
+        for i = trial_list(:)'
+            speed_f = [speed_f; chunk_speed_amp{i}]; %#ok<AGROW>
+            amp_f   = [amp_f; chunk_peak_amp{i}]; %#ok<AGROW>
+        end
+        for j = 1:numel(speed_x)
+            idx = speed_f>=speed_edges(j) & speed_f<speed_edges(j+1);
+            if sum(idx) >= min_bin_n_fly
+                binned(ff,j) = mean(amp_f(idx),'omitnan');
+            end
+        end
+    end
+    fly_binned_amp_grp{gd} = binned;
+end
+
+% each fly's own curve is plotted faintly in that fly's GENOTYPE color
+% (not a distinct color per fly) -- empty>kir black, lpsp>kir red -- with
+% a thick mean +/- SEM line per genotype on top, all on one shared axes so
+% the two genotypes are directly compared. plot_amp_by_genotype (in the
+% functions section below) draws this same layout for whichever subset of
+% groups it's handed, reused for all three figures below.
+geno_colors = [0,0,0; 1,0,0]; % empty>kir = black, lpsp>kir = red -- matches geno_order order
+
+%% figure: bump amplitude vs. speed, individual flies by genotype -- closed loop only
+figure(25); clf
+set(gcf,'Name','bump amplitude vs. speed: individual flies by genotype, closed loop only','Position',[100,100,700,550])
+plot_amp_by_genotype({fly_binned_amp_grp{1},fly_binned_amp_grp{3}},geno_order,geno_colors,speed_x) % group_defs order is genotype-major: 1=empty CL, 3=lpsp CL
+title('bump amplitude vs. rotational speed -- closed loop only')
+
+%% figure: bump amplitude vs. speed, individual flies by genotype -- dark only
+figure(26); clf
+set(gcf,'Name','bump amplitude vs. speed: individual flies by genotype, dark only','Position',[100,100,700,550])
+plot_amp_by_genotype({fly_binned_amp_grp{2},fly_binned_amp_grp{4}},geno_order,geno_colors,speed_x) % 2=empty dark, 4=lpsp dark
+title('bump amplitude vs. rotational speed -- dark only')
+
+%% figure: bump amplitude vs. speed, individual flies by genotype -- closed loop + dark pooled within each fly
+% each fly's closed-loop and dark trials are pooled together first (one
+% curve per fly regardless of light condition), leaving just empty>kir
+% vs. lpsp>kir to compare. reuses the same per-trial chunk_speed_amp/
+% chunk_peak_amp (each trial already shifted by ITS OWN light-condition
+% group's optimal lag from the sweep above -- collapsing conditions here
+% doesn't re-run that sweep for a genotype-only lag, but the two
+% conditions' optimal lags were already close, 9-10 frames, so this is a
+% minor approximation).
+geno_fly_trials = cell(1,numel(geno_order));
+for gi = 1:numel(geno_order)
+    rows = find(strcmp(genotype,geno_order{gi}));
+    these_flies = unique(fly_num(rows));
+    geno_fly_trials{gi} = arrayfun(@(f) rows(fly_num(rows)==f), these_flies, 'UniformOutput',false);
+end
+
+fly_binned_amp_geno = cell(1,numel(geno_order));
+for gi = 1:numel(geno_order)
+    trial_lists = geno_fly_trials{gi};
+    n_f = numel(trial_lists);
+    binned = nan(n_f,numel(speed_x));
+    for ff = 1:n_f
+        trial_list = trial_lists{ff};
+        speed_f = []; amp_f = [];
+        for i = trial_list(:)'
+            speed_f = [speed_f; chunk_speed_amp{i}]; %#ok<AGROW>
+            amp_f   = [amp_f; chunk_peak_amp{i}]; %#ok<AGROW>
+        end
+        for j = 1:numel(speed_x)
+            idx = speed_f>=speed_edges(j) & speed_f<speed_edges(j+1);
+            if sum(idx) >= min_bin_n_fly
+                binned(ff,j) = mean(amp_f(idx),'omitnan');
+            end
+        end
+    end
+    fly_binned_amp_geno{gi} = binned;
+end
+
+figure(27); clf
+set(gcf,'Name','bump amplitude vs. speed: individual flies by genotype, CL+dark pooled per fly','Position',[100,100,700,550])
+plot_amp_by_genotype(fly_binned_amp_geno,geno_order,geno_colors,speed_x)
+title('bump amplitude vs. rotational speed -- closed loop + dark pooled within each fly')
+
+%% figure: bump occupancy -- circ_var(mu) - circ_var(heading), one point per fly, by genotype x light condition
+% same fly_var_diff computed alongside fly_stickiness/fly_mu_conc/
+% fly_heading_conc in the occupancy section above -- a plain subtraction
+% instead of the ratio (stickiness, figure 12) or the two concentrations
+% shown separately (figure 14): positive means the bump covers LESS of the
+% circle than heading does (circ_var(mu) < circ_var(heading) would be
+% negative here -- careful with the sign: circ_var(mu)-circ_var(heading)
+% is positive when the BUMP varies MORE, i.e. is LESS concentrated/stuck,
+% than heading -- the opposite direction from "stickiness", which is
+% framed so that higher = more stuck).
+figure(28); clf
+set(gcf,'Name','bump occupancy: circ_var(mu) - circ_var(heading) per fly','Position',[100,100,900,600])
+groupplot(fly_cat_x_stick,fly_var_diff,cat_labels,cat_colors)
+ylabel('circ\_var(mu) - circ\_var(heading)')
+title('bump occupancy: circ\_var(mu) - circ\_var(heading), by genotype and light condition (one point per fly)')
+
+%% bump occupancy, ENTROPY-based versions of figures 12/14/28
+% circ_var (1 - resultant vector length) only captures the FIRST circular
+% moment -- it's fundamentally a vector average, so it can be fooled by a
+% SYMMETRIC MULTIMODAL distribution: two sharp peaks exactly opposite each
+% other on the circle point in opposite directions and cancel in the
+% vector sum, giving a near-zero resultant (circ_var near 1, "looks
+% nearly uniform") even though the distribution is actually tightly
+% concentrated, just at two spots instead of one. This is not a
+% hypothetical concern for this dataset specifically -- figure 15's own
+% per-fly mu histograms show exactly this two-peaked, near-antipodal
+% structure (peaks near 0 and near +/-pi) in every group. Shannon entropy
+% of the same per-fly histogram (H = -sum(p.*log(p)), circ_entropy below)
+% only depends on how probability mass is spread across bins, not their
+% angular position, so it doesn't share this blind spot: two sharp peaks
+% anywhere (antipodal or not) both register as low entropy.
+%
+% these three figures are the exact entropy-based counterparts of figures
+% 12/14/28 above (same fly_stickiness_ent/fly_mu_conc_ent/
+% fly_heading_conc_ent/fly_var_diff_ent, computed in the same per-fly loop
+% as the circ_var versions) -- kept ALONGSIDE those circ_var figures for
+% direct comparison, not replacing them.
+figure(29); clf
+set(gcf,'Name','bump occupancy (entropy): stickiness index per fly','Position',[100,100,900,600])
+groupplot(fly_cat_x_stick,fly_stickiness_ent,cat_labels,cat_colors)
+ylabel('entropy stickiness = 1 - H(mu) / H(heading)')
+title('bump occupancy (entropy-based): how much less of the circle the bump covers vs. heading, one point per fly')
+
+figure(30); clf
+set(gcf,'Name','bump occupancy (entropy): concentration per fly','Position',[100,100,900,600])
+hold on
+gray = [.6,.6,.6];
+for cIdx = 1:numel(cat_labels)
+    y_mu  = fly_mu_conc_ent(fly_cat_x_stick==cIdx);
+    y_hdg = fly_heading_conc_ent(fly_cat_x_stick==cIdx);
+    if ~isempty(y_mu)
+        jit = (rand(size(y_mu))-.5)*.25;
+        scatter(cIdx-0.18+jit,y_mu,20,cat_colors(cIdx,:),'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx-0.18,mean(y_mu),std(y_mu)/sqrt(numel(y_mu)),'o','Color',cat_colors(cIdx,:)*.6, ...
+            'MarkerFaceColor',cat_colors(cIdx,:)*.6,'LineWidth',2,'MarkerSize',7)
+    end
+    if ~isempty(y_hdg)
+        jit = (rand(size(y_hdg))-.5)*.25;
+        scatter(cIdx+0.18+jit,y_hdg,20,gray,'filled','MarkerFaceAlpha',.3)
+        errorbar(cIdx+0.18,mean(y_hdg),std(y_hdg)/sqrt(numel(y_hdg)),'o','Color',gray*.6, ...
+            'MarkerFaceColor',gray*.6,'LineWidth',2,'MarkerSize',7)
+    end
+end
+xticks(1:numel(cat_labels)); xticklabels(cat_labels)
+xlim([0.5,numel(cat_labels)+0.5])
+y_lims = ylim;
+for cIdx = 1:numel(cat_labels)
+    text(cIdx,y_lims(1),sprintf('n=%d',sum(fly_cat_x_stick==cIdx)),'HorizontalAlignment','center','VerticalAlignment','bottom','FontSize',8)
+end
+h_mu  = scatter(nan,nan,20,[0,0,0],'filled');
+h_hdg = scatter(nan,nan,20,gray,'filled');
+legend([h_mu,h_hdg],{'bump concentration','heading concentration'},'Location','eastoutside')
+ylabel('entropy concentration, 1 - H/max entropy (0=uniform, 1=one bin)')
+title('bump occupancy (entropy-based): concentration (color) vs. heading concentration alone (gray), one point per fly')
+
+figure(31); clf
+set(gcf,'Name','bump occupancy (entropy): H(mu) - H(heading) per fly','Position',[100,100,900,600])
+groupplot(fly_cat_x_stick,fly_var_diff_ent,cat_labels,cat_colors)
+ylabel('H(mu) - H(heading) (nats)')
+title('bump occupancy (entropy-based): H(mu) - H(heading), by genotype and light condition (one point per fly)')
+
+%% RNAi-style velocity gain: same heading treatment, smoothing/lag parameter search, and inclusion criteria as lpsp_rnai_claude_v2.m's own gain pipeline
+% A SEPARATE gain metric from this script's own gain-scatter section above
+% (figures 4-9), which uses NO smoothing at all (raw per-frame gradient of
+% -ft.cue and of im.mu) and picks its lag by maximizing mean
+% corr(fly_vel,bump_vel) on a per-GROUP grid. This section instead
+% replicates lpsp_rnai_claude_v2.m's own gain pipeline (that script's step
+% 8, developed in gain_scratch_claude.m): Gaussian-smooth both signals
+% before differentiating, settle on ONE fixed lag/smoothing choice found
+% by minimizing per-fly MSE-from-target=1 on empty-control flies (closed
+% loop only), then apply that single winning pipeline to every genotype x
+% light-condition group -- rather than a per-group max-correlation lag.
+% Kept alongside, not replacing, the existing gain figures above.
+%
+% Three adaptations from a literal copy of lpsp_rnai_claude_v2.m's
+% pipeline, all forced by this dataset's own structure (checked directly,
+% not assumed):
+%   1) NaN-filling the heading trace before unwrap/smooth/diff
+%      (fill_nan_gaps_pi in lpsp_rnai_claude_v2.m, needed there because
+%      that dataset's ft.cue has scattered dropouts near the wrap
+%      boundary) is NOT applied here -- confirmed directly that THIS
+%      dataset's ft.cue has ZERO NaN samples across all 74 trials, so
+%      there's nothing to fill (if that changes for a future dataset
+%      reusing this section, fill_nan_gaps_pi from lpsp_rnai_claude_v2.m
+%      would need to be added back in). The other half of that
+%      treatment -- unwrapping BEFORE smoothing and differentiating,
+%      rather than differentiating the raw wrapped signal -- IS still
+%      applied below (trial_gain_vectors_v2), since it avoids a spurious
+%      +/-2*pi/frame spike at the wrap boundary that this script's own
+%      EXISTING trial_gain_vectors above doesn't guard against, and that
+%      guard is worth having independent of whether any samples were
+%      actually NaN.
+%   2) This dataset has no independent fly-rotation signal separate from
+%      the visual cue -- lpsp_rnai_claude_v2.m's dataset has BOTH
+%      ft.heading (the fly's own rotation) and ft.cue (the closed-loop
+%      scene, which only moves at 0.8x the fly's own rotation), giving it
+%      two gain metrics (gain_cue, gain_fly). This dataset only ever had
+%      -ft.cue as a heading proxy (the same signal this script's own
+%      existing gain-scatter section above already uses as "fly heading
+%      velocity"), so there is only ONE gain metric here, still called
+%      "gain" below rather than gain_cue/gain_fly.
+%   3) This dataset has no raw per-glomerulus fluorescence (im.f) to
+%      re-derive the bump position from scratch at different smoothing
+%      widths (confirmed: this dataset's im struct has only
+%      mu/rho/z/alpha, not f) -- unlike lpsp_rnai_claude_v2.m/
+%      gain_scratch_claude.m, which sweep an im.f-smoothing stage before
+%      ever re-deriving mu/rho. So the sweep below starts from this
+%      script's own existing upstream im.mu/im.rho (the same signal the
+%      gain-scatter section above already uses) and only sweeps the two
+%      smoothing stages that are still meaningful on top of it (an
+%      additional Gaussian smooth on the bump position, and a Gaussian
+%      smooth on the heading trace), plus lag -- three sequential/greedy
+%      stages instead of lpsp_rnai_claude_v2.m's four, in the same "fix
+%      later stages at a neutral default, sweep the current stage, fix it
+%      at its winner, move on" pattern.
+%
+% Optimization criterion (identical to gain_scratch_claude.m): per-fly
+% MSE from a target gain of 1, mean( (fly_gain-1).^2 ), pooled across
+% empty-control flies (empty>kir), closed loop only. The regression's own
+% sample-inclusion thresholds (vel_thresh/bump_thresh/rho_thresh/vel_max)
+% reuse this script's OWN already-established values from the gain-
+% scatter section above (not re-tuned here) -- those happen to be the
+% exact values lpsp_rnai_claude_v2.m's own gain pipeline inherited from
+% this script in the first place. The n_valid>=50 minimum sample count
+% and the min_frac_moving>=0.01 "fly must show some real turning"
+% activity floor (in fly_gain_v2, below) are copied from
+% lpsp_rnai_claude_v2.m's own fly_gain_cached -- this script's ORIGINAL
+% per-fly gain fit above only required sum(valid)>1, with no activity
+% floor at all.
+opt_geno_v2   = {'empty>kir'};
+opt_trials_v2 = find(ismember(genotype,opt_geno_v2) & ~is_dark);
+opt_flies_v2  = unique(fly_num(opt_trials_v2));
+opt_fly_trials_v2 = arrayfun(@(f) opt_trials_v2(fly_num(opt_trials_v2)==f), opt_flies_v2, 'UniformOutput',false);
+fprintf('\noptimizing RNAi-style gain pipeline on %d empty>kir closed-loop flies (%d trials)\n', numel(opt_flies_v2), numel(opt_trials_v2));
+
+default_heading_smooth_s_v2 = 0.1; % neutral hold while sweeping bump smoothing
+default_lag_frames_v2       = 0;   % neutral hold while sweeping smoothing stages
+
+%% sweep 1/3: additional Gaussian smoothing on the bump position (mu), heading smoothing + lag held at neutral defaults
+mu_smooth_candidates_v2_s = [0,0.1,0.2,0.35,0.5,0.75,1,1.5,2,3];
+n_muc_v2 = numel(mu_smooth_candidates_v2_s);
+fly_gc_mu_v2 = nan(numel(opt_flies_v2),n_muc_v2);
+
+fprintf('\n=== RNAi-style gain, sweep 1/3: bump (mu) Gaussian smoothing (s) ===\n');
+for c = 1:n_muc_v2
+    msm = mu_smooth_candidates_v2_s(c);
+    for k = 1:numel(opt_flies_v2)
+        fly_gc_mu_v2(k,c) = fly_gain_v2(all_data,opt_fly_trials_v2{k},msm,default_heading_smooth_s_v2,default_lag_frames_v2, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+    end
+    crit_c = mean((fly_gc_mu_v2(:,c)-1).^2,'omitnan');
+    fprintf('  mu_smooth=%.2fs: mean gain=%.3f, MSE-from-1=%.4f (n=%d flies)\n', ...
+        msm, mean(fly_gc_mu_v2(:,c),'omitnan'), crit_c, sum(~isnan(fly_gc_mu_v2(:,c))));
+end
+crit_mu_v2 = mean((fly_gc_mu_v2-1).^2,1,'omitnan');
+[~,best_muc_v2] = min(crit_mu_v2);
+mu_smooth_opt_v2_s = mu_smooth_candidates_v2_s(best_muc_v2);
+fprintf('winner: bump (mu) smoothing = %.2fs (MSE-from-1=%.4f)\n', mu_smooth_opt_v2_s, crit_mu_v2(best_muc_v2));
+
+figure(32); clf
+set(gcf,'Name','RNAi-style gain sweep 1/3: bump smoothing','Position',[100,100,600,450])
+subplot(2,1,1); hold on
+plot(mu_smooth_candidates_v2_s,mean(fly_gc_mu_v2,1,'omitnan'),'-ok','MarkerFaceColor','k')
+yline(1,':k'); xline(mu_smooth_opt_v2_s,'--r')
+xlabel('bump (mu) Gaussian smoothing (s)'); ylabel('mean gain (target=1)')
+title('empty>kir, closed loop')
+subplot(2,1,2); hold on
+plot(mu_smooth_candidates_v2_s,crit_mu_v2,'-ok','MarkerFaceColor','k')
+plot(mu_smooth_opt_v2_s,crit_mu_v2(best_muc_v2),'o','MarkerSize',12,'Color','r','LineWidth',2)
+xlabel('bump (mu) Gaussian smoothing (s)'); ylabel('mean squared error from gain=1')
+title(sprintf('optimum = %.2fs',mu_smooth_opt_v2_s))
+
+%% sweep 2/3: heading (cue) Gaussian smoothing, bump smoothing fixed at its winner, lag still held at neutral default
+heading_smooth_candidates_v2_s = [0,0.1,0.2,0.35,0.5,0.75,1,1.5,2,3];
+n_hdc_v2 = numel(heading_smooth_candidates_v2_s);
+fly_gc_hd_v2 = nan(numel(opt_flies_v2),n_hdc_v2);
+
+fprintf('\n=== RNAi-style gain, sweep 2/3: heading (cue) Gaussian smoothing (s), bump=%.2fs fixed ===\n',mu_smooth_opt_v2_s);
+for c = 1:n_hdc_v2
+    hsm = heading_smooth_candidates_v2_s(c);
+    for k = 1:numel(opt_flies_v2)
+        fly_gc_hd_v2(k,c) = fly_gain_v2(all_data,opt_fly_trials_v2{k},mu_smooth_opt_v2_s,hsm,default_lag_frames_v2, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+    end
+    crit_c = mean((fly_gc_hd_v2(:,c)-1).^2,'omitnan');
+    fprintf('  heading_smooth=%.2fs: mean gain=%.3f, MSE-from-1=%.4f (n=%d flies)\n', ...
+        hsm, mean(fly_gc_hd_v2(:,c),'omitnan'), crit_c, sum(~isnan(fly_gc_hd_v2(:,c))));
+end
+crit_hd_v2 = mean((fly_gc_hd_v2-1).^2,1,'omitnan');
+[~,best_hdc_v2] = min(crit_hd_v2);
+heading_smooth_opt_v2_s = heading_smooth_candidates_v2_s(best_hdc_v2);
+fprintf('winner: heading (cue) smoothing = %.2fs (MSE-from-1=%.4f)\n', heading_smooth_opt_v2_s, crit_hd_v2(best_hdc_v2));
+
+figure(33); clf
+set(gcf,'Name','RNAi-style gain sweep 2/3: heading smoothing','Position',[100,100,600,450])
+subplot(2,1,1); hold on
+plot(heading_smooth_candidates_v2_s,mean(fly_gc_hd_v2,1,'omitnan'),'-ok','MarkerFaceColor','k')
+yline(1,':k'); xline(heading_smooth_opt_v2_s,'--r')
+xlabel('heading (cue) Gaussian smoothing (s)'); ylabel('mean gain (target=1)')
+title('empty>kir, closed loop')
+subplot(2,1,2); hold on
+plot(heading_smooth_candidates_v2_s,crit_hd_v2,'-ok','MarkerFaceColor','k')
+plot(heading_smooth_opt_v2_s,crit_hd_v2(best_hdc_v2),'o','MarkerSize',12,'Color','r','LineWidth',2)
+xlabel('heading (cue) Gaussian smoothing (s)'); ylabel('mean squared error from gain=1')
+title(sprintf('optimum = %.2fs',heading_smooth_opt_v2_s))
+
+%% sweep 3/3: lag (frames), bump + heading smoothing fixed at their winners
+lag_candidates_v2 = -10:1:40; % same frame grid as this script's own original lag sweep (figure 4) above
+n_lagc_v2 = numel(lag_candidates_v2);
+fly_gc_lag_v2 = nan(numel(opt_flies_v2),n_lagc_v2);
+
+fprintf('\n=== RNAi-style gain, sweep 3/3: lag (frames), bump=%.2fs, heading=%.2fs fixed ===\n',mu_smooth_opt_v2_s,heading_smooth_opt_v2_s);
+for c = 1:n_lagc_v2
+    lg = lag_candidates_v2(c);
+    for k = 1:numel(opt_flies_v2)
+        fly_gc_lag_v2(k,c) = fly_gain_v2(all_data,opt_fly_trials_v2{k},mu_smooth_opt_v2_s,heading_smooth_opt_v2_s,lg, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+    end
+    crit_c = mean((fly_gc_lag_v2(:,c)-1).^2,'omitnan');
+    fprintf('  lag=%3d frames: mean gain=%.3f, MSE-from-1=%.4f (n=%d flies)\n', ...
+        lg, mean(fly_gc_lag_v2(:,c),'omitnan'), crit_c, sum(~isnan(fly_gc_lag_v2(:,c))));
+end
+crit_lag_v2 = mean((fly_gc_lag_v2-1).^2,1,'omitnan');
+[~,best_lagc_v2] = min(crit_lag_v2);
+lag_frames_opt_v2 = lag_candidates_v2(best_lagc_v2);
+lag_seconds_opt_v2 = lag_frames_opt_v2 * mean(trial_dt,'omitnan');
+fprintf('winner: lag = %d frames (%.3fs) (MSE-from-1=%.4f)\n', lag_frames_opt_v2, lag_seconds_opt_v2, crit_lag_v2(best_lagc_v2));
+
+figure(34); clf
+set(gcf,'Name','RNAi-style gain sweep 3/3: lag','Position',[100,100,600,450])
+subplot(2,1,1); hold on
+plot(lag_candidates_v2*mean(trial_dt,'omitnan'),mean(fly_gc_lag_v2,1,'omitnan'),'-ok','MarkerFaceColor','k')
+yline(1,':k'); xline(lag_seconds_opt_v2,'--r')
+xlabel('lag: bump vel. relative to heading vel. (s)'); ylabel('mean gain (target=1)')
+title('empty>kir, closed loop')
+subplot(2,1,2); hold on
+plot(lag_candidates_v2*mean(trial_dt,'omitnan'),crit_lag_v2,'-ok','MarkerFaceColor','k')
+plot(lag_seconds_opt_v2,crit_lag_v2(best_lagc_v2),'o','MarkerSize',12,'Color','r','LineWidth',2)
+xlabel('lag (s)'); ylabel('mean squared error from gain=1')
+title(sprintf('optimum = %d frames (%.3fs)',lag_frames_opt_v2,lag_seconds_opt_v2))
+
+fprintf('\n=== RNAi-style gain: winning pipeline ===\n');
+fprintf('  bump (mu) smoothing: %.2fs\n', mu_smooth_opt_v2_s);
+fprintf('  heading smoothing:   %.2fs\n', heading_smooth_opt_v2_s);
+fprintf('  lag:                 %d frames (%.3fs)\n', lag_frames_opt_v2, lag_seconds_opt_v2);
+
+%% figure: RNAi-style velocity gain, winning pipeline applied to every genotype x light-condition group
+% reuses group_defs/group_fly_list/group_fly_trials/cat_labels/cat_colors
+% from this script's own gain-scatter section above -- same 4 groups,
+% same fly-per-group lists, just a different (RNAi-style) gain pipeline
+% applied to them instead of the per-group max-correlation lag.
+fly_gain_v2_all = [];
+cat_x_gain_v2   = [];
+fprintf('\n=== RNAi-style gain (winning pipeline), every genotype x light-condition group ===\n');
+for gd = 1:numel(group_defs)
+    these_flies = group_fly_list{gd};
+    trial_lists = group_fly_trials{gd};
+    gc_g = nan(numel(these_flies),1);
+    for ff = 1:numel(these_flies)
+        gc_g(ff) = fly_gain_v2(all_data,trial_lists{ff},mu_smooth_opt_v2_s,heading_smooth_opt_v2_s,lag_frames_opt_v2, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+    end
+    fprintf('  %-24s gain = %.3f +/- %.3f (n=%d flies)\n', ...
+        group_defs(gd).label, mean(gc_g,'omitnan'), std(gc_g,'omitnan')/sqrt(sum(~isnan(gc_g))), sum(~isnan(gc_g)));
+    fly_gain_v2_all = [fly_gain_v2_all; gc_g]; %#ok<AGROW>
+    cat_x_gain_v2   = [cat_x_gain_v2; gd*ones(numel(these_flies),1)]; %#ok<AGROW>
+end
+
+figure(35); clf
+set(gcf,'Name','RNAi-style velocity gain, every genotype x light-condition group','Position',[100,100,900,600])
+groupplot(cat_x_gain_v2,fly_gain_v2_all,cat_labels,cat_colors)
+hold on; plot(xlim,[1,1],':k'); plot(xlim,[0,0],'-','Color',[.85,.85,.85])
+ylabel('gain (bump vel. ~ 1 + heading vel.)')
+title(sprintf('RNAi-style velocity gain: bump=%.2fs, heading=%.2fs, lag=%d frames (target=1 in closed loop, ~0 expected in dark)', ...
+    mu_smooth_opt_v2_s,heading_smooth_opt_v2_s,lag_frames_opt_v2))
+
 %% save all figures as PDF
 fig_dir = 'C:\Users\ReimersPabloAlejandr\Documents\GitHub\LPsP_2p\MelData\PB-Bump-Analysis\ugly_figures\kir';
 if ~isfolder(fig_dir)
@@ -1034,6 +1604,80 @@ function [fly_vel,bump_vel,valid] = fly_gain_vectors(all_data,trial_list,lag,vel
     end
 end
 
+function [heading_vel,bump_vel,valid] = trial_gain_vectors_v2(trial,mu_raw,rho_raw,mu_smooth_s,heading_smooth_s,lag_frames, ...
+        vel_thresh,bump_thresh,rho_thresh,vel_max)
+    % RNAi-style counterpart to trial_gain_vectors above: GAUSSIAN, single-
+    % pass smoothing (smoothdata(...,'gaussian',...), not a raw frame-to-
+    % frame gradient) on both the bump position and the heading trace,
+    % each UNWRAPPED before smoothing/differentiating (matching
+    % lpsp_rnai_claude_v2.m's/gain_scratch_claude.m's own
+    % trial_gain_vectors_gauss2), plus a lag shifting heading_vel earlier
+    % relative to bump_vel (the bump follows behavior with a delay) --
+    % same shift-and-trim convention as trial_gain_vectors above. No
+    % fill_nan_gaps_pi call: this dataset's ft.cue has zero NaN samples
+    % (confirmed directly), so there is nothing to fill.
+    xf = trial.ft.xf;
+    dt = median(diff(xf));
+    n_im = numel(mu_raw);
+    xb = linspace(xf(1),xf(end),n_im)';
+    dt_im = (xf(end)-xf(1)) / (n_im-1);
+
+    win_im = max(1,round(mu_smooth_s/dt_im));
+    mu_smoothed = smoothdata(unwrap(mu_raw(:)),'gaussian',win_im);
+    bump_vel_full = gradient(interp1(xb,mu_smoothed,xf,'linear','extrap'))/dt;
+    rho_full = interp1(xb,rho_raw(:),xf,'linear','extrap');
+
+    win_hd = max(1,round(heading_smooth_s/dt));
+    heading_smoothed = smoothdata(unwrap(-trial.ft.cue(:)),'gaussian',win_hd);
+    heading_vel_full = gradient(heading_smoothed)/dt;
+
+    if lag_frames == 0
+        heading_vel = heading_vel_full; bump_vel = bump_vel_full; rho_i = rho_full;
+    elseif lag_frames > 0
+        heading_vel = heading_vel_full(1:end-lag_frames);
+        bump_vel    = bump_vel_full(lag_frames+1:end);
+        rho_i       = rho_full(lag_frames+1:end);
+    else
+        heading_vel = heading_vel_full(-lag_frames+1:end);
+        bump_vel    = bump_vel_full(1:end+lag_frames);
+        rho_i       = rho_full(1:end+lag_frames);
+    end
+
+    valid = abs(heading_vel) > vel_thresh & abs(heading_vel) < vel_max & abs(bump_vel) < bump_thresh & rho_i > rho_thresh;
+end
+
+function gain = fly_gain_v2(all_data,trial_list,mu_smooth_s,heading_smooth_s,lag_frames, ...
+        vel_thresh,bump_thresh,rho_thresh,vel_max)
+    % pools trial_gain_vectors_v2 across every trial in trial_list (one
+    % fly's own trials within a single light condition), then fits
+    % bump_vel ~ 1 + heading_vel (through-intercept, same convention as
+    % this script's own gain-scatter section above). n_valid>=50 and the
+    % min_frac_moving activity floor are copied from
+    % lpsp_rnai_claude_v2.m's own fly_gain_cached -- see this section's
+    % header comment for why (that script's own trial 533 case: a fly
+    % moving above threshold for only 0.25% of a trial produced a
+    % meaningless regression fit to noise-dominated samples).
+    heading_vel = []; bump_vel = []; valid = logical([]);
+    for k = 1:numel(trial_list)
+        trial = all_data(trial_list(k));
+        [hv,bv,vd] = trial_gain_vectors_v2(trial,trial.im.mu,trial.im.rho,mu_smooth_s,heading_smooth_s,lag_frames, ...
+            vel_thresh,bump_thresh,rho_thresh,vel_max);
+        heading_vel = [heading_vel; hv]; %#ok<AGROW>
+        bump_vel    = [bump_vel; bv]; %#ok<AGROW>
+        valid       = [valid; vd]; %#ok<AGROW>
+    end
+
+    min_frac_moving = 0.01;
+    n_valid = sum(valid);
+    if n_valid < 50 || mean(abs(heading_vel) > vel_thresh) < min_frac_moving
+        gain = nan;
+        return
+    end
+
+    b = [ones(n_valid,1),heading_vel(valid)] \ bump_vel(valid);
+    gain = b(2);
+end
+
 function groupplot(cat_x, values, cat_labels, colors)
     % jittered per-point scatter + mean +/- SEM errorbar per category,
     % copied verbatim from lpsp_compartments_claude_script.m
@@ -1200,4 +1844,69 @@ function [mov_mu,mov_speed,dur] = trial_walking_bouts(trial,smooth_window,turn_t
         mov_speed(b) = sum(abs(r_speed_smooth(rng)),'omitnan')*dt; % path length = integral of |speed| dt
         dur(b)       = (bout_ends(b)-bout_starts(b)+1)*dt;
     end
+end
+
+function [speed_l,amp_l] = trial_speed_amp(trial,lag)
+    % |rotational speed| (behavior) and peak bump amplitude (the "actual"
+    % max z-score across wedges each imaging frame, not a model fit),
+    % both on the fictrac timebase, with amplitude shifted `lag` frames
+    % later than speed -- same shift-and-trim convention (supporting
+    % zero/negative lag too) as trial_gain_vectors above.
+    xf   = trial.ft.xf;
+    n_im = size(trial.im.z,2);
+    xb   = linspace(xf(1),xf(end),n_im)';
+
+    speed_full = abs(trial.ft.r_speed);
+    peak_im    = max(trial.im.z,[],1)';
+    amp_full   = interp1(xb,peak_im,xf);
+
+    if lag == 0
+        speed_l = speed_full;
+        amp_l   = amp_full;
+    elseif lag > 0
+        speed_l = speed_full(1:end-lag);
+        amp_l   = amp_full(lag+1:end);
+    else
+        speed_l = speed_full(-lag+1:end);
+        amp_l   = amp_full(1:end+lag);
+    end
+end
+
+function plot_amp_by_genotype(binned_by_geno, geno_order, geno_colors, speed_x)
+    % binned_by_geno{gi}: [n_flies x numel(speed_x)] binned amplitude
+    % curves for genotype gi. draws every fly's own curve faintly in that
+    % genotype's color (not a distinct color per fly), plus a thick mean
+    % +/- SEM line per genotype on top, all on the current axes -- one
+    % shared plot per genotype comparison, not one subplot per genotype.
+    hold on
+    h = gobjects(1,numel(geno_order));
+    for gi = 1:numel(geno_order)
+        binned = binned_by_geno{gi};
+        for ff = 1:size(binned,1)
+            plot(speed_x,binned(ff,:),'-','Color',[geno_colors(gi,:),0.25],'LineWidth',0.75)
+        end
+        m = mean(binned,1,'omitnan');
+        s = std(binned,0,1,'omitnan') ./ sqrt(sum(~isnan(binned),1));
+        h(gi) = errorbar(speed_x,m,s,'-o','Color',geno_colors(gi,:),'LineWidth',2.5, ...
+            'MarkerFaceColor',geno_colors(gi,:),'MarkerSize',5);
+    end
+    legend(h,geno_order,'Location','best')
+    xlabel('|rotational speed| (rad/s)')
+    ylabel('peak bump amplitude')
+end
+
+function H = circ_entropy(x, edges)
+    % Shannon entropy (natural log, nats) of a wrapped circular variable's
+    % histogram -- a modality-agnostic "how peaky is this distribution"
+    % measure, unlike circ_var (1 - resultant vector length), which is
+    % based on VECTOR AVERAGING and can be fooled by a symmetric
+    % multimodal distribution: two sharp peaks exactly opposite each other
+    % on the circle sum to a near-zero resultant vector (circ_var near 1,
+    % "looks nearly uniform") even though the distribution is actually
+    % tightly concentrated in two spots, not spread out at all. Entropy
+    % only looks at how mass is distributed across bins, not their angular
+    % position, so it doesn't have this blind spot.
+    p = histcounts(x,edges,'Normalization','probability');
+    p = p(p>0); % 0*log(0) is defined as 0 by convention -- just drop empty bins rather than computing 0*(-Inf) = NaN
+    H = -sum(p.*log(p));
 end
