@@ -518,10 +518,12 @@ group_max_color = [0 .7 .7;   % EPG > GCaMP    -> teal
 % ceiling] instead of the per-snippet percentile rule above (empty = use
 % the percentile rule). Requested specifically for LPsP > syt7f's
 % 20221123-7 trial.
-forced_zclim = {[], [-2 10], []};
+forced_zclim = {[], [-2 8], []};
 
-figure('color','w','Position',[50 50 1500 1200]); clf
-t = tiledlayout(3,3,'TileSpacing','compact','Padding','compact');
+figure('color','w','Position',[50 50 1500 2000]); clf
+t = tiledlayout(5,3,'TileSpacing','loose','Padding','compact'); % 'loose' (not 'compact') leaves room for rows 1-2's outside-the-axes scale bars; rows 4-5 are the bonus co-imaging panels below
+row2_axes = gobjects(1,3);
+row3_axes = gobjects(1,3);
 
 for gi = 1:3
     G  = group_defs(gi);
@@ -565,36 +567,312 @@ for gi = 1:3
     cb.Ticks = z_clim;
     cb.TickLabels = compose('%.1f',z_clim);
     cb.Label.String = 'z-score';
-    xlim([t0,t1]); ylim([min(unwrap(im.alpha)),max(unwrap(im.alpha))])
-    xticks(nice_ticks(t0,t1))
-    xlabel('time (s)'); ylabel('PB angle (rad)')
+    y_range1 = [min(unwrap(im.alpha)),max(unwrap(im.alpha))];
+    xlim([t0,t1]); ylim(y_range1)
+    xticks([])
+    ylabel('PB angle (rad)')
     title(sprintf('%s\nexample fly %s (%.0fs closed-loop snippet)',G.title,G.example_fly,t1-t0),'Interpreter','none')
+    add_time_scalebar(ax1,t0,t1,y_range1)
 
     % row 2: im.mu (this column's own row-1 color) and -ft.cue (black)
     % traces overlaid, line-only
-    nexttile(t,3+gi); hold on
+    ax2 = nexttile(t,3+gi); hold(ax2,'on')
     hm2 = plot(xb(xb_idx),mu_xb,'-','Color',group_max_color(gi,:),'LineWidth',1.2); hm2.YData(abs(diff(hm2.YData))>pi) = nan;
     hc2 = plot(ft.xf(xf_idx),cue_xf,'-k','LineWidth',1.2); hc2.YData(abs(diff(hc2.YData))>pi) = nan;
     xlim([t0,t1]); ylim([-pi,pi])
-    xticks(nice_ticks(t0,t1))
-    xlabel('time (s)'); ylabel('angle (rad)')
+    xticks([])
+    ylabel('angle (rad)')
+    add_time_scalebar(ax2,t0,t1,[-pi,pi])
     if gi == 1
-        legend([hm2,hc2],{'bump position (mu)','fly heading (-cue)'},'Location','northoutside','Orientation','horizontal')
+        legend([hm2,hc2],{'bump position (mu)','fly heading (-cue)'},'Location','northeast') % 'northoutside' collided with row 1's new bottom-right-outside scale bar
     end
+    row2_axes(gi) = ax2;
 
     % row 3: per-fly correlation summary, 4 categories
-    nexttile(t,6+gi)
+    ax3 = nexttile(t,6+gi);
     ylim(row3_ylim) % set before plotting so plot_fly_categories' "n=" labels land at the true bottom
     plot_fly_categories(G.cat_x,G.val,cat_labels,cat_colors)
     ylabel('correlation')
     title(sprintf('n=%d flies (closed loop)',numel(unique(G.unit_fly(~G.unit_isdark)))))
+    row3_axes(gi) = ax3;
 end
 
+%% bonus row 4: GRAB(DA2m)/jRGECo1a co-imaging example, 20260113-4
+% a single trial where both channels were imaged simultaneously off the
+% same PB (same frames, same mask -- see epg_coimaging_script.m /
+% lpsp_compartments_claude_script.m section 8), so they're temporally
+% aligned by construction (same xb). Plotted as two separate heatmaps
+% (not the RGB-subtractive overlay used in that script's own figures)
+% colored to match this figure's other columns: jRGECo1a (a calcium
+% indicator, like GCaMP) in the EPG>GCaMP column's teal, GRAB(DA2m) in the
+% EPG>GRAB(DA2m) column's green.
+coimg_file = 'epg_coimage_20260120.mat';
+tmp = load(fullfile(data_dir,coimg_file),'all_data');
+coimg = tmp.all_data(:);
+
+coimg_i = find(arrayfun(@(s) ischar(s.meta) && contains(s.meta,'20260113-4','IgnoreCase',true), coimg),1);
+assert(~isempty(coimg_i), 'trial "20260113-4" not found in %s', coimg_file)
+
+cft = coimg(coimg_i).ft;
+cxb = get_xb(cft,size(coimg(coimg_i).grab.z,2));
+cxf = cft.xf(:);
+
+coimg_flash_grab = detect_flash_frames(coimg(coimg_i).grab.f, flash_mad_thresh);
+coimg_flash_geco = detect_flash_frames(coimg(coimg_i).geco.f, flash_mad_thresh);
+coimg_keep = ~(coimg_flash_grab(:) | coimg_flash_geco(:)); % flash on EITHER channel excludes the frame
+
+% discernable-bump mask (both channels must show a bump), same
+% rho/rotation gates used throughout this script -- no lag applied here
+% (this panel is a visual time-aligned display, not a correlation
+% analysis, so behavior/fluorescence alignment doesn't matter).
+rho_g_t = interp1(cxb(~coimg_flash_grab(:)),coimg(coimg_i).grab.rho(~coimg_flash_grab(:)),cxf);
+rho_r_t = interp1(cxb(~coimg_flash_geco(:)),coimg(coimg_i).geco.rho(~coimg_flash_geco(:)),cxf);
+coimg_bump_ok = abs(cft.r_speed(:))>rot_thresh_track & rho_g_t>rho_thresh_track & rho_r_t>rho_thresh_track & ...
+                ~isnan(rho_g_t) & ~isnan(rho_r_t);
+
+[coimg_t0,coimg_t1] = pick_snippet(cxf,-cft.cue(:),cft.r_speed(:),coimg_bump_ok, ...
+    cxf(1),cxf(end),snippet_s,snippet_step_s,min_window_n,cxb,coimg_keep);
+coimg_xb_idx = find(cxb>=coimg_t0 & cxb<=coimg_t1);
+
+coimg_channel = {coimg(coimg_i).geco, coimg(coimg_i).grab};
+coimg_color   = [0 .7 .7; 0 .7 0]; % geco -> EPG>GCaMP teal, grab -> EPG>GRAB(DA2m) green
+coimg_label   = {'jRGECo1a (co-imaged with GRAB(DA2m))','GRAB(DA2m) (co-imaged with jRGECo1a)'};
+
+for k = 1:2
+    ax = nexttile(t,9+k); hold(ax,'on')
+    ch = coimg_channel{k};
+    z_snip = ch.z(:,coimg_xb_idx);
+    z_clim = [prctile(min(z_snip,[],1),5), prctile(max(z_snip,[],1),95)];
+    imagesc(cxb(coimg_xb_idx),unwrap(ch.alpha),z_snip,z_clim)
+    colormap(ax, white_to_color(coimg_color(k,:)))
+    cb = colorbar(ax);
+    cb.Ticks = z_clim;
+    cb.TickLabels = compose('%.1f',z_clim);
+    cb.Label.String = 'z-score';
+    y_range = [min(unwrap(ch.alpha)),max(unwrap(ch.alpha))];
+    xlim([coimg_t0,coimg_t1]); ylim(y_range)
+    xticks([])
+    ylabel('PB angle (rad)')
+    title(sprintf('%s\n20260113-4, fly 2 (%.0fs snippet)',coimg_label{k},coimg_t1-coimg_t0),'Interpreter','none')
+    add_time_scalebar(ax,coimg_t0,coimg_t1,y_range)
+end
+
+% third bonus panel: both channels' bump position (mu), overlaid, in their
+% respective colors -- same time window/axis as the two heatmaps above
+ax_mu = nexttile(t,12); hold(ax_mu,'on')
+h_geco = plot(cxb(coimg_xb_idx),wrap_to_pi(coimg_channel{1}.mu(coimg_xb_idx)),'-','Color',coimg_color(1,:),'LineWidth',1.2);
+h_geco.YData(abs(diff(h_geco.YData))>pi) = nan;
+h_grab = plot(cxb(coimg_xb_idx),wrap_to_pi(coimg_channel{2}.mu(coimg_xb_idx)),'-','Color',coimg_color(2,:),'LineWidth',1.2);
+h_grab.YData(abs(diff(h_grab.YData))>pi) = nan;
+xlim([coimg_t0,coimg_t1]); ylim([-pi,pi])
+xticks([])
+ylabel('angle (rad)')
+title(sprintf('bump position (mu), both channels\n20260113-4, fly 2 (%.0fs snippet)',coimg_t1-coimg_t0),'Interpreter','none')
+add_time_scalebar(ax_mu,coimg_t0,coimg_t1,[-pi,pi])
+legend([h_geco,h_grab],{'jRGECo1a mu','GRAB(DA2m) mu'},'Location','northeast') % created after the scale bar so its line isn't auto-added as a legend entry
+
+%% per-fly optimal lag: GRAB onto GECO, by light condition
+% Step 1 of 2: find each fly's own best-aligning lag BEFORE computing any
+% agreement statistic, so that statistic can be computed on lag-corrected
+% (not raw, lag=0) traces below. For each trial, sweep candidate lags,
+% circularly shifting GRAB (mu+rho together, so each shifted sample still
+% carries its own valid discernible-bump gate) and recomputing mean
+% |circ_dist| onto GECO at each one; positive lag = GRAB shifted to a
+% LATER time (circshift(...,+lag) moves each sample forward), i.e. GRAB
+% lagging behind GECO. A fly's optimal lag averages its own trials'
+% metric-vs-lag curves (same per-trial-then-average convention as
+% fit_group_lag's group-level lag fit earlier in this script) and takes
+% the argmin of that averaged curve. Pools ALL co-imaging trials, not just
+% the 20260113-4 example above; discernable-bump restriction (both
+% channels must show a bump, fly must be rotating) and flash-frame
+% exclusion are the same criteria used throughout this script.
+n_coimg = numel(coimg);
+coimg_fly_id  = cell(n_coimg,1);
+coimg_is_dark = false(n_coimg,1);
+coimg_mu_g  = cell(n_coimg,1); % cached per-trial signals, reused below for the lag-corrected agreement/shuffle statistic
+coimg_mu_r  = cell(n_coimg,1);
+coimg_rho_g = cell(n_coimg,1);
+coimg_rho_r = cell(n_coimg,1);
+coimg_fs    = nan(n_coimg,1);
+
+lag_grid_coimg_s = -2:0.1:2; % s, candidate lags for the grab-onto-geco lag sweep
+coimg_lag_curve = nan(n_coimg,numel(lag_grid_coimg_s)); % mean |circ_dist| at each candidate lag, per trial
+
+for i = 1:n_coimg
+    parts = split_path(coimg(i).meta);
+    parts(cellfun(@isempty,parts)) = [];
+    fly_part = find(~cellfun(@isempty,regexpi(parts,'^fly\s*\d+$','once')));
+    coimg_fly_id{i}  = strjoin(parts(1:fly_part(1)),'/');
+    coimg_is_dark(i) = contains(char(coimg(i).ft.pattern),'background','IgnoreCase',true);
+
+    cflash_g = detect_flash_frames(coimg(i).grab.f, flash_mad_thresh);
+    cflash_r = detect_flash_frames(coimg(i).geco.f, flash_mad_thresh);
+    cxb_i = get_xb(coimg(i).ft,size(coimg(i).grab.z,2));
+    cxf_i = coimg(i).ft.xf(:);
+    keep_g = ~cflash_g(:); keep_r = ~cflash_r(:);
+
+    mu_g_im = unwrap(coimg(i).grab.mu(:));
+    mu_r_im = unwrap(coimg(i).geco.mu(:));
+    mu_g_t  = interp1(cxb_i(keep_g),mu_g_im(keep_g),cxf_i);
+    mu_r_t  = interp1(cxb_i(keep_r),mu_r_im(keep_r),cxf_i);
+    rho_g_t = interp1(cxb_i(keep_g),coimg(i).grab.rho(keep_g),cxf_i);
+    rho_r_t = interp1(cxb_i(keep_r),coimg(i).geco.rho(keep_r),cxf_i);
+    coimg_mu_g{i} = mu_g_t; coimg_mu_r{i} = mu_r_t;
+    coimg_rho_g{i} = rho_g_t; coimg_rho_r{i} = rho_r_t;
+    coimg_fs(i) = 1/median(diff(cxf_i));
+
+    lag_frames_grid_coimg = round(lag_grid_coimg_s*coimg_fs(i));
+    for Li = 1:numel(lag_frames_grid_coimg)
+        lag = lag_frames_grid_coimg(Li);
+        mu_g_shift  = circshift(mu_g_t,lag);
+        rho_g_shift = circshift(rho_g_t,lag);
+        ok_lag = abs(coimg(i).ft.r_speed(:))>rot_thresh_track & rho_g_shift>rho_thresh_track & rho_r_t>rho_thresh_track & ...
+                 ~isnan(mu_g_shift) & ~isnan(mu_r_t);
+        if sum(ok_lag) >= min_window_n
+            coimg_lag_curve(i,Li) = mean(abs(circ_dist(mu_r_t(ok_lag),mu_g_shift(ok_lag))));
+        end
+    end
+end
+
+coimg_lag_cat_labels = {'closed loop','dark'};
+coimg_lag_cat_colors = [0.20 0.45 0.85; 0.10 0.10 0.10];
+coimg_lag_cat_x = []; coimg_lag_val = [];
+coimg_fly_lag = containers.Map('KeyType','char','ValueType','double'); % "flyid|0/1" -> that fly+condition's optimal lag (s)
+for c = 0:1 % 0 = closed loop, 1 = dark
+    rows = find(coimg_is_dark==logical(c));
+    these_flies = unique(coimg_fly_id(rows));
+    for f = 1:numel(these_flies)
+        sel = rows(strcmp(coimg_fly_id(rows),these_flies{f}));
+        mean_curve = mean(coimg_lag_curve(sel,:),1,'omitnan');
+        if all(isnan(mean_curve))
+            continue
+        end
+        [~,best_Li] = min(mean_curve);
+        coimg_lag_cat_x(end+1) = 1 + c; %#ok<AGROW>
+        coimg_lag_val(end+1)   = lag_grid_coimg_s(best_Li); %#ok<AGROW>
+        coimg_fly_lag(sprintf('%s|%d',these_flies{f},c)) = lag_grid_coimg_s(best_Li);
+    end
+end
+
+ax_coimg_lag = nexttile(t,13);
+plot_fly_categories(coimg_lag_cat_x,coimg_lag_val,coimg_lag_cat_labels,coimg_lag_cat_colors)
+ylim([lag_grid_coimg_s(1),lag_grid_coimg_s(end)])
+ylabel('optimal lag, GRAB onto GECO (s)')
+title(sprintf('GRAB(DA2m) vs. jRGECo1a: best-aligning lag, per fly\n(positive = GRAB lags GECO)'))
+
+%% per-fly summary: mean |circ_dist(grab mu, geco mu)|, by light condition
+% Step 2 of 2: now apply EACH FLY'S OWN optimal lag (just found above) to
+% GRAB before computing the agreement statistic -- so this reflects bump
+% agreement once each fly's own sensor-kinetics-driven offset is corrected
+% for, rather than the raw (lag=0) alignment. The shuffle-null control
+% gets the SAME lag correction applied to GRAB first, then an ADDITIONAL
+% large random circular shift (>= min_shuffle_lag_s seconds, with the
+% usual near-0/near-trial-length exclusion band) applied to GECO -- so
+% real and shuffled data are put through identical preprocessing and only
+% differ in that extra decorrelating shift.
+coimg_offset = cell(n_coimg,1);
+min_shuffle_lag_s = 5;  % s, minimum |lag| for a circular-shuffle draw
+n_shuffles        = 200; % shuffle draws per trial
+coimg_shuffle_offset = cell(n_coimg,n_shuffles);
+rng(1) % reproducible shuffles run-to-run
+
+for i = 1:n_coimg
+    mu_g_t = coimg_mu_g{i}; mu_r_t = coimg_mu_r{i};
+    rho_g_t = coimg_rho_g{i}; rho_r_t = coimg_rho_r{i};
+    fs_i = coimg_fs(i);
+    r_speed_i = coimg(i).ft.r_speed(:);
+
+    key = sprintf('%s|%d',coimg_fly_id{i},coimg_is_dark(i));
+    if isKey(coimg_fly_lag,key)
+        lag0 = round(coimg_fly_lag(key)*fs_i);
+    else
+        lag0 = 0; % this fly+condition had no usable lag curve -- fall back to uncorrected
+    end
+    mu_g_corr  = circshift(mu_g_t,lag0);
+    rho_g_corr = circshift(rho_g_t,lag0);
+
+    ok = abs(r_speed_i)>rot_thresh_track & rho_g_corr>rho_thresh_track & rho_r_t>rho_thresh_track & ...
+         ~isnan(mu_g_corr) & ~isnan(mu_r_t);
+    coimg_offset{i} = circ_dist(mu_g_corr(ok),mu_r_t(ok));
+
+    n_i  = numel(mu_r_t);
+    min_shift = round(min_shuffle_lag_s*fs_i);
+    eligible_lags = (min_shift:(n_i-min_shift))';
+    for sidx = 1:n_shuffles
+        lag = eligible_lags(randi(numel(eligible_lags)));
+        mu_r_shift  = circshift(mu_r_t,lag);
+        rho_r_shift = circshift(rho_r_t,lag);
+        ok_s = abs(r_speed_i)>rot_thresh_track & rho_g_corr>rho_thresh_track & rho_r_shift>rho_thresh_track & ...
+               ~isnan(mu_g_corr) & ~isnan(mu_r_shift);
+        coimg_shuffle_offset{i,sidx} = circ_dist(mu_g_corr(ok_s),mu_r_shift(ok_s));
+    end
+end
+
+coimg_cat_labels = {'CL (real)','CL (shuffled)','dark (real)','dark (shuffled)'};
+coimg_cat_colors = [0.20 0.45 0.85; 0.65 0.78 0.92; 0.10 0.10 0.10; 0.65 0.65 0.65];
+coimg_cat_x = []; coimg_val = [];
+for c = 0:1 % 0 = closed loop, 1 = dark
+    rows = find(coimg_is_dark==logical(c));
+    these_flies = unique(coimg_fly_id(rows));
+    for f = 1:numel(these_flies)
+        sel = rows(strcmp(coimg_fly_id(rows),these_flies{f}));
+
+        pooled = cat(1,coimg_offset{sel});
+        if isempty(pooled)
+            continue
+        end
+        coimg_cat_x(end+1) = 1 + 2*c; %#ok<AGROW>
+        coimg_val(end+1)   = mean(abs(pooled)); %#ok<AGROW>
+
+        % this fly's shuffle-null estimate: for each of the n_shuffles
+        % independent draws, pool this fly's own trials' shuffled samples
+        % and take the mean (mirroring the real-data statistic exactly),
+        % then average that draw-level mean over all draws -- a
+        % Monte-Carlo estimate of this fly's expected offset under the
+        % null, directly comparable to its one real-data point.
+        draw_means = nan(n_shuffles,1);
+        for sidx = 1:n_shuffles
+            pooled_shuf = cat(1,coimg_shuffle_offset{sel,sidx});
+            if ~isempty(pooled_shuf)
+                draw_means(sidx) = mean(abs(pooled_shuf));
+            end
+        end
+        coimg_cat_x(end+1) = 2 + 2*c; %#ok<AGROW>
+        coimg_val(end+1)   = mean(draw_means,'omitnan'); %#ok<AGROW>
+    end
+end
+
+ax_coimg_summary = nexttile(t,14);
+plot_fly_categories(coimg_cat_x,coimg_val,coimg_cat_labels,coimg_cat_colors)
+ylim([0,pi])
+yticks([0 pi/4 pi/2 3*pi/4 pi])
+yticklabels({'0','\pi/4','\pi/2','3\pi/4','\pi'})
+ylabel('mean |circ\_dist(grab mu, geco mu)| (rad)')
+title(sprintf('GRAB(DA2m) vs. jRGECo1a bump agreement, per fly (lag-corrected)\nvs. %ds+ circularly-shuffled null (n=%d draws/trial)',min_shuffle_lag_s,n_shuffles))
+
 sgtitle('Figure 1: bump tracks fly heading across indicators/genotypes')
+
+% hide rows 2-3's x-axis LINE only (keep row 3's category tick labels and
+% its plotted y=0 dotted line) -- done as the very last step, right before
+% export: XAxis.Axle is an internal ruler primitive that gets rebuilt on
+% layout changes, so setting it mid-loop got silently undone by the
+% subsequent nexttile/sgtitle calls re-laying out the tiledlayout.
+drawnow
+for gi = 1:3
+    row2_axes(gi).XAxis.Axle.Visible = 'off';
+    row3_axes(gi).XAxis.Axle.Visible = 'off';
+end
+ax_mu.XAxis.Axle.Visible = 'off';
+ax_coimg_summary.XAxis.Axle.Visible = 'off';
+ax_coimg_lag.XAxis.Axle.Visible = 'off';
 
 %% export
 if ~isfolder(export_dir); mkdir(export_dir); end
 exportgraphics(gcf, fullfile(export_dir,'Figure_1_claude.png'), 'Resolution', 300)
+
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
+exportgraphics(gcf, fullfile(all_figs_dir,'Fig1_V1.pdf'), 'ContentType', 'auto') % 'auto' rasterizes the dense heatmaps but keeps text/lines vector -- 'vector' would bloat the file turning each heatmap pixel into its own path
 
 %% ===================== functions =====================
 
@@ -898,21 +1176,19 @@ function cmap = white_to_color(max_color)
     cmap = [linspace(1,max_color(1),n)', linspace(1,max_color(2),n)', linspace(1,max_color(3),n)'];
 end
 
-function ticks = nice_ticks(t0, t1)
-    % round tick step (1/2/5 x 10^k) for a time axis spanning [t0,t1] --
-    % explicit ticks rather than MATLAB's auto-locator, since the
-    % auto-locator produced a corrupted tick label ("40" instead of "400")
-    % on one panel's wide, densely-labeled time axis in testing.
-    span = t1 - t0;
-    raw_step = span/6;
-    mag  = 10^floor(log10(raw_step));
-    for cand = [1 2 5 10]
-        if cand*mag >= raw_step
-            step = cand*mag;
-            break
-        end
-    end
-    ticks = ceil(t0/step)*step : step : t1;
+function add_time_scalebar(ax, t0, t1, y_range)
+    % 10 s horizontal scale bar below the bottom-right corner, OUTSIDE the
+    % axes' own plotted data area (used instead of a numeric time axis on
+    % rows 1-2 -- xticks/xlabel removed there) -- Clipping is turned off on
+    % the bar/label themselves so they render in that outside margin
+    % rather than being cut off at the axes box.
+    bar_len = 10; % s
+    x1 = t1 - 0.02*(t1-t0);
+    x0 = x1 - bar_len;
+    y0 = y_range(1) - 0.07*diff(y_range);
+    line(ax,[x0,x1],[y0,y0],'Color','k','LineWidth',2.5,'Clipping','off')
+    text(ax,x0+bar_len/2,y0,'10 s','Color','k','VerticalAlignment','top', ...
+        'HorizontalAlignment','center','FontSize',9,'Clipping','off')
 end
 
 function parts = split_path(p)
