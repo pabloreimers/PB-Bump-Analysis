@@ -2,11 +2,21 @@
 %clear all
 close all
 
-load('data/lpsp_p2x2_walking_20260728.mat') %loads all_data
-
-%% subset to trials collected on or after 7/8
-trial_date = cellfun(@(x)(str2double(regexp(x,'\d{8}','match','once'))),{all_data.meta});
-all_data = all_data(trial_date >= 20260708);
+% the full lpsp_p2x2_walking_20260728.mat is 2.7GB and every trial before
+% 7/8 gets thrown away in the else-branch below anyway -- caching the
+% already-subset all_data here means iterative re-runs of this script only
+% ever touch the (much smaller) subset file, per explicit request.
+subset_file = '.data/lpsp_p2x2_walking_20260728_post0708.mat';
+if isfile(subset_file)
+    load(subset_file) % loads all_data, already subset to trials on/after 7/8
+    fprintf('loaded %d trials (already subset to on/after 7/8) from %s\n', numel(all_data), subset_file);
+else
+    load('.data/lpsp_p2x2_walking_20260728.mat') % loads all_data -- data dir is hidden (.data), the plain "data/" folder this used to point to no longer exists
+    trial_date = cellfun(@(x)(str2double(regexp(x,'\d{8}','match','once'))),{all_data.meta});
+    all_data = all_data(trial_date >= 20260708);
+    save(subset_file,'all_data','-v7.3')
+    fprintf('subset to %d trials on/after 7/8; saved to %s for faster future loads\n', numel(all_data), subset_file);
+end
 
 is_empty = arrayfun(@(x)(contains(x.meta,'_empty_')),all_data);
 is_lpsp  = arrayfun(@(x)(contains(x.meta,'_lpsp_')),all_data);
@@ -149,7 +159,7 @@ for i = 1:n
     parts   = strsplit(all_data(i).meta,'\');
     fly_pos = find(startsWith(parts,'fly '),1);
     fly_id{i} = strjoin(parts(1:fly_pos),'\');
-    trial_num(i) = str2double(regexp(parts{fly_pos+1},'-(\d+)_','tokens','once'));
+    trial_num(i) = str2double(regexp(parts{fly_pos+1},'-(\d+)[_-]','tokens','once')); % [_-] not just '_': trial 39 (20260714-4-epg_8m_lpsp_p2x2) uses a hyphen there instead of the usual underscore
 
     if ~(isfield(all_data(i),'atp') && isfield(all_data(i).atp,'d') && ~isempty(all_data(i).atp.d)); continue; end
 
@@ -436,29 +446,170 @@ for k = 1:n_example_pools
 end
 sgtitle('bump-mobility regression, pooled per fly x lighting x pre/post condition - spanning least- to best-powered')
 
-%% 5) plot pre vs post bump mobility, split by genotype and lighting condition
-figure(3); clf
-for g = 1:2
-    for li = 1:2
-        subplot(2,2,(li-1)*2+g); hold on
+%% 4b) pick an example fly + 60s dark pre/post snippet for Fig 3's new row
+% (per explicit request): among flies whose DARK-condition bump mobility
+% INCREASED after the perturbation (fly_post(:,2) > fly_pre(:,2) -- the
+% headline effect the bootstrap test below confirms is significant), pick
+% the fly with the LARGEST such increase (fly_post(:,2)-fly_pre(:,2)),
+% among those that also have a valid snippet to show: a snippet_s-second
+% window in that fly's own pre-dark trials AND another in its post-dark
+% trials (fly_pre_idx{f,2}/fly_post_idx{f,2}, already split in section 4)
+% with mean forward speed (ft.f_speed) > min_forward_speed_ex --
+% "genuinely walking forward," not just turning in place. Where multiple
+% qualifying windows exist for one trial set, the one with the highest
+% mean bump vector strength (im.rho) is kept (pick_best_snippet_window's
+% own ranking) -- rho only breaks ties WITHIN a fly's own pre or post
+% window search, it no longer decides WHICH fly gets picked.
+snippet_s            = 60; % s, requested snippet length
+snippet_step_s       = 10; % s, sliding step when searching for the best snippet_s-second sub-window
+min_forward_speed_ex = 2;  % mm/s, "genuinely walking forward" over the whole snippet
 
-        valid = fly_group==g & ~isnan(fly_pre(:,li)) & ~isnan(fly_post(:,li));
-        pre_vals  = fly_pre(valid,li);
-        post_vals = fly_post(valid,li);
+dark_increase = find(fly_group>0 & ~isnan(fly_pre(:,2)) & ~isnan(fly_post(:,2)) & fly_post(:,2)>fly_pre(:,2));
+[~,delta_order] = sort(fly_post(dark_increase,2)-fly_pre(dark_increase,2),'descend'); % biggest mobility increase first
+dark_increase = dark_increase(delta_order);
 
-        plot([ones(sum(valid),1),2*ones(sum(valid),1)]',[pre_vals,post_vals]','Color',[.5,.5,.5,.3])
-        scatter(ones(sum(valid),1), pre_vals,'filled','MarkerFaceAlpha',.5)
-        scatter(2*ones(sum(valid),1),post_vals,'filled','MarkerFaceAlpha',.5)
-        errorbar([1,2],[mean(pre_vals,'omitnan'),mean(post_vals,'omitnan')],...
-                       [std(pre_vals,'omitnan'),std(post_vals,'omitnan')]/sqrt(sum(valid)),'-ok','LineWidth',1.5)
+example_fly_snip = nan; example_pre_i = nan; example_pre_t0 = nan; example_post_i = nan; example_post_t0 = nan;
+example_combined_rho = nan;
+for fi = 1:numel(dark_increase)
+    f = dark_increase(fi);
+    [pre_i, pre_t0, pre_rho]   = pick_best_snippet_window(fly_pre_idx{f,2}, all_data,snippet_s,snippet_step_s,min_forward_speed_ex);
+    [post_i,post_t0,post_rho]  = pick_best_snippet_window(fly_post_idx{f,2},all_data,snippet_s,snippet_step_s,min_forward_speed_ex);
+    if isnan(pre_i) || isnan(post_i); continue; end % this fly has no single snippet_s-second window in one of its own pre/post trial sets clearing the forward-speed bar
 
-        xlim([.5,2.5]); xticks([1,2]); xticklabels({'pre','post'})
-        ylabel('bump path length / heading path length')
-        title(sprintf('%s, %s (n=%i flies)',group_labels{g},lighting_labels{li},sum(valid)))
+    example_fly_snip = f; % first (= biggest-delta) fly in the sorted list with a usable snippet wins
+    example_pre_i  = pre_i;  example_pre_t0  = pre_t0;
+    example_post_i = post_i; example_post_t0 = post_t0;
+    example_combined_rho = min(pre_rho,post_rho);
+    break
+end
+
+if isnan(example_fly_snip)
+    warning('no fly cleared the dark pre/post snippet criteria (forward speed >%.1f mm/s + bump mobility increase) -- Fig 3''s new row will be left empty', min_forward_speed_ex)
+else
+    fprintf('\nFig 3 example snippet: %s fly %i (dark, mobility %.2f -> %.2f, biggest increase among snippet-eligible flies), pre trial %i (pattern=%s) @ t=%.0fs, post trial %i (pattern=%s) @ t=%.0fs (worse-of-the-two mean rho=%.2f)\n', ...
+        fly_date{example_fly_snip}, fly_num(example_fly_snip), fly_pre(example_fly_snip,2), fly_post(example_fly_snip,2), ...
+        trial_num(example_pre_i), all_data(example_pre_i).ft.pattern, example_pre_t0, ...
+        trial_num(example_post_i), all_data(example_post_i).ft.pattern, example_post_t0, example_combined_rho)
+end
+
+%% 4c) SCRATCH: gallery of every snippet-eligible candidate fly, not just
+% the winner -- per explicit request ("show me a few different options"),
+% so a better one can be picked by eye instead of trusting the single
+% biggest-delta pick. Same eligibility as 4b (a snippet_s-second window
+% clearing min_forward_speed_ex in both that fly's own pre-dark and
+% post-dark trials), just not stopping at the first (=biggest-delta) hit.
+n_gallery = 8; % how many candidates to show, in descending delta order (same order as dark_increase)
+
+gallery_fly = []; gallery_delta = []; gallery_pre_i = []; gallery_pre_t0 = []; gallery_post_i = []; gallery_post_t0 = []; gallery_rho = [];
+for fi = 1:numel(dark_increase)
+    f = dark_increase(fi);
+    [pre_i, pre_t0, pre_rho]  = pick_best_snippet_window(fly_pre_idx{f,2}, all_data,snippet_s,snippet_step_s,min_forward_speed_ex);
+    [post_i,post_t0,post_rho] = pick_best_snippet_window(fly_post_idx{f,2},all_data,snippet_s,snippet_step_s,min_forward_speed_ex);
+    if isnan(pre_i) || isnan(post_i); continue; end
+    gallery_fly(end+1)    = f;                          %#ok<AGROW>
+    gallery_delta(end+1)  = fly_post(f,2)-fly_pre(f,2);  %#ok<AGROW>
+    gallery_pre_i(end+1)  = pre_i;  gallery_pre_t0(end+1)  = pre_t0;  %#ok<AGROW>
+    gallery_post_i(end+1) = post_i; gallery_post_t0(end+1) = post_t0; %#ok<AGROW>
+    gallery_rho(end+1)    = min(pre_rho,post_rho); %#ok<AGROW>
+    if numel(gallery_fly) >= n_gallery; break; end
+end
+
+fprintf('\n=== Fig 3 example candidates (top %d snippet-eligible flies, sorted by dark mobility increase) ===\n', numel(gallery_fly));
+fprintf('%-4s %-20s %-12s %-8s\n','rank','fly','pre->post','min rho');
+for r = 1:numel(gallery_fly)
+    f = gallery_fly(r);
+    fprintf('%-4d %-20s %5.2f->%-5.2f  %.2f\n', r, sprintf('%s fly %i',fly_date{f},fly_num(f)), fly_pre(f,2), fly_post(f,2), gallery_rho(r));
+end
+
+figure(22); clf
+set(gcf,'Position',[50,50,700,190*numel(gallery_fly)])
+tl_gal = tiledlayout(numel(gallery_fly),2,'TileSpacing','compact','Padding','compact');
+for r = 1:numel(gallery_fly)
+    f = gallery_fly(r);
+    ex_i  = [gallery_pre_i(r),  gallery_post_i(r)];
+    ex_t0 = [gallery_pre_t0(r), gallery_post_t0(r)];
+    ex_lbl = {'PRE','POST'};
+    for k = 1:2
+        ax = nexttile(tl_gal); hold(ax,'on')
+        i = ex_i(k); t0 = ex_t0(k); t1 = t0+snippet_s;
+        xb = all_data(i).ft.xb; xf = all_data(i).ft.xf;
+        xb_idx = xb>=t0 & xb<=t1; xf_idx = xf>=t0 & xf<=t1;
+
+        imagesc(ax,xb(xb_idx),unwrap(all_data(i).im.alpha),all_data(i).im.z(:,xb_idx))
+        colormap(ax,'parula')
+        a = plot(ax,xf(xf_idx),-all_data(i).ft.cue(xf_idx),'c','LineWidth',1); a.YData(abs(diff(a.YData))>pi) = nan;
+        a = plot(ax,xb(xb_idx),all_data(i).im.mu(xb_idx),'w','LineWidth',1);   a.YData(abs(diff(a.YData))>pi) = nan;
+        axis(ax,'tight')
+        if k==1
+            title(ax,sprintf('rank %d: %s fly %i (%.2f->%.2f, min rho=%.2f)  |  PRE',r,fly_date{f},fly_num(f),fly_pre(f,2),fly_post(f,2),gallery_rho(r)),'FontSize',8,'Interpreter','none')
+        else
+            title(ax,sprintf('POST (trial %i)',trial_num(i)),'FontSize',8)
+        end
     end
 end
-sgtitle('bump mobility before vs after perturbation')
-linkaxes(get(gcf,"Children"),'y')
+title(tl_gal,'Fig 3 candidate gallery: all snippet-eligible flies, ranked by dark mobility increase (pick one, then set example_fly_snip below manually if different from the auto-pick)','Interpreter','none')
+
+%% 5) plot pre vs post bump mobility (DARK trials only, per explicit
+% request -- closed loop dropped from this figure entirely) split by
+% genotype, plain gray dots/connecting lines (no more per-group/per-phase
+% color coding) with the same thick black mean+SEM overlay as before,
+% PLUS the example_fly_snip fly's own pre/post values highlighted in a
+% single accent color so it's obvious which fly the snippet row below
+% belongs to. Row 2 is that fly's own 60s dark pre-/post-perturbation
+% snippet (picked above), shown as two side-by-side imagesc panels.
+highlight_color = [0.85,0.10,0.10];
+
+figure(3); clf
+set(gcf,'Position',[100,50,1100,750])
+swarm_axes = gobjects(1,2);
+for g = 1:2
+    swarm_axes(g) = subplot(2,2,g); hold on
+
+    valid = fly_group==g & ~isnan(fly_pre(:,2)) & ~isnan(fly_post(:,2));
+    pre_vals  = fly_pre(valid,2);
+    post_vals = fly_post(valid,2);
+
+    plot([ones(sum(valid),1),2*ones(sum(valid),1)]',[pre_vals,post_vals]','Color',[.6,.6,.6,.5])
+    scatter(ones(sum(valid),1), pre_vals, 'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+    scatter(2*ones(sum(valid),1),post_vals,'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+    errorbar([1,2],[mean(pre_vals,'omitnan'),mean(post_vals,'omitnan')],...
+                   [std(pre_vals,'omitnan'),std(post_vals,'omitnan')]/sqrt(sum(valid)),'-ok','LineWidth',2)
+
+    if ~isnan(example_fly_snip) && fly_group(example_fly_snip)==g
+        plot([1,2],[fly_pre(example_fly_snip,2),fly_post(example_fly_snip,2)],'-o', ...
+            'Color',highlight_color,'LineWidth',2,'MarkerFaceColor',highlight_color)
+    end
+
+    xlim([.5,2.5]); xticks([1,2]); xticklabels({'pre','post'})
+    ylabel('bump path length / heading path length')
+    title(sprintf('%s, dark (n=%i flies)',group_labels{g},sum(valid)))
+end
+
+if ~isnan(example_fly_snip)
+    ex_titles = {'PRE perturbation','POST perturbation'};
+    ex_trial  = [example_pre_i, example_post_i];
+    ex_t0     = [example_pre_t0, example_post_t0];
+    for k = 1:2
+        ax = subplot(2,2,2+k); hold(ax,'on')
+        i  = ex_trial(k);
+        t0 = ex_t0(k); t1 = t0+snippet_s;
+        xb = all_data(i).ft.xb; xf = all_data(i).ft.xf;
+        xb_idx = xb>=t0 & xb<=t1;
+        xf_idx = xf>=t0 & xf<=t1;
+
+        imagesc(ax,xb(xb_idx),unwrap(all_data(i).im.alpha),all_data(i).im.z(:,xb_idx))
+        colormap(ax,'parula')
+        a = plot(ax,xf(xf_idx),-all_data(i).ft.cue(xf_idx),'c','LineWidth',1); a.YData(abs(diff(a.YData))>pi) = nan;
+        a = plot(ax,xb(xb_idx),all_data(i).im.mu(xb_idx),'w','LineWidth',1);   a.YData(abs(diff(a.YData))>pi) = nan;
+        axis(ax,'tight') % NOT clamped to [-pi,pi] -- unwrap(im.alpha) spans both PB hemispheres
+        xlabel(ax,'time (s)')
+        title(ax,sprintf('%s: %s fly %i, trial %i (mov ratio=%.2f)',ex_titles{k},fly_date{example_fly_snip},fly_num(example_fly_snip),trial_num(i),mov_ratio(i)),'Interpreter','none','FontSize',8)
+    end
+end
+
+sgtitle({'bump mobility before vs after perturbation, dark trials only', ...
+    sprintf('red = example fly shown below (%s fly %i)',fly_date{example_fly_snip},fly_num(example_fly_snip))})
+linkaxes(swarm_axes,'y') % only the 2 swarm panels -- NOT the imagesc panels, which are on a totally different (PB angle) y-scale
 
 %% 6) summarize the pre -> post change across the four groups
 delta = fly_post - fly_pre; %columns: [closed loop, dark]
@@ -597,11 +748,12 @@ for g = 1:2
     figure(2)
     scatter(h_mov.XData(trial_idx),h_mov.YData(trial_idx),60,c,'linewidth',1)
 
-    figure(3)
-    for li = 1:2
-        subplot(2,2,(li-1)*2+g); hold on
-        plot([1,2],[fly_pre(f,li),fly_post(f,li)],'-o','Color',c,'LineWidth',.1,'MarkerFaceColor',c,'MarkerSize',5)
-    end
+    % figure(3) is intentionally NOT touched here anymore: it now shows
+    % ONLY dark trials, plain gray dots, and its own highlighted example
+    % (the biggest-mobility-increase fly picked in section 4b, already
+    % drawn in section 5) -- a different fly, by different criteria, than
+    % this section's per-genotype example_fly(g), so overlaying THAT ring
+    % here no longer applies to this figure's (now dark-only) axes.
 
     figure(4)
     for li = 1:2
@@ -613,7 +765,6 @@ end
 note_str = 'red ring/marker = empty example fly, blue = lpsp example fly';
 figure(1); sgtitle({'mu vs fly heading, trials from 7/8 onward',note_str})
 figure(2); title({'bump mobility relative to fly turning, trials from 7/8 onward',note_str})
-figure(3); sgtitle({'bump mobility before vs after perturbation',note_str})
 figure(4); sgtitle({'change in bump mobility after perturbation',note_str})
 
 %% 11) compare basic walking statistics across groups: forward speed, rotational speed, rotational displacement
@@ -1274,7 +1425,69 @@ for side = 1:2
 end
 sgtitle('average glomerulus dF/F around stim onset, left- vs right-stimulated flies kept separate (no PB flip applied)')
 
+%% save all figures as PDF
+% this script is written for interactive %%-cell use (per CLAUDE.md) and
+% never saved its own output -- added so a non-interactive run's figures
+% survive past MATLAB exiting, same convention as e.g.
+% dopamine_ionto_walking_claude.m's own "save figures" section.
+fig_dir = fullfile(fileparts(fileparts(mfilename('fullpath'))),'ugly_figures','lpsp_p2x2_walking');
+if ~isfolder(fig_dir)
+    mkdir(fig_dir)
+end
+
+fig_handles = findobj('Type','figure');
+[~,order] = sort(arrayfun(@(f) f.Number, fig_handles));
+fig_handles = fig_handles(order);
+
+save_failed = {};
+for k = 1:numel(fig_handles)
+    fig = fig_handles(k);
+    fig_name = get(fig,'Name');
+    if isempty(fig_name); fig_name = sprintf('figure_%d',fig.Number); end
+    safe_name = regexprep(fig_name,'[^\w\-]+','_');
+    out_path  = fullfile(fig_dir,sprintf('fig%02d_%s.png',fig.Number,safe_name));
+    try
+        exportgraphics(fig,out_path,'Resolution',200)
+        fprintf('saved %s\n', out_path);
+    catch ME
+        save_failed{end+1} = out_path; %#ok<AGROW>
+        warning('could not save %s (%s)', out_path, ME.message);
+    end
+end
+if ~isempty(save_failed)
+    fprintf('\n%d figure(s) failed to save:\n', numel(save_failed));
+    fprintf('  %s\n', save_failed{:});
+end
+
 %% local functions
+function [best_i,best_t0,best_rho] = pick_best_snippet_window(trial_list, all_data, snippet_s, step_s, min_fspeed)
+    % among trial_list's own trials, find the snippet_s-second window
+    % (slid in step_s steps) with the highest mean im.rho, restricted to
+    % windows whose mean ft.f_speed clears min_fspeed -- used to pick
+    % Fig 3's example pre/post snippet row. Returns best_i=nan if no
+    % trial/window in trial_list clears the forward-speed bar at all.
+    best_i = nan; best_t0 = nan; best_rho = -inf;
+    for ii = 1:numel(trial_list)
+        i = trial_list(ii);
+        xf = all_data(i).ft.xf;
+        xb = all_data(i).ft.xb;
+        f_speed = all_data(i).ft.f_speed;
+        rho = all_data(i).im.rho;
+        if xf(end)-xf(1) < snippet_s; continue; end
+        starts = xf(1):step_s:(xf(end)-snippet_s);
+        for w = starts
+            idx_f = xf>=w & xf<w+snippet_s;
+            if mean(f_speed(idx_f),'omitnan') < min_fspeed; continue; end
+            idx_b = xb>=w & xb<w+snippet_s;
+            if ~any(idx_b); continue; end
+            score = mean(rho(idx_b),'omitnan');
+            if score > best_rho
+                best_rho = score; best_i = i; best_t0 = w;
+            end
+        end
+    end
+end
+
 function h = plot_sem(ax,t,x)
     %shades mean(x) +/- sem(x) over rows of x (one row per replicate, columns matching t); face color is set by the caller
     t = reshape(t,1,[]);
