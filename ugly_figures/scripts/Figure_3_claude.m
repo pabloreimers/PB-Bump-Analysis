@@ -21,7 +21,7 @@
 %% paths
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
 addpath(fullfile(repo_root,'circ_stats'))
-data_dir = fullfile(repo_root,'.data');
+data_dir = fullfile(repo_root,'data');
 export_dir = fullfile(repo_root,'ugly_figures','exports');
 all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
 
@@ -187,32 +187,111 @@ for k = 1:numel(lpsp_rows)
 end
 fprintf('\n%d individual confirmed-ejection stims clear atp_peak_amp>=%.1f and the rho gate (candidate pool for both examples)\n', numel(cand_trial), atp_peak_amp_thresh);
 
-[best_score,best] = max(cand_score);
-example_i = cand_trial(best);
-example_s = cand_stim(best);
+[~,best] = max(cand_score);
 
 % the reference side for row 3's flip convention below: whatever side THIS
-% example stim actually was, per explicit request -- not a fixed "always
-% call it right" choice.
+% (top-scoring, before any manual rank override) stim actually was, per
+% explicit request -- not a fixed "always call it right" choice.
 reference_is_right = logical(cand_side(best));
 if reference_is_right; ref_side_str = 'RIGHT'; else; ref_side_str = 'LEFT'; end
 
-fprintf('\nexample LPsP>P2X2 trial: fly %s, trial "%s", stim %d\n', fly_id{example_i}, meta_display(all_data(example_i).meta), example_s);
+% rank every candidate within its own side by the same post-ejection
+% bump-movement score used above, so a specific rank can be hand-picked
+% below (from Figure_3_claude_scratch_example_gallery.png) instead of
+% always taking the single top-scoring stim per side.
+ref_pool = find(cand_side==reference_is_right);
+[~,order_ref] = sort(cand_score(ref_pool),'descend');
+ref_pool = ref_pool(order_ref);
+
+opp_pool = find(cand_side==~reference_is_right);
+[~,order_opp] = sort(cand_score(opp_pool),'descend');
+opp_pool = opp_pool(order_opp);
+
+% example picks: rank 3 on the reference/LEFT side, rank 2 on the
+% opposite/RIGHT side, per explicit request -- the top-ranked stim on
+% each side (rank 1) didn't look as clean in the gallery as these two.
+example_rank_ref = 3;
+example_rank_opp = 2;
+
+best = ref_pool(example_rank_ref);
+example_i = cand_trial(best);
+example_s = cand_stim(best);
+best_score = cand_score(best);
+
+fprintf('\nexample LPsP>P2X2 trial: fly %s, trial "%s", stim %d (rank %d of %d on the %s side)\n', fly_id{example_i}, meta_display(all_data(example_i).meta), example_s, example_rank_ref, numel(ref_pool), ref_side_str);
 fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f\n', best_score, trial_events{example_i}(example_s).atp_peak_amp);
 fprintf('  example stim side: %s -- rows 4-5 below are flipped to match this side\n', ref_side_str);
 
-%% pick the SECOND example stim, from the OPPOSITE hemisphere (per explicit
-% request), using the exact same candidate pool and scoring, just
-% restricted to the opposite side call.
-opp_idx = find(cand_side == ~reference_is_right);
-[best_score2,best2rel] = max(cand_score(opp_idx));
-best2 = opp_idx(best2rel);
+%% pick the SECOND example stim, from the OPPOSITE hemisphere, same ranked
+% pool as above (opp_pool), just a manually picked rank instead of the top.
+best2 = opp_pool(example_rank_opp);
 example_i2 = cand_trial(best2);
 example_s2 = cand_stim(best2);
+best_score2 = cand_score(best2);
 
 if reference_is_right; opp_side_str = 'LEFT'; else; opp_side_str = 'RIGHT'; end
-fprintf('\nsecond example LPsP>P2X2 trial (opposite side, %s): fly %s, trial "%s", stim %d\n', opp_side_str, fly_id{example_i2}, meta_display(all_data(example_i2).meta), example_s2);
+fprintf('\nsecond example LPsP>P2X2 trial (opposite side, %s): fly %s, trial "%s", stim %d (rank %d of %d)\n', opp_side_str, fly_id{example_i2}, meta_display(all_data(example_i2).meta), example_s2, example_rank_opp, numel(opp_pool));
 fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f\n', best_score2, trial_events{example_i2}(example_s2).atp_peak_amp);
+
+%% ===================== SCRATCH: gallery of candidate example stims (row 1) =====================
+% per explicit request ("show me some different options, I think we can
+% find cleaner still") -- same candidate pool as the two picks above
+% (cand_trial/cand_stim/cand_score/cand_side, already filtered on
+% atp_peak_amp>=atp_peak_amp_thresh and the rho gate), just laid out as a
+% ranked grid of EPG-calcium heatmaps (same zoom/clim convention as row 1
+% of the main figure below) instead of always taking the single top-score
+% stim. One column per side (reference side left, opposite side right),
+% ranked by the same post-ejection bump-movement score, so a
+% cleaner-looking pair can be picked by eye. The current pick (per
+% example_rank_ref/example_rank_opp above) is marked. Reuses ref_pool/
+% opp_pool computed above (same ranking, not recomputed here).
+gallery_n = 8;
+gallery_zoom_pre_s  = 2;  % s before onset -- same convention as the main figure's zoom_pre_s below (defined later in the script, so not reused directly here)
+gallery_zoom_post_s = 20; % s after onset -- same as zoom_post_s below
+gallery_gcamp_color = [0 .7 .7]; % same teal as gcamp_color below (defined later in the script, so not reused directly here)
+
+gallery_ref_pool = ref_pool(1:min(gallery_n,numel(ref_pool)));
+gallery_opp_pool = opp_pool(1:min(gallery_n,numel(opp_pool)));
+
+fig_gallery = figure('color','w','Position',[50 50 900 170*gallery_n]); clf
+tg = tiledlayout(fig_gallery,gallery_n,2,'TileSpacing','compact','Padding','compact');
+
+gallery_cols   = {gallery_ref_pool, gallery_opp_pool};
+gallery_labels = {ref_side_str, opp_side_str};
+gallery_pick   = [best, best2];
+for r = 1:gallery_n
+    for col = 1:2
+        ax = nexttile(tg); hold(ax,'on')
+        pool = gallery_cols{col};
+        if r > numel(pool)
+            axis(ax,'off'); continue
+        end
+        k = pool(r);
+        i = cand_trial(k); s = cand_stim(k);
+        ex = all_data(i);
+        xb = ex.ft.xb;
+        stim_t = trial_events{i}(s).onset_t;
+        zoom_t0 = stim_t - gallery_zoom_pre_s; zoom_t1 = stim_t + gallery_zoom_post_s;
+        zoom_idx = xb>=zoom_t0 & xb<=zoom_t1;
+        im_alpha = unwrap(ex.im.alpha);
+        im_clim = [prctile(min(ex.im.z(:,zoom_idx),[],1),5), prctile(max(ex.im.z(:,zoom_idx),[],1),95)];
+
+        imagesc(ax,xb,im_alpha,ex.im.z,im_clim)
+        colormap(ax,white_to_color(gallery_gcamp_color))
+        plot(ax,[stim_t,stim_t],[min(im_alpha),max(im_alpha)],':k','LineWidth',1)
+        xlim(ax,[zoom_t0,zoom_t1]); ylim(ax,[min(im_alpha),max(im_alpha)])
+
+        pick_str = ''; if k==gallery_pick(col); pick_str = ' <-- CURRENT PICK'; end
+        title(ax,sprintf('rank %d (%s): fly %s, stim %d\nscore=%.2f rad, atp=%.2f%s', ...
+            r, gallery_labels{col}, fly_id{i}, s, cand_score(k), trial_events{i}(s).atp_peak_amp, pick_str), ...
+            'FontSize',7,'Interpreter','none')
+        if col==1; ylabel(ax,'PB angle (rad)'); end
+        if r==gallery_n; xlabel(ax,'time (s)'); end
+    end
+end
+title(tg,sprintf('candidate gallery for Figure 3 rows 1-3 (top %d per side, ranked by post-ejection bump displacement)',gallery_n))
+
+exportgraphics(fig_gallery, fullfile(export_dir,'Figure_3_claude_scratch_example_gallery.png'), 'Resolution', 200)
 
 %% plot: EPG calcium (top), atp channel (middle), and this trial's own
 % whole-PB average atp trace (bottom-of-the-example-rows), zoomed to the
@@ -230,7 +309,7 @@ fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f\n', b
 % outside the crop -- and computed SEPARATELY per example column, since the
 % two trials' own signal ranges differ.
 zoom_pre_s  = 2;  % s before the zoomed stim's onset
-zoom_post_s = 30; % s after the zoomed stim's onset
+zoom_post_s = 20; % s after the zoomed stim's onset -- 20s per explicit request (was 30s)
 
 gcamp_color = [0 .7 .7];  % teal, matches EPG>GCaMP elsewhere in this folder (Figure_1_claude.m)
 atp_color   = [.8 0 0];   % dark red, visually distinct from the gcamp row
@@ -285,7 +364,7 @@ end
 % confirmed ejections doesn't get more weight than one with fewer. Both
 % light conditions (closed loop + dark) are pooled together here since the
 % request didn't ask for that split.
-trace_pre_s  = -2; trace_post_s = 30;
+trace_pre_s  = -2; trace_post_s = 20; % 20s post-stim per explicit request (was 30s) -- rows 4-5
 trace_idx = t_grid>=trace_pre_s & t_grid<=trace_post_s;
 t_trace = t_grid(trace_idx);
 
@@ -481,16 +560,131 @@ for gi = 1:numel(geno_order)
 end
 fprintf('row 5 col 2 (EPG activity, non-stim-side wedges): n=%d empty flies, n=%d lpsp flies\n', nonstim_epg_geno_n(1), nonstim_epg_geno_n(2));
 
+%% row 6: bump mobility (mov_ratio = bump path length / heading path
+% length during walking bouts) before vs. after the ATP-ejection
+% perturbation trial, DARK trials only -- ported from data scripts/
+% lpsp_p2x2_walking_script.m (sections 2-4), which frames this exact
+% pre/post comparison as its own candidate "Fig 3 new row" (see that
+% script's section 4b header). Uses a SEPARATE dataset
+% (lpsp_p2x2_walking_20260728, not lpsp_p2x2_reredo above) -- same two
+% genotypes, but these are longer straight-walking sessions built for
+% bout-level bump-mobility regression, not the ATP-response imaging
+% trials rows 1-5 use. Per explicit request: plain gray dots/connecting
+% lines (one line per fly, pre->post), no per-group color coding, split
+% into two panels by genotype (empty left, lpsp right).
+%
+% Pipeline (ported as-is, mac path-split fixed the same way as
+% trial_fly_folder_name/trial_fly_id above):
+%  1) tag genotype/lighting per trial (contains '_empty_'/'_lpsp_' in
+%     meta, contains 'background' in ft.pattern for dark)
+%  2) detect which trial IS the perturbation trial (has_pulse): the
+%     across-stim peri-stim average atp trace must clear peak_factor
+%     baseline-SDs above its own pre-stim baseline (same detector shape as
+%     get_trial_stim_events above, just applied to the trial's own
+%     stim-averaged trace instead of per stim)
+%  3) per trial, detect walking bouts (smoothed |r_speed| > turn_thresh,
+%     small gaps closed / short bouts dropped) and each bout's bump path
+%     length (sum|diff(smoothed mu)|) vs. heading path length (integral of
+%     |r_speed|)
+%  4) per fly, DARK trials only: pool every walking bout from all trials
+%     strictly BEFORE vs. strictly AFTER that fly's own first detected
+%     perturbation trial (excluding any other detected perturbation
+%     trials), then fit ONE weighted linear regression (bump path length
+%     ~ heading path length, weighted by sqrt(bout duration)) per pool --
+%     this is mov_ratio, "how far the bump moves per unit the fly actually
+%     turned." A pool needs >=walk_min_bouts pooled bouts to get a value
+%     (else NaN, dropped from the plot).
+walk_source_file = 'lpsp_p2x2_walking_20260728_post0708.mat'; % already-cached subset (on/after 7/8), per that script's own section 1
+tmp = load(fullfile(data_dir,walk_source_file),'all_data');
+walk_data = tmp.all_data(:);
+walk_n_trials = numel(walk_data);
+fprintf('\n\n===== Figure_3 row 6 (bump mobility, lpsp_p2x2_walking) =====\nloaded %d trials from %s\n', walk_n_trials, walk_source_file);
+
+walk_is_lpsp = arrayfun(@(x)contains(x.meta,'_lpsp_'), walk_data);
+walk_is_dark = arrayfun(@(x)contains(x.ft.pattern,'background'), walk_data);
+walk_group   = repmat({'empty>p2x2'},walk_n_trials,1);
+walk_group(walk_is_lpsp) = {'lpsp>p2x2'};
+
+walk_fly_id    = cell(walk_n_trials,1);
+walk_trial_num = nan(walk_n_trials,1);
+for i = 1:walk_n_trials
+    [walk_fly_id{i}, walk_trial_num(i)] = walk_meta_fly_trial(walk_data(i).meta);
+end
+
+walk_peri_win = 5; walk_base_win = [-walk_peri_win,0]; walk_peak_win = [0,3]; walk_peak_factor = 3;
+walk_has_pulse = false(walk_n_trials,1);
+for i = 1:walk_n_trials
+    walk_has_pulse(i) = walk_trial_has_pulse(walk_data(i), walk_peri_win, walk_base_win, walk_peak_win, walk_peak_factor);
+end
+fprintf('%d/%d trials flagged as a detected perturbation trial\n', sum(walk_has_pulse), walk_n_trials);
+
+walk_smooth_window = 60; walk_turn_thresh = .25; walk_max_gap_frames = 30; walk_min_walking_frames = 30; % same values as lpsp_p2x2_walking_script.m section 2 (.5*60 samples at xf's ~60Hz)
+walk_bout_mu  = cell(walk_n_trials,1);
+walk_bout_cue = cell(walk_n_trials,1);
+walk_bout_dur = cell(walk_n_trials,1);
+for i = 1:walk_n_trials
+    [walk_bout_mu{i}, walk_bout_cue{i}, walk_bout_dur{i}] = walk_trial_bouts(walk_data(i), walk_smooth_window, walk_turn_thresh, walk_max_gap_frames, walk_min_walking_frames);
+end
+
+[walk_fly_list,~,walk_fly_ix] = unique(walk_fly_id);
+walk_n_flies = numel(walk_fly_list);
+
+walk_min_bouts  = 15; % minimum pooled bout count per fly x pre/post cell to trust its mov_ratio estimate, same as lpsp_p2x2_walking_script.m section 4
+walk_fly_group  = nan(walk_n_flies,1); % 1 = empty, 2 = lpsp
+walk_fly_pre    = nan(walk_n_flies,1); % dark only
+walk_fly_post   = nan(walk_n_flies,1);
+
+for f = 1:walk_n_flies
+    trial_idx = find(walk_fly_ix==f);
+    [~,order] = sort(walk_trial_num(trial_idx));
+    trial_idx = trial_idx(order); % chronological order of this fly's trials
+
+    walk_fly_group(f) = 1 + strcmp(walk_group{trial_idx(1)},'lpsp>p2x2');
+
+    pulse_pos = find(walk_has_pulse(trial_idx));
+    if isempty(pulse_pos); continue; end % no detected perturbation for this fly
+
+    pre_idx  = trial_idx(1:pulse_pos(1)-1);
+    post_idx = trial_idx(pulse_pos(1)+1:end);
+    post_idx = post_idx(~walk_has_pulse(post_idx)); % exclude any other detected perturbation trials
+
+    pre_idx  = pre_idx(walk_is_dark(pre_idx));
+    post_idx = post_idx(walk_is_dark(post_idx));
+    if isempty(pre_idx) || isempty(post_idx); continue; end
+
+    pre_cue = vertcat(walk_bout_cue{pre_idx}); pre_mu = vertcat(walk_bout_mu{pre_idx}); pre_dur = vertcat(walk_bout_dur{pre_idx});
+    if numel(pre_cue) >= walk_min_bouts
+        w = sqrt(pre_dur);
+        walk_fly_pre(f) = (w.*pre_cue) \ (w.*pre_mu);
+    end
+
+    post_cue = vertcat(walk_bout_cue{post_idx}); post_mu = vertcat(walk_bout_mu{post_idx}); post_dur = vertcat(walk_bout_dur{post_idx});
+    if numel(post_cue) >= walk_min_bouts
+        w = sqrt(post_dur);
+        walk_fly_post(f) = (w.*post_cue) \ (w.*post_mu);
+    end
+end
+
+walk_geno_order = {'empty>p2x2','lpsp>p2x2'};
+for g = 1:2
+    walk_valid_g = walk_fly_group==g & ~isnan(walk_fly_pre) & ~isnan(walk_fly_post);
+    fprintf('row 6 (%s, dark, pre/post bump mobility): n=%d flies\n', walk_geno_order{g}, sum(walk_valid_g));
+end
+
 %% plot: 2 example columns (opposite stim sides) for rows 1-3, then rows
-% 4-5 (population, genotype-level) also split into 2 columns each
-figure('color','w','Position',[50 50 1500 1800]); clf
-t = tiledlayout(5,2,'TileSpacing','loose','Padding','compact');
+% 4-5 (population, genotype-level) also split into 2 columns each, then
+% row 6 (bump mobility, genotype-level, dark trials only)
+figure('color','w','Position',[50 50 1700 2150]); clf
+% underlying grid is 6 rows x 6 columns (6 = lcm(2,3)) so that row 5 can
+% hold 3 equal-width panels (colspan 2 each) while every other row keeps
+% 2 equal-width panels (colspan 3 each), all inside one tiledlayout.
+t = tiledlayout(6,6,'TileSpacing','loose','Padding','compact');
 
 row1_axes = gobjects(1,2);
 for c = 1:2
     d = example_disp(c);
     i = example_idx(c);
-    axg = nexttile(t); hold(axg,'on')
+    axg = nexttile(t,(c-1)*3+1,[1 3]); hold(axg,'on')
     imagesc(axg,d.xb,d.im_alpha,d.ex.im.z,d.im_clim)
     colormap(axg,white_to_color(gcamp_color))
     cbg = colorbar(axg); cbg.Label.String = 'z-score';
@@ -505,7 +699,7 @@ end
 row2_axes = gobjects(1,2);
 for c = 1:2
     d = example_disp(c);
-    axa = nexttile(t); hold(axa,'on')
+    axa = nexttile(t,6+(c-1)*3+1,[1 3]); hold(axa,'on')
     imagesc(axa,d.xb,d.atp_alpha,d.ex.atp.d,d.atp_clim)
     colormap(axa,white_to_color(atp_color))
     cba = colorbar(axa); cba.Label.String = 'dF/F';
@@ -520,7 +714,7 @@ end
 row3_axes = gobjects(1,2);
 for c = 1:2
     d = example_disp(c);
-    axt = nexttile(t); hold(axt,'on')
+    axt = nexttile(t,12+(c-1)*3+1,[1 3]); hold(axt,'on')
     plot(axt,d.xb,d.atp_avg_full,'Color',atp_color,'LineWidth',1.2)
     plot(axt,[d.stim_t,d.stim_t],ylim(axt),':k')
     xlim(axt,[d.zoom_t0,d.zoom_t1])
@@ -530,7 +724,7 @@ for c = 1:2
     row3_axes(c) = axt;
 end
 
-ax4a = nexttile(t); hold(ax4a,'on')
+ax4a = nexttile(t,19,[1 3]); hold(ax4a,'on')
 h_geno = gobjects(1,numel(geno_order));
 for gi = 1:numel(geno_order)
     patch(ax4a,[t_trace,fliplr(t_trace)],[geno_mean(gi,:)+geno_sem(gi,:),fliplr(geno_mean(gi,:)-geno_sem(gi,:))], ...
@@ -545,7 +739,7 @@ ylabel(ax4a,sprintf('bump pos. (rad, %s-flip)',ref_side_str))
 legend(ax4a,h_geno,{sprintf('empty>P2X2 (n=%d flies)',geno_n(1)),sprintf('lpsp>P2X2 (n=%d flies)',geno_n(2))},'Location','best')
 title(ax4a,sprintf('average bump-position response (flipped to match the %s-stim example''s side)',ref_side_str))
 
-ax4b = nexttile(t); hold(ax4b,'on')
+ax4b = nexttile(t,25,[1 3]); hold(ax4b,'on') % swapped with ax5a's slot, per explicit request
 h_geno_stim = gobjects(1,numel(geno_order));
 for gi = 1:numel(geno_order)
     patch(ax4b,[t_trace,fliplr(t_trace)],[stim_epg_geno_mean(gi,:)+stim_epg_geno_sem(gi,:),fliplr(stim_epg_geno_mean(gi,:)-stim_epg_geno_sem(gi,:))], ...
@@ -559,7 +753,7 @@ ylabel(ax4b,'mean EPG z (stim side)')
 legend(ax4b,h_geno_stim,{sprintf('empty>P2X2 (n=%d flies)',stim_epg_geno_n(1)),sprintf('lpsp>P2X2 (n=%d flies)',stim_epg_geno_n(2))},'Location','best')
 title(ax4b,'average EPG calcium (im.z), STIM-SIDE wedges only')
 
-ax5a = nexttile(t); hold(ax5a,'on')
+ax5a = nexttile(t,22,[1 3]); hold(ax5a,'on') % swapped with ax4b's slot, per explicit request
 h_geno2 = gobjects(1,numel(geno_order));
 for gi = 1:numel(geno_order)
     patch(ax5a,[t_trace,fliplr(t_trace)],[atp_geno_mean(gi,:)+atp_geno_sem(gi,:),fliplr(atp_geno_mean(gi,:)-atp_geno_sem(gi,:))], ...
@@ -573,7 +767,7 @@ ylabel(ax5a,'mean atp dF/F')
 legend(ax5a,h_geno2,{sprintf('empty>P2X2 (n=%d flies)',atp_geno_n(1)),sprintf('lpsp>P2X2 (n=%d flies)',atp_geno_n(2))},'Location','best')
 title(ax5a,'average whole-PB atp response to ATP ejection')
 
-ax5b = nexttile(t); hold(ax5b,'on')
+ax5b = nexttile(t,28,[1 3]); hold(ax5b,'on')
 h_geno_nonstim = gobjects(1,numel(geno_order));
 for gi = 1:numel(geno_order)
     patch(ax5b,[t_trace,fliplr(t_trace)],[nonstim_epg_geno_mean(gi,:)+nonstim_epg_geno_sem(gi,:),fliplr(nonstim_epg_geno_mean(gi,:)-nonstim_epg_geno_sem(gi,:))], ...
@@ -587,14 +781,62 @@ ylabel(ax5b,'mean EPG z (non-stim side)')
 legend(ax5b,h_geno_nonstim,{sprintf('empty>P2X2 (n=%d flies)',nonstim_epg_geno_n(1)),sprintf('lpsp>P2X2 (n=%d flies)',nonstim_epg_geno_n(2))},'Location','best')
 title(ax5b,'average EPG calcium (im.z), NON-STIM-SIDE wedges only')
 
+ax6a = nexttile(t,31,[1 2]); hold(ax6a,'on')
+walk_valid = walk_fly_group==1 & ~isnan(walk_fly_pre) & ~isnan(walk_fly_post);
+walk_pre_vals  = walk_fly_pre(walk_valid);
+walk_post_vals = walk_fly_post(walk_valid);
+plot(ax6a,[ones(sum(walk_valid),1),2*ones(sum(walk_valid),1)]',[walk_pre_vals,walk_post_vals]','Color',[.6,.6,.6,.5])
+scatter(ax6a,ones(sum(walk_valid),1), walk_pre_vals, 'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+scatter(ax6a,2*ones(sum(walk_valid),1),walk_post_vals,'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+errorbar(ax6a,[1,2],[mean(walk_pre_vals,'omitnan'),mean(walk_post_vals,'omitnan')], ...
+    [std(walk_pre_vals,'omitnan'),std(walk_post_vals,'omitnan')]/sqrt(sum(walk_valid)),'-ok','LineWidth',2)
+xlim(ax6a,[.5,2.5]); xticks(ax6a,[1,2]); xticklabels(ax6a,{'pre','post'})
+ylabel(ax6a,'bump path length / heading path length')
+title(ax6a,sprintf('empty>P2X2, dark trials (n=%d flies)',sum(walk_valid)))
+
+ax6b = nexttile(t,33,[1 2]); hold(ax6b,'on')
+walk_valid = walk_fly_group==2 & ~isnan(walk_fly_pre) & ~isnan(walk_fly_post);
+walk_pre_vals  = walk_fly_pre(walk_valid);
+walk_post_vals = walk_fly_post(walk_valid);
+plot(ax6b,[ones(sum(walk_valid),1),2*ones(sum(walk_valid),1)]',[walk_pre_vals,walk_post_vals]','Color',[.6,.6,.6,.5])
+scatter(ax6b,ones(sum(walk_valid),1), walk_pre_vals, 'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+scatter(ax6b,2*ones(sum(walk_valid),1),walk_post_vals,'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+errorbar(ax6b,[1,2],[mean(walk_pre_vals,'omitnan'),mean(walk_post_vals,'omitnan')], ...
+    [std(walk_pre_vals,'omitnan'),std(walk_post_vals,'omitnan')]/sqrt(sum(walk_valid)),'-ok','LineWidth',2)
+xlim(ax6b,[.5,2.5]); xticks(ax6b,[1,2]); xticklabels(ax6b,{'pre','post'})
+ylabel(ax6b,'bump path length / heading path length')
+title(ax6b,sprintf('lpsp>P2X2, dark trials (n=%d flies)',sum(walk_valid)))
+
+ax6c = nexttile(t,35,[1 2]); hold(ax6c,'on')
+% delta in bump mobility (post - pre), dark trials, by genotype -- ported
+% from lpsp_p2x2_walking_script.m section 6 (the dark-only column of its
+% own "change in bump mobility after perturbation" figure), reusing
+% walk_fly_pre/walk_fly_post/walk_fly_group computed above.
+walk_delta = walk_fly_post - walk_fly_pre;
+walk_delta_valid = ~isnan(walk_delta);
+scatter(ax6c,walk_fly_group(walk_delta_valid),walk_delta(walk_delta_valid),'filled','MarkerFaceColor',[.6,.6,.6],'MarkerFaceAlpha',.6)
+for g = 1:2
+    gv = walk_delta_valid & walk_fly_group==g;
+    errorbar(ax6c,g+.15,mean(walk_delta(gv),'omitnan'),std(walk_delta(gv),'omitnan')/sqrt(sum(gv)),'ok','LineWidth',2,'MarkerFaceColor','k')
+end
+plot(ax6c,[.5,2.5],[0,0],':k','HandleVisibility','off')
+xlim(ax6c,[.5,2.5]); xticks(ax6c,[1,2]); xticklabels(ax6c,{'empty>P2X2','lpsp>P2X2'})
+ylabel(ax6c,'\Delta bump mobility (post - pre)')
+title(ax6c,sprintf('change in bump mobility after perturbation, dark trials (n=%d empty, n=%d lpsp)', ...
+    sum(walk_delta_valid&walk_fly_group==1), sum(walk_delta_valid&walk_fly_group==2)))
+
 linkaxes([row1_axes(1),row2_axes(1),row3_axes(1)],'x')
 linkaxes([row1_axes(2),row2_axes(2),row3_axes(2)],'x')
 linkaxes([ax4a,ax4b,ax5a,ax5b],'x')
-sgtitle('Figure 3 (draft): PB heatmap around a confirmed ejection, two example LPsP>P2X2 trials (opposite stim sides) + population bump-position, atp, and EPG (by side) response by genotype')
+linkaxes([ax4b,ax5b],'y') % row 5 (EPG z, stim side vs. non-stim side) -- same y-scale so the two are directly comparable
+linkaxes([ax6a,ax6b],'y') % separate from rows 4-5 -- totally different y-scale (mobility ratio, not bump position/dF/F); ax6c (a delta, can be negative) is its own scale too
+sgtitle('Figure 3 (draft): PB heatmap around a confirmed ejection, two example LPsP>P2X2 trials (opposite stim sides) + population bump-position, atp, and EPG (by side) response by genotype, + bump mobility pre/post perturbation and its delta (separate dataset)')
 
 %% export
 if ~isfolder(export_dir); mkdir(export_dir); end
 exportgraphics(gcf, fullfile(export_dir,'Figure_3_claude.png'), 'Resolution', 300)
+if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
+exportgraphics(gcf, fullfile(all_figs_dir,'Fig3_V1.pdf'), 'ContentType', 'vector')
 
 %% ===================== SCRATCH: verbose walkthrough of the stim-side flip =====================
 % exported separately from the main figure, purely to show step by step
@@ -958,6 +1200,8 @@ linkaxes([dop_ax4a,dop_ax4b,dop_ax5a,dop_ax5b],'x')
 sgtitle('Figure 3\_dopamine (draft): PB heatmap around a confirmed ejection, two example trials (opposite stim sides) + population bump-position, atp, and EPG (by side) response -- single group (dopamine\_ionto\_redo)')
 
 exportgraphics(gcf, fullfile(export_dir,'Figure_3_dopamine.png'), 'Resolution', 300)
+if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
+exportgraphics(gcf, fullfile(all_figs_dir,'Fig3_dopamine_V1.pdf'), 'ContentType', 'vector')
 
 %% ===================== functions =====================
 
@@ -1056,10 +1300,96 @@ function ev = get_trial_stim_events(trial, t_grid, peri_win, base_win, peak_win,
     end
 end
 
+function [fid, tnum] = walk_meta_fly_trial(meta_path)
+    % fly ID + trial number from an lpsp_p2x2_walking .meta path (e.g.
+    % "Z:\pablo\lpsp_p2x2_walking\20260708\fly 1\20260708-1_epg_8m_..."
+    % ) -- ported from data scripts/lpsp_p2x2_walking_script.m section 3,
+    % split on {'\','/'} rather than '\' alone so it also works on mac
+    % (same fix as trial_fly_folder_name/trial_fly_id above). The [_-] in
+    % the trial-number regex (not just '_') is needed because one trial's
+    % folder uses a hyphen there instead of the usual underscore (see the
+    % walking script's own comment on this).
+    parts = strsplit(meta_path,{'\','/'});
+    parts(cellfun(@isempty,parts)) = [];
+    fly_pos = find(startsWith(parts,'fly '),1);
+    fid = strjoin(parts(1:fly_pos),'/');
+    tnum = str2double(regexp(parts{fly_pos+1},'-(\d+)[_-]','tokens','once'));
+end
+
+function tf = walk_trial_has_pulse(trial, peri_win, base_win, peak_win, peak_factor)
+    % true if this trial's stim-triggered average atp trace shows a
+    % defined peak just after stim onset -- ported from lpsp_p2x2_walking_
+    % script.m section 3 (trial-level pulse detection: one call per trial,
+    % from that trial's OWN stim-averaged trace, unlike get_trial_stim_events
+    % above which confirms each stim individually)
+    if ~(isfield(trial,'atp') && isfield(trial.atp,'d') && ~isempty(trial.atp.d))
+        tf = false; return
+    end
+    stims  = logical(trial.ft.stims(:));
+    onsets = find(diff([false;stims])==1);
+    if isempty(onsets); tf = false; return; end
+
+    xb = trial.ft.xb; xf = trial.ft.xf;
+    t_onset = xf(onsets);
+    atp_sig = sum(trial.atp.d,1);
+    t_common = linspace(-peri_win,peri_win,101);
+
+    atp_aligned = nan(numel(onsets),numel(t_common));
+    for s = 1:numel(onsets)
+        xb_rel = xb - t_onset(s);
+        atp_aligned(s,:) = interp1(xb_rel,atp_sig,t_common,'linear',nan);
+    end
+    atp_peri = mean(atp_aligned,1,'omitnan');
+
+    base_idx = t_common>=base_win(1) & t_common<base_win(2);
+    peak_idx = t_common>peak_win(1) & t_common<=peak_win(2);
+    base_mean = median(atp_peri(base_idx),'omitnan');
+    base_std  = std(atp_peri(base_idx),'omitnan');
+    peak_amp  = median(atp_peri(peak_idx),'omitnan');
+    tf = (peak_amp-base_mean) > peak_factor*base_std;
+end
+
+function [mov_mu, mov_cue, dur] = walk_trial_bouts(trial, smooth_window, turn_thresh, max_gap_frames, min_walking_frames)
+    % per-walking-bout bump path length (mov_mu) vs. heading path length
+    % (mov_cue, despite the name -- built from ft.r_speed, not cue
+    % position, so an experimenter-driven cue change while the fly isn't
+    % walking doesn't show up as spurious "heading" movement) and bout
+    % duration (dur) -- ported verbatim from lpsp_p2x2_walking_script.m
+    % section 2
+    xf = trial.ft.xf;
+    dt = median(diff(xf));
+    mu = interp1(trial.ft.xb,unwrap(trial.im.mu),xf,'linear','extrap');
+
+    r_speed_smooth = smoothdata(trial.ft.r_speed(:),'gaussian',smooth_window);
+    mu_smooth      = smoothdata(mu,'gaussian',smooth_window);
+    fly_speed      = abs(r_speed_smooth);
+
+    is_walking = fly_speed > turn_thresh;
+    is_walking = imclose(is_walking,ones(max_gap_frames+1,1));
+    is_walking = bwareaopen(is_walking,min_walking_frames);
+
+    d = diff([false;is_walking;false]);
+    bout_starts = find(d==1);
+    bout_ends   = find(d==-1)-1;
+
+    mov_mu  = nan(numel(bout_starts),1);
+    mov_cue = nan(numel(bout_starts),1);
+    dur     = nan(numel(bout_starts),1);
+    for b = 1:numel(bout_starts)
+        mov_mu(b)  = sum(abs(diff(mu_smooth(bout_starts(b):bout_ends(b)))),'omitnan');
+        mov_cue(b) = sum(abs(r_speed_smooth(bout_starts(b):bout_ends(b))),'omitnan')*dt;
+        dur(b)     = (bout_ends(b)-bout_starts(b)+1)*dt;
+    end
+end
+
 function name = trial_fly_folder_name(meta_path)
     % ported from data scripts/lpsp_p2x2_claude.m: the fly folder ("fly N
-    % _ <genotype>") one level above the trial folder.
-    parts = strsplit(meta_path,filesep);
+    % _ <genotype>") one level above the trial folder. Split on both '\'
+    % and '/' (not just filesep) -- these .meta paths were saved from a
+    % Windows machine (e.g. "Z:\pablo\...\fly 1 _ empty\..."), so on mac
+    % filesep alone ('/') never splits them and every trial's genotype
+    % silently comes back empty. Matches meta_display's own split below.
+    parts = strsplit(meta_path,{'\','/'});
     parts(cellfun(@isempty,parts)) = [];
     fly_part = find(~cellfun(@isempty,regexpi(parts,'^fly\s*\d+','once')));
     if isempty(fly_part)
@@ -1070,14 +1400,15 @@ function name = trial_fly_folder_name(meta_path)
 end
 
 function fid = trial_fly_id(meta_path)
-    % ported from data scripts/lpsp_p2x2_claude.m
-    parts = strsplit(meta_path,filesep);
+    % ported from data scripts/lpsp_p2x2_claude.m -- see trial_fly_folder_name
+    % above for why this splits on {'\','/'} rather than filesep
+    parts = strsplit(meta_path,{'\','/'});
     parts(cellfun(@isempty,parts)) = [];
     fly_part = find(~cellfun(@isempty,regexpi(parts,'^fly\s*\d+','once')));
     if isempty(fly_part)
         fid = meta_path;
     else
-        fid = strjoin(parts(1:fly_part(1)),filesep);
+        fid = strjoin(parts(1:fly_part(1)),'/');
     end
 end
 
