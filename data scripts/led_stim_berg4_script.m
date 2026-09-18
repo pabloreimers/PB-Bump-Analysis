@@ -501,7 +501,7 @@ fprintf('saved %s\n', fullfile(base_dir, 'peristim_traces_by_condition.png'));
 % evenly spaced centroids, then assign every mask pixel to its nearest
 % centroid. n_per_hemisphere (section 0) is doubled internally (matches
 % process_im's own convention) -- 10 gives 20 total glomeruli, as requested.
-glom_trace_field = 'dFF'; % per-glomerulus dF/F, same f0_pct baseline convention as F_raw_vol/dFF_raw_vol
+glom_trace_field = 'dFF'; % per-glomerulus dF/F, baselined to each trial's own out-of-stim mean (see below)
 
 for fi = 1:numel(uFlies)
     flyName = uFlies(fi);
@@ -529,7 +529,13 @@ for fi = 1:numel(uFlies)
             centroidLog(c, clusterIdx(:) == c) = true;
         end
         f_cluster   = double(centroidLog) * double(img_2d) ./ sum(centroidLog, 2); % nClusters x nVolumes
-        f0_cluster  = prctile(f_cluster, f0_pct, 2);
+        % F0 = each glomerulus's own mean OUT-OF-STIM fluorescence for this trial, not prctile(F,f0_pct)
+        % (this lab's usual convention elsewhere, e.g. process_im). A low-percentile floor baseline makes
+        % dFF come out positive almost everywhere by construction (most timepoints sit above the bottom
+        % f0_pct%, stim or no stim), which can't show inhibition even when it's really there. Baselining
+        % to the out-of-stim mean instead makes this directly comparable to section 5's in-stim/out-of-stim
+        % diff images, which show real bidirectional (excitation AND inhibition) signal.
+        f0_cluster  = mean(f_cluster(:, ~all_data(idx).ft.stims_vol), 2);
         dff_cluster = (f_cluster - f0_cluster) ./ f0_cluster;
 
         fs_vol  = 1 / mean(diff(all_data(idx).ft.xb));
