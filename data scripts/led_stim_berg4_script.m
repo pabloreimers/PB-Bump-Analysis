@@ -414,8 +414,9 @@ nRows   = numel(uFlies);
 nCols   = max(arrayfun(@(f) sum(flyOfTrial == f), uFlies));
 
 figure(4); clf
-set(gcf, 'Position', [50 50 220*nCols 220*nRows], 'Color', 'w')
-tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'compact');
+leftMarginPx = 90; % room for the fly-name row label (see the text() note below)
+set(gcf, 'Position', [50 50 leftMarginPx+220*nCols 220*nRows], 'Color', 'w')
+tiledlayout(nRows, nCols, 'TileSpacing', 'compact', 'Padding', 'loose');
 
 curFly = ""; r = 0; c = 0;
 for i = 1:numel(all_data)
@@ -431,7 +432,10 @@ for i = 1:numel(all_data)
     colormap(gca, rwb)
     title(all_data(i).meta.trial, 'Interpreter', 'none', 'FontSize', 8)
     if c == 1
-        ylabel(erase(curFly, '_epg_syt8s_lpsp_cschrimson'), 'Rotation', 0, ...
+        % NB: ylabel() is silently suppressed here -- axis(...,'off') hides an axes'
+        % XLabel/YLabel (though not its Title), even when set afterward. A plain
+        % text() object isn't an axes-label property, so it isn't hidden this way.
+        text(-0.08, 0.5, erase(curFly, '_epg_syt8s_lpsp_cschrimson'), 'Units', 'normalized', ...
             'HorizontalAlignment', 'right', 'Interpreter', 'none', 'FontWeight', 'bold')
     end
 end
