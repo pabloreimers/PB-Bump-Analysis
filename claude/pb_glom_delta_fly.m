@@ -26,6 +26,9 @@ function res = pb_glom_delta_fly(trials, mask, varargin)
 % mask    logical [Y x X], one per fly (same mask for all its trials)
 %
 % ---- name/value options ------------------------------------------------------
+%   normalization   ('dff')   'dff' = (F-F0)/F0, or 'zscore' = (F-F0)/std(F out-of-stim); see the
+%                             comment at the top of the code. Output files are prefixed
+%                             glomDelta_ (dff) or glomDeltaZ_ (zscore); the prefix is also in res.tag
 %   nPerHemisphere  (20)      doubled internally -> nClusters glomeruli along the arch
 %   glomMinSnr      (3)       NaN out a glomerulus whose out-of-stim F0 / std is below this
 %   stimWinSec      ([0 2])   window after onset counted as "during the pulse"
@@ -70,12 +73,21 @@ function res = pb_glom_delta_fly(trials, mask, varargin)
 %                                                    -> res.align, res.glom(i).folded
 %
 % ---- figures (if outDir is set) ---------------------------------------------
-%   <outDir>/glomDelta_lines_allTrials.png      raw nClusters-glomerulus line per trial
-%   <outDir>/glomDelta_alignment.png            the sliding/correlation process + an exemplar fold
-%   <outDir>/glomDelta_pairing.png              which glomeruli got averaged, drawn on the PB
-%   <outDir>/glomDelta_folded_by_intensity.png  1x3 overlay (low/medium/high), color = cond
+%   (<tag> = glomDelta for dff, glomDeltaZ for zscore)
+%   <outDir>/<tag>_lines_allTrials.png      raw nClusters-glomerulus line per trial
+%   <outDir>/<tag>_alignment.png            the sliding/correlation process + an exemplar fold
+%   <outDir>/<tag>_pairing.png              which glomeruli got averaged, drawn on the PB
+%   <outDir>/<tag>_folded_by_intensity.png  1x3 overlay (low/medium/high), color = cond
+%   <outDir>/stimDiffImages.png                 in-stim minus out-of-stim mean image per
+%                                               (cond, intensity) -- pb_stim_diff_grid; not
+%                                               normalization-dependent, hence no tag
+% Each res.glom(i) also carries in_stim / out_stim / diff_img (mean bg-subtracted
+% frames in and out of the pulses, and their difference) and proj_mean (raw
+% time-average); res.proj_mean is the fly-wide mean projection and res.mask the
+% mask, so the mean images are available as data, not just pngs.
 
 p = inputParser;
+p.addParameter('normalization', 'dff', @(s) any(strcmpi(s, {'dff', 'zscore'})));
 p.addParameter('nPerHemisphere', 20);
 p.addParameter('glomMinSnr', 3);
 p.addParameter('stimWinSec', [0 2]);
@@ -94,6 +106,24 @@ p.addParameter('maskDatenum', NaN);
 p.parse(varargin{:});
 o = p.Results;
 
+% Which per-glomerulus response the delta is computed on. Both are baselined
+% to the trial's own out-of-stim volumes; they differ only in the denominator:
+%   dff    (F - F0) / F0        F0 = out-of-stim mean          -> fractional change
+%   zscore (F - F0) / std_out   std_out = out-of-stim std       -> change in units of that
+%                                                                 glomerulus's baseline noise
+% z-scoring doesn't divide by a possibly-tiny F0, so it's better behaved for
+% dim glomeruli, but it also means a bright, quiet glomerulus and a dim, noisy
+% one are on different scales. The glomMinSnr exclusion is applied the same
+% way for both so the same glomeruli drop out (set glomMinSnr = 0 to keep all).
+switch lower(o.normalization)
+    case 'dff'
+        unitLabel = '\Delta dF/F';
+        tag = 'glomDelta';
+    case 'zscore'
+        unitLabel = '\Delta z(F)';
+        tag = 'glomDeltaZ';
+end
+
 nClusters = 2 * o.nPerHemisphere;
 if isempty(o.lagRange)
     o.lagRange = round([nClusters/2 - nClusters/5, nClusters/2 + nClusters/5]);
@@ -106,14 +136,19 @@ clusterIdx = pb_skeleton_glomeruli(mask, o.nPerHemisphere);
 
 %% 1. per-trial per-glomerulus delta
 glom = struct('name', {}, 'cond', {}, 'intensity', {}, 'videoFile', {}, ...
-    'delta', {}, 'delta_reps', {}, 'delta_sem', {}, 'badGlom', {}, 'nReps', {});
+    'delta', {}, 'delta_reps', {}, 'delta_sem', {}, 'badGlom', {}, 'nReps', {}, ...
+    'in_stim', {}, 'out_stim', {}, 'diff_img', {}, 'proj_mean', {});
 for i = 1:numel(trials)
     tr = load_glom_traces(trials(i), mask, clusterIdx, nClusters, o.maskDatenum, o.overwriteCache);
 
     f0_cluster  = mean(tr.f_cluster(:, ~tr.stims), 2);
     std_cluster = std(tr.f_cluster(:, ~tr.stims), 0, 2);
     badGlom     = f0_cluster <= 0 | (f0_cluster ./ std_cluster) < o.glomMinSnr;
-    dff_cluster = (tr.f_cluster - f0_cluster) ./ f0_cluster;
+    if strcmpi(o.normalization, 'zscore')
+        dff_cluster = (tr.f_cluster - f0_cluster) ./ std_cluster; % z-scored F (name kept for the code below)
+    else
+        dff_cluster = (tr.f_cluster - f0_cluster) ./ f0_cluster;
+    end
     dff_cluster(badGlom, :) = NaN;
 
     onsetIdx   = find(diff(tr.stims) > 0) + 1;
@@ -138,6 +173,10 @@ for i = 1:numel(trials)
     glom(i).delta_sem  = std(delta_reps, 0, 1, 'omitnan') ./ sqrt(sum(~isnan(delta_reps), 1));
     glom(i).badGlom    = badGlom(:)';
     glom(i).nReps      = sum(all(~isnan(delta_reps(:, ~badGlom)), 2));
+    glom(i).in_stim    = tr.in_stim;   % mean bg-subtracted frame during the LED pulses  [Y x X] single
+    glom(i).out_stim   = tr.out_stim;  % ... outside the pulses
+    glom(i).diff_img   = tr.diff_img;  % in - out (raw F units, per-frame background removed)
+    glom(i).proj_mean  = tr.proj_mean; % raw time-average of the whole trial
     fprintf('[%s] delta over %d reps; %d/%d glomeruli excluded (low SNR): %s\n', ...
         glom(i).name, glom(i).nReps, sum(badGlom), nClusters, mat2str(find(badGlom)'));
 end
@@ -220,7 +259,9 @@ conds = unique({glom.cond}, 'stable');
 conds = conds([ord, setdiff(1:numel(conds), ord, 'stable')]);
 
 res = struct('flyName', o.flyName, 'glom', glom, 'align', align, 'clusterIdx', clusterIdx, ...
-    'nClusters', nClusters, 'conds', {conds}, 'params', o);
+    'nClusters', nClusters, 'conds', {conds}, 'params', o, ...
+    'normalization', lower(o.normalization), 'unitLabel', unitLabel, 'tag', tag, ...
+    'mask', mask, 'proj_mean', mean(cat(3, glom.proj_mean), 3)); % fly-wide raw mean projection (mean of the trials' means)
 
 if isempty(o.outDir)
     return
@@ -240,14 +281,14 @@ for c = 1:numel(o.intensityOrder)
     end
     xlim(ax, [0.5 nClusters + 0.5]); xticks(ax, 0:5:nClusters)
     title(ax, [o.intensityOrder{c} ' intensity'])
-    ylabel(ax, '\Delta dF/F (stim - pre)')
+    ylabel(ax, [unitLabel ' (stim - pre)'])
     if c == numel(o.intensityOrder); xlabel(ax, 'glomerulus (along PB arch, dashed = midline)'); end
     legend(ax, 'Interpreter', 'none', 'Location', 'eastoutside', 'Box', 'off')
 end
 linkaxes(findobj(gcf, 'Type', 'Axes'), 'xy')
-sgtitle([flyTex ': per-glomerulus \DeltadF/F during the LED pulse, one line per trial (mean over pulses)'])
-exportgraphics(gcf, fullfile(o.outDir, 'glomDelta_lines_allTrials.png'), 'Resolution', 200);
-fprintf('saved %s\n', fullfile(o.outDir, 'glomDelta_lines_allTrials.png'));
+sgtitle([flyTex ': per-glomerulus ' unitLabel ' during the LED pulse, one line per trial (mean over pulses)'])
+exportgraphics(gcf, fullfile(o.outDir, [tag '_lines_allTrials.png']), 'Resolution', 200);
+fprintf('saved %s\n', fullfile(o.outDir, [tag '_lines_allTrials.png']));
 
 %% figure: the alignment process
 exemplar = find(trialAmp == max(trialAmp), 1);
@@ -258,7 +299,7 @@ subplot(2,2,1); hold on
 yline(0, 'Color', [0.8 0.8 0.8]); xline(o.nPerHemisphere + 0.5, '--', 'Color', [0.6 0.6 0.6]);
 plot(1:nClusters, glom(exemplar).delta, 'k-o', 'LineWidth', 1.5, 'MarkerSize', 3, 'MarkerFaceColor', 'k')
 xlim([0.5 nClusters + 0.5]); xticks(0:5:nClusters)
-xlabel('glomerulus'); ylabel('\Delta dF/F')
+xlabel('glomerulus'); ylabel(unitLabel)
 title(['exemplar trial: ' glom(exemplar).name], 'Interpreter', 'none')
 
 subplot(2,2,2); hold on
@@ -281,7 +322,7 @@ xlim([0.5 nPairs + 0.5]); xticks(1:nPairs)
 xticklabels(arrayfun(@(a,b) sprintf('%d\\newline%d', a, b), pairs(:,1), pairs(:,2), 'UniformOutput', false))
 set(gca, 'FontSize', 8)
 xlabel(sprintf('aligned pair (top = glomerulus from 1st half, bottom = its partner, shift %d)', P))
-ylabel('\Delta dF/F')
+ylabel(unitLabel)
 legend([h1 h2 h3], {sprintf('1st half, glomeruli %d..%d', pairs(1,1), pairs(end,1)), ...
     sprintf('2nd half shifted by %d, glomeruli %d..%d', P, pairs(1,2), pairs(end,2)), 'mean of the pair (folded)'}, ...
     'Location', 'best', 'Box', 'off')
@@ -292,15 +333,25 @@ for i = 1:numel(glom)
     plot(1:nPairs, glom(i).folded, '-', 'Color', colorOf(glom(i).cond), 'LineWidth', 1.25)
 end
 yline(0, 'Color', [0.8 0.8 0.8]);
-xlim([0.5 nPairs + 0.5]); xlabel('aligned pair'); ylabel('\Delta dF/F (folded)')
+xlim([0.5 nPairs + 0.5]); xlabel('aligned pair'); ylabel([unitLabel ' (folded)'])
 title(sprintf('all trials folded with the consensus shift (color = %s)', o.condLabel))
 
 sgtitle([o.flyName ': hemisphere alignment'], 'Interpreter', 'none')
-exportgraphics(gcf, fullfile(o.outDir, 'glomDelta_alignment.png'), 'Resolution', 200);
-fprintf('saved %s\n', fullfile(o.outDir, 'glomDelta_alignment.png'));
+exportgraphics(gcf, fullfile(o.outDir, [tag '_alignment.png']), 'Resolution', 200);
+fprintf('saved %s\n', fullfile(o.outDir, [tag '_alignment.png']));
+
+%% figure: in-stim minus out-of-stim mean image, rows = cond, cols = intensity
+% Independent of the normalization (raw F units, per-frame background
+% removed), so it's written once under a fixed name rather than per tag.
+% One color scale per fly (99th percentile of |diff| over all its trials) so
+% conditions within a fly are comparable; flies differ in brightness, so
+% scales are not comparable across flies. A cell with several acquisitions
+% (a repeated trial) shows their mean.
+pb_stim_diff_grid(struct('label', o.flyName, 'res', res), 'intensityOrder', o.intensityOrder, ...
+    'condOrder', conds, 'outFile', fullfile(o.outDir, 'stimDiffImages.png'), 'figNum', 16);
 
 %% figure: pairing drawn on the PB itself
-projMean = double(mean(load_video(glom(exemplar).videoFile), 3));
+projMean = double(res.proj_mean);
 pairOfGlom = zeros(1, nClusters);
 for pp = 1:nPairs
     pairOfGlom(pairs(pp, :)) = pp;
@@ -335,8 +386,8 @@ for c = 1:nClusters
 end
 set(gca, 'XTick', [], 'YTick', [])
 title(sprintf('%s: glomeruli sharing a color are averaged together (shift P* = %d; gray = unpaired). Label = glomerulus (pair #)', o.flyName, P), 'Interpreter', 'none')
-exportgraphics(gcf, fullfile(o.outDir, 'glomDelta_pairing.png'), 'Resolution', 200);
-fprintf('saved %s\n', fullfile(o.outDir, 'glomDelta_pairing.png'));
+exportgraphics(gcf, fullfile(o.outDir, [tag '_pairing.png']), 'Resolution', 200);
+fprintf('saved %s\n', fullfile(o.outDir, [tag '_pairing.png']));
 
 %% figure: folded lines overlaid, 1 x nIntensities, color = cond
 figure(14); clf
@@ -360,14 +411,14 @@ for c = 1:numel(o.intensityOrder)
     set(ax, 'FontSize', 8, 'XTickLabelRotation', 90)
     title(ax, [o.intensityOrder{c} ' intensity'], 'FontSize', 11)
     xlabel(ax, 'aligned glomerulus pair (1st-half glomerulus / its 2nd-half partner)')
-    if c == 1; ylabel(ax, '\Delta dF/F during pulse (folded across hemispheres)'); end
+    if c == 1; ylabel(ax, [unitLabel ' during pulse (folded across hemispheres)']); end
 end
 linkaxes(findobj(gcf, 'Type', 'Axes'), 'y')
 [~, ord] = ismember(conds, legNames); ord = ord(ord > 0);
 legend(hLeg(ord), legNames(ord), 'Interpreter', 'none', 'Location', 'best', 'Box', 'off')
-sgtitle(sprintf('%s: hemisphere-folded \\DeltadF/F per trial (shift P* = %d), color = %s', flyTex, P, o.condLabel))
-exportgraphics(gcf, fullfile(o.outDir, 'glomDelta_folded_by_intensity.png'), 'Resolution', 200);
-fprintf('saved %s\n', fullfile(o.outDir, 'glomDelta_folded_by_intensity.png'));
+sgtitle(sprintf('%s: hemisphere-folded %s per trial (shift P* = %d), color = %s', flyTex, unitLabel, P, o.condLabel))
+exportgraphics(gcf, fullfile(o.outDir, [tag '_folded_by_intensity.png']), 'Resolution', 200);
+fprintf('saved %s\n', fullfile(o.outDir, [tag '_folded_by_intensity.png']));
 end
 
 %% ---- local functions ---------------------------------------------------------
@@ -397,10 +448,14 @@ function tr = load_glom_traces(trial, mask, clusterIdx, nClusters, maskDatenum, 
 useCache = isfield(trial, 'cacheFile') && ~isempty(trial.cacheFile);
 if useCache && isfile(trial.cacheFile) && ~overwrite
     tr = load(trial.cacheFile);
-    if isfield(tr, 'maskDatenum') && isequaln(tr.maskDatenum, maskDatenum)
+    if isfield(tr, 'maskDatenum') && isequaln(tr.maskDatenum, maskDatenum) && isfield(tr, 'diff_img')
         return
     end
-    fprintf('  (cache %s is from a different mask -- recomputing)\n', trial.cacheFile);
+    if isfield(tr, 'diff_img')
+        fprintf('  (cache %s is from a different mask -- recomputing)\n', trial.cacheFile);
+    else
+        fprintf('  (cache %s predates the stim mean images -- recomputing)\n', trial.cacheFile);
+    end
 end
 
 img  = double(load_video(trial.videoFile));
@@ -423,7 +478,18 @@ for c = 1:nClusters
 end
 f_cluster = double(centroidLog) * img_2d ./ sum(centroidLog, 2); % nClusters x nVol
 
-tr = struct('f_cluster', f_cluster, 't_volume', sync.t_volume(:), 'stims', logical(sync.stims(:)), 'maskDatenum', maskDatenum);
+% Whole-frame mean images, kept alongside the traces because they're free
+% once the video is loaded and expensive otherwise (this is the only place
+% the video is read). in/out are of the background-subtracted video, matching
+% overshoot_drug_stim_script section 4; proj_mean is the raw time average
+% (what the mask was drawn on). Stored as single to keep the cache small.
+sz = size(mask);
+in_stim   = single(reshape(mean(img_2d(:,  sync.stims), 2), sz));
+out_stim  = single(reshape(mean(img_2d(:, ~sync.stims), 2), sz));
+proj_mean = single(mean(img, 3));
+
+tr = struct('f_cluster', f_cluster, 't_volume', sync.t_volume(:), 'stims', logical(sync.stims(:)), 'maskDatenum', maskDatenum, ...
+    'in_stim', in_stim, 'out_stim', out_stim, 'diff_img', in_stim - out_stim, 'proj_mean', proj_mean);
 if useCache
     save(trial.cacheFile, '-struct', 'tr');
     fprintf('  cached %s\n', trial.cacheFile);

@@ -45,6 +45,7 @@ fly_dirs = { ...
     fullfile(overshoot_root, '20260922-3_epg_syt8s_lpsp_cschrimson'), ...
     };
 
+normalization    = 'zscore'; % 'dff' = (F-F0)/F0, 'zscore' = (F-F0)/std(F out-of-stim); outputs are prefixed glomDelta_ / glomDeltaZ_ respectively
 n_per_hemisphere = 20;    % doubled internally -> 40 glomeruli, same as overshoot_drug_stim_script
 glom_min_snr     = 3;     % NaN out glomeruli whose out-of-stim F0/std is below this (same rule as the heatmaps)
 stim_win_sec     = [0 2]; % "during the stimulus" window after onset (the LED pulse is 2 s)
@@ -66,8 +67,12 @@ drug_colors('ttx_mec_mk801_picro') = [0.910 0.482 0.643]; % magenta
 drug_colors('ttx_mec_picro_mk801') = [0.910 0.482 0.643];
 drug_order = {'baseline', 'ttx', 'ttx_mec', 'ttx_mec_mk801', 'ttx_mec_picro', 'ttx_mec_mk801_picro', 'ttx_mec_picro_mk801'};
 
-summary_fig  = fullfile(repoRootDir, 'ugly_figures', 'exports', 'glomDelta_folded_allFlies_overshoot.png');
-summary_data = fullfile(repoRootDir, 'data', 'overshoot_glomDelta_allFlies.mat');
+grid_ylink = 'none'; % cross-fly grid y-axes: 'all' (shared, amplitudes comparable across flies) | 'row' | 'none' (each panel at its own dynamic range)
+
+if strcmpi(normalization, 'zscore'); out_tag = 'glomDeltaZ'; else; out_tag = 'glomDelta'; end
+if strcmpi(grid_ylink, 'all'); y_tag = ''; else; y_tag = ['_' grid_ylink 'Y']; end % e.g. _noneY, so the shared-axis png isn't overwritten
+summary_fig  = fullfile(repoRootDir, 'ugly_figures', 'exports', [out_tag '_folded_allFlies_overshoot' y_tag '.png']);
+summary_data = fullfile(repoRootDir, 'data', ['overshoot_' out_tag '_allFlies.mat']);
 
 %% 1. per fly: discover trials -> pb_glom_delta_fly
 clear flies
@@ -96,15 +101,15 @@ for fi = 1:numel(fly_dirs)
         trials(i).cacheFile = fullfile(selected(i).trialDir, sprintf('glomTraces_%d.mat', 2*n_per_hemisphere));
     end
 
-    res = pb_glom_delta_fly(trials, mask, ...
+    res = pb_glom_delta_fly(trials, mask, 'normalization', normalization, ...
         'nPerHemisphere', n_per_hemisphere, 'glomMinSnr', glom_min_snr, ...
         'stimWinSec', stim_win_sec, 'preWinSec', pre_win_sec, ...
         'condColors', drug_colors, 'condOrder', drug_order, 'condLabel', 'drug stage', ...
         'flyName', flyName, 'outDir', base_dir, ...
         'overwriteCache', overwrite_glom_cache, 'maskDatenum', maskInfo.datenum); %#ok<NASGU>
 
-    save(fullfile(base_dir, 'glomDelta.mat'), 'res');
-    fprintf('saved %s\n', fullfile(base_dir, 'glomDelta.mat'));
+    save(fullfile(base_dir, [res.tag '.mat']), 'res');
+    fprintf('saved %s\n', fullfile(base_dir, [res.tag '.mat']));
 
     flies(fi) = struct('label', erase(flyName, '_epg_syt8s_lpsp_cschrimson'), 'res', res); %#ok<SAGROW>
 end
@@ -112,7 +117,23 @@ end
 %% 2. cross-fly grid: rows = flies, cols = intensity, color = drug stage
 if numel(flies) > 1
     pb_glom_delta_grid(flies, 'condColors', drug_colors, 'condOrder', drug_order, ...
-        'condLabel', 'drug stage', 'outFile', summary_fig);
+        'condLabel', 'drug stage', 'yLink', grid_ylink, 'outFile', summary_fig);
+    % same grid without the hemisphere fold: the raw line across all glomeruli
+    pb_glom_delta_grid(flies, 'condColors', drug_colors, 'condOrder', drug_order, ...
+        'condLabel', 'drug stage', 'yLink', grid_ylink, 'fold', false, ...
+        'outFile', strrep(summary_fig, '_folded_', '_unfolded_'));
+    % in-stim minus out-of-stim mean images, rows = (fly, drug stage), cols = intensity
+    pb_stim_diff_grid(flies, 'condOrder', drug_order, ...
+        'outFile', fullfile(repoRootDir, 'ugly_figures', 'exports', 'stimDiffImages_allFlies_overshoot.png'));
+    % and the same per fly (a copy of each fly folder's stimDiffImages.png, kept here so
+    % the whole set can be flipped through in one place)
+    for k = 1:numel(flies)
+        pb_stim_diff_grid(flies(k), 'condOrder', drug_order, 'figNum', 16, ...
+            'outFile', fullfile(repoRootDir, 'ugly_figures', 'exports', sprintf('stimDiffImages_overshoot_%s.png', flies(k).label)));
+        % same, but every panel on its own color scale (weak stages become visible)
+        pb_stim_diff_grid(flies(k), 'condOrder', drug_order, 'figNum', 16, 'climMode', 'panel', ...
+            'outFile', fullfile(repoRootDir, 'ugly_figures', 'exports', sprintf('stimDiffImages_overshoot_%s_panelClim.png', flies(k).label)));
+    end
     if ~isfolder(fileparts(summary_data)); mkdir(fileparts(summary_data)); end
     save(summary_data, 'flies');
     fprintf('saved %s\n', summary_data);
