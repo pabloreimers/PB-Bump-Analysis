@@ -48,8 +48,9 @@
 % closed-loop ratio is the rig's 0.8 cue gain, not 1.
 %
 % Run from the repo root, one %% section at a time (or top to bottom).
-% Every figure is exported as a PDF to ugly_figures/rnai_turns/ (the
-% per-fly overlay figures into its per_fly/ subfolder).
+% Every figure is exported as a PDF to ugly_figures/rnai_turns/ (per-fly
+% overlays into its per_fly/ subfolder, per-bin peak scatters into
+% peak_per_bin/).
 addpath(fullfile(pwd,'circ_stats'));
 set(groot,'defaultAxesToolbarVisible','off'); % otherwise the axes toolbar can get baked into exported PNGs when run in batch mode
 
@@ -114,13 +115,25 @@ turn_min_size_for_pos_deg = 15; % turn-based version: ignore tiny turns (ratio o
 export_prefix    = 'turns';
 export_dir       = fullfile('ugly_figures','rnai_turns'); % every group figure (PDF) goes here
 per_fly_dir      = fullfile(export_dir,'per_fly');          % the ~350 per-fly overlay figures (fig2) go in their own subfolder
+peak_bin_dir     = fullfile(export_dir,'peak_per_bin');     % the per-turn-size-bin peak scatters (fig8, 36 files) go in their own subfolder
 if ~exist(export_dir,'dir'), mkdir(export_dir); end
 if ~exist(per_fly_dir,'dir'), mkdir(per_fly_dir); end
+if ~exist(peak_bin_dir,'dir'), mkdir(peak_bin_dir); end
 % optional PNG previews (quick to flip through) -- define preview_png_dir
 % in the workspace BEFORE running the script to enable, e.g. when
 % batch-testing; left empty here so the repo only gets the PDFs.
 if ~exist('preview_png_dir','var'), preview_png_dir = ''; end
-make_per_fly_figs = true; % one aligned-overlay figure per fly (question 1) -- can be many figures; set false to only make the group summaries
+% one aligned-overlay figure per fly (question 1) -- ~350 figures, the bulk
+% of the run time. Define make_per_fly_figs in the workspace before running
+% to override (same batch-testing convenience as preview_png_dir above).
+if ~exist('make_per_fly_figs','var'), make_per_fly_figs = true; end
+% turn-detection cache: section 3 saves every detected turn (with its
+% aligned traces) plus the labels needed to plot them, so follow-up
+% analyses (e.g. the peak-displacement section near the end) can be run
+% from sections 0 + that section alone without re-running the 3.7 GB load
+% and turn detection. Gitignored like every other .mat.
+save_turn_cache  = true;
+turn_cache_file  = fullfile(data_dir,'lpsp_rnai_turns_cache.mat');
 
 %% 1) load data + labels (same parsing as lpsp_rnai_claude_v2.m)
 tmp = load(fullfile(data_dir,source_file),'all_data');
@@ -212,8 +225,24 @@ end
 fprintf('%d turns detected (%d within the size bins); per bin: %s\n', numel(turns), sum(~isnan(turn_bin)), ...
     strjoin(arrayfun(@(b) sprintf('%s=%d',bin_labels{b},sum(turn_bin==b)),1:n_bins,'UniformOutput',false),', '));
 turn_quiet = [turns.quiet_pre]';
+turn_fly   = [turns.fly]';
+turn_dark  = [turns.dark]';
 fprintf('%d of %d binned turns have a quiet baseline (|v| < %.2f rad/s for %.2fs before onset)\n', ...
     sum(turn_quiet & ~isnan(turn_bin)), sum(~isnan(turn_bin)), turn_vel_thresh, turn_quiet_pre_s);
+
+fly_geno = cell(n_flies,1);
+for f = 1:n_flies
+    g = unique(genotype(fly_num==f)); fly_geno{f} = g{1};
+end
+used_flies = unique(turn_fly);
+
+if save_turn_cache
+    save(turn_cache_file,'turns','turn_bin','turn_size','turn_quiet','turn_fly','turn_dark','bin_labels','n_bins', ...
+        'turn_t','turn_norm_tau','turn_win_s','turn_bin_edges_deg','turn_quiet_pre_s','min_turns_per_bin', ...
+        'fly_list','fly_num','fly_geno','used_flies','n_flies','genotype','is_dark','geno_keep','geno_colors', ...
+        'cond_list','cond_name','source_file','-v7.3');
+    fprintf('turn cache saved to %s\n', turn_cache_file);
+end
 
 %% figure: how turns are defined -- example trial with the most turns
 turn_trials = [turns.trial]';
@@ -243,11 +272,6 @@ linkaxes([ax1,ax2],'x'); xlim([xf(1),min(xf(end),xf(1)+120)])
 export_fig(export_dir,preview_png_dir,sprintf('%s_fig1_turn_definition_example',export_prefix))
 
 %% 4) QUESTION 1 -- per-fly aligned overlays: fly heading vs. bump, one subplot per turn-size bin
-fly_geno = cell(n_flies,1);
-for f = 1:n_flies
-    g = unique(genotype(fly_num==f)); fly_geno{f} = g{1};
-end
-used_flies = unique([turns.fly]');
 
 % per fly x condition x bin: mean aligned traces (fly, bump), n turns,
 % and summary displacements -- stored for the group figures below
@@ -305,8 +329,6 @@ end
 %     PVA on the fictrac timebase, same smoothing, so the two are comparable)
 % (d) OPTION 2b: all turns, displacement vs. NORMALIZED time (0 = onset,
 %     1 = offset) so turns of different duration line up at both ends
-turn_fly  = [turns.fly]';
-turn_dark = [turns.dark]';
 variants = struct( ...
     'label',  {'all turns, displacement', sprintf('quiet-baseline turns (%.2fs), displacement',turn_quiet_pre_s), 'all turns, rotational velocity', 'all turns, displacement vs. normalized time (0 = onset, 1 = offset)'}, ...
     'ffield', {'fly_trace','fly_trace','fly_vel_trace','fly_norm'}, ...
@@ -511,6 +533,188 @@ for ci = 1:numel(cond_list)
     end
     sgtitle(sprintf('%s -- mapping check: z-scored fluorescence of every PB cluster vs. the PVA position bin (glomerulus within hemisphere) it is assigned to',cond_name{cond_list(ci)+1}),'Interpreter','none')
     export_fig(export_dir,preview_png_dir,sprintf('%s_fig7_pva_to_glomerulus_mapping_%s',export_prefix,strrep(cond_name{cond_list(ci)+1},' ','')))
+end
+
+%% 6) figures: peak of each fly's mean trace, by genotype -- every turn-size bin, quiet-baseline AND all turns, real AND normalized time
+% Same per-fly mean traces as fig3 (displacement vs. time from onset, each
+% fly needs >= min_turns_per_bin turns in the bin), reduced to one number
+% per fly and bin: the PEAK of its mean trace within a window after onset
+% -- for the fly's own heading and for the bump. Per bin: a 4-panel figure
+% with jittered per-fly scatters by genotype (fly peak, bump peak,
+% bump/fly peak ratio, time of bump peak). Then a summary of the same
+% per-fly numbers against turn size. Done for every combination of:
+%   turn set   -- QUIET-BASELINE turns only (as fig3b; 'quiet' files) or
+%                 ALL turns (as fig3a; 'allturns' files -- many more turns
+%                 and flies per bin, at the cost of counter-corrections:
+%                 for small turns the lagging bump is often still moving
+%                 the OTHER way at onset, which cancels part of its rise
+%                 when measured relative to the onset value)
+%   time base  -- REAL time from onset (fig8 per bin / fig9 summary) or
+%                 NORMALIZED time (fig10 / fig11; tau = 0 at onset, 1 at
+%                 offset, traces as in fig3d)
+%   light condition
+%
+% PEAK WINDOW, real time: scales with turn size -- for each bin (and light
+% condition) it runs from onset to that bin's MEDIAN TURN DURATION +
+% peak_settle_s, capped at the end of the aligned trace (turn_win_s(2)).
+% Rationale: the fly's displacement peaks at turn offset by construction,
+% and the bump keeps moving for a while after the fly stops -- it lags
+% behavior by ~0.13 s (the gain-pipeline lag) and, with the 0.2 s mu
+% smoothing and calcium kinetics, its smoothed velocity only returns to
+% zero ~0.5-0.7 s after the fly's does (fig3c). peak_settle_s = 1.0 s
+% covers that with some headroom while stopping before the post-turn
+% counter-rotation, which in the small-turn bins begins ~1 s after the
+% turn ends and would otherwise let a slow drift masquerade as the peak
+% (with a fixed 3 s window about half the flies' 15 deg "peaks" were at
+% the window edge). For the 15 deg bin (median duration ~0.3 s) this gives
+% ~1.3 s. Bins whose window hits the 3 s cap are flagged '!' in
+% titles/labels -- there the peak is still mid-turn for the longest turns.
+%
+% PEAK WINDOW, normalized time: tau = 0..turn_norm_tau(end) (= 1.5, i.e.
+% up to half a turn-duration past offset) for every bin -- the whole
+% post-onset range the normalized traces cover. NOTE this is a DIFFERENT
+% measurement from the real-time one for short turns: for a 0.3 s turn,
+% tau = 1.5 is only ~0.15 s after offset, before the lagging bump has
+% finished moving, so the normalized "peak" there is "how far the bump
+% had got by half a turn-duration after the fly stopped", not its
+% eventual excursion. For long turns the two windows are comparable.
+%
+% Standalone use: run section 0 (parameters), then this section -- if
+% `turns` isn't in the workspace it is loaded from turn_cache_file.
+if ~exist('turns','var')
+    load(turn_cache_file);
+    fprintf('loaded turn cache %s (%d turns)\n', turn_cache_file, numel(turns));
+end
+peak_settle_s = 1.0;      % s added to each bin's median turn duration to form that bin's real-time peak window (see above)
+peak_bins     = 1:n_bins; % which turn-size bins to make per-bin figures for (all of them)
+turn_sets = struct('tag',  {'quiet','allturns'}, ...
+                   'label',{'quiet-baseline turns','all turns'}, ...
+                   'mask', {turn_quiet, true(size(turn_quiet))});
+time_bases = struct('tag',   {'','_norm'}, ...
+                    'label', {'time from onset','normalized time (0 = onset, 1 = offset)'}, ...
+                    'unit',  {'s','tau'}, ...
+                    'ffield',{'fly_trace','fly_norm'}, ...
+                    'bfield',{'bump_trace','bump_norm'}, ...
+                    't',     {turn_t, turn_norm_tau}, ...
+                    'fig_bin',{8,10}, 'fig_sum',{9,11}, ...
+                    'per_bin_dir',{peak_bin_dir, peak_bin_dir});
+
+cat_x = nan(n_flies,1);
+for gi = 1:numel(geno_keep), cat_x(strcmp(fly_geno,geno_keep{gi})) = gi; end
+turn_dur = [turns.dur_s]';
+
+for tb = 1:numel(time_bases)
+TB = time_bases(tb); t_axis = TB.t(:);
+for ts = 1:numel(turn_sets)
+for ci = 1:numel(cond_list)
+    cname = cond_name{cond_list(ci)+1};
+    slabel = turn_sets(ts).label; stag = turn_sets(ts).tag;
+    sel = turn_dark==cond_list(ci) & turn_sets(ts).mask;
+    FM = fly_bin_means(turns,sel,turn_bin,turn_fly,n_flies,n_bins,TB.ffield,min_turns_per_bin);
+    BM = fly_bin_means(turns,sel,turn_bin,turn_fly,n_flies,n_bins,TB.bfield,min_turns_per_bin);
+
+    fly_pk = nan(n_flies,n_bins); bump_pk = nan(n_flies,n_bins); bump_tpk = nan(n_flies,n_bins);
+    med_dur = nan(1,n_bins); win_end = nan(1,n_bins);
+    for b = 1:n_bins
+        med_dur(b) = median(turn_dur(sel & turn_bin==b));
+        if tb == 1
+            win_end(b) = min(turn_win_s(2), med_dur(b) + peak_settle_s);
+        else
+            win_end(b) = t_axis(end);
+        end
+        t_pk  = t_axis >= 0 & t_axis <= win_end(b);
+        t_sub = t_axis(t_pk);
+        F = reshape(FM(:,b,t_pk),n_flies,[]); B = reshape(BM(:,b,t_pk),n_flies,[]);
+        fly_pk(:,b) = max(F,[],2);
+        [bump_pk(:,b),i_pk] = max(B,[],2);
+        tp = t_sub(i_pk); tp(isnan(bump_pk(:,b))) = nan; bump_tpk(:,b) = tp;
+    end
+    ratio_pk = bump_pk ./ fly_pk;
+    capped = (tb == 1) & (win_end >= turn_win_s(2) - 1e-9);
+    if tb == 1
+        win_desc = sprintf('max over 0..median turn duration + %.1f s',peak_settle_s);
+    else
+        win_desc = sprintf('max over tau = 0..%g',t_axis(end));
+    end
+
+    fprintf('\n=== peak of per-fly mean trace (%s), %s, %s, %s ===\n',win_desc,TB.label,slabel,cname);
+    for b = peak_bins
+        ok = ~isnan(fly_pk(:,b)) & ~isnan(cat_x);
+        n_turns_used = zeros(n_flies,1);
+        for f = find(ok)', n_turns_used(f) = sum(sel & turn_fly==f & turn_bin==b); end
+        trunc_flag = ''; if capped(b), trunc_flag = ' !'; end
+
+        figure(60+1000*tb+100*ts+10*ci+b); clf
+        set(gcf,'Name',sprintf('peak displacement (%s), %s, %s turns, %s',TB.label,slabel,bin_labels{b},cname),'Position',[60,60,1700,450],'Color','w')
+        subplot(1,4,1); groupplot(cat_x(ok),fly_pk(ok,b),geno_keep,geno_colors)
+        ylabel('peak fly rotation (deg)'); title('fly heading: peak of per-fly mean trace')
+        subplot(1,4,2); groupplot(cat_x(ok),bump_pk(ok,b),geno_keep,geno_colors)
+        ylabel('peak bump rotation (deg)'); title('bump: peak of per-fly mean trace')
+        subplot(1,4,3); groupplot(cat_x(ok),ratio_pk(ok,b),geno_keep,geno_colors)
+        yline(1,':k'); yline(0.8,'--','Color',[.5,.5,.5]); yline(0,'-','Color',[.85,.85,.85])
+        ylabel('bump peak / fly peak'); title('per-fly peak ratio (dashed = 0.8 cue gain)')
+        subplot(1,4,4); groupplot(cat_x(ok),bump_tpk(ok,b),geno_keep,geno_colors)
+        if tb == 2, yline(1,'--','Color',[.5,.5,.5]), end
+        ylabel(sprintf('time of bump peak (%s from onset)',TB.unit)); title('bump: time to peak')
+        if tb == 1
+            win_str = sprintf('peak = max over 0-%.2f s after onset = median turn duration %.2f s + %.1f s%s',win_end(b),med_dur(b),peak_settle_s,trunc_flag);
+        else
+            win_str = sprintf('peak = max over tau 0-%g (offset = 1); median turn duration %.2f s',win_end(b),med_dur(b));
+        end
+        sgtitle(sprintf('%s, %s, %s turns, %s -- %s; >= %d turns/fly (median %d)', ...
+            cname,slabel,bin_labels{b},TB.label,win_str,min_turns_per_bin,round(median(n_turns_used(ok)))),'Interpreter','none')
+        export_fig(TB.per_bin_dir,preview_png_dir,sprintf('%s_fig%d_peak%s_%s_bin%d_%s_%s',export_prefix,TB.fig_bin,TB.tag,stag,b,regexprep(bin_labels{b},'[^0-9.-]',''),strrep(cname,' ','')))
+
+        fprintf(' %s turns (median dur %.2f s -> peak window 0-%.2f %s%s):\n',bin_labels{b},med_dur(b),win_end(b),TB.unit,trunc_flag);
+        for gi = 1:numel(geno_keep)
+            g = ok & cat_x==gi;
+            if ~any(g), continue, end
+            fprintf('  %-13s n=%2d flies  fly peak %6.1f +/- %5.1f deg   bump peak %6.1f +/- %5.1f deg   ratio %.2f +/- %.2f\n', geno_keep{gi}, sum(g), ...
+                mean(fly_pk(g,b)), std(fly_pk(g,b))/sqrt(sum(g)), mean(bump_pk(g,b)), std(bump_pk(g,b))/sqrt(sum(g)), ...
+                mean(ratio_pk(g,b)), std(ratio_pk(g,b))/sqrt(sum(g)));
+        end
+    end
+
+    % summary across turn sizes: per-fly values (faint) + group mean +/- SEM (thick), by genotype
+    figure(60+1000*tb+100*ts+10*ci); clf
+    set(gcf,'Name',sprintf('peak summary vs. turn size (%s), %s, %s',TB.label,slabel,cname),'Position',[60,60,1700,480],'Color','w')
+    panels = {ratio_pk, 'bump peak / fly peak',                                   'bump/fly peak ratio vs. turn size';
+              bump_pk,  'peak bump rotation (deg)',                                'bump peak vs. turn size';
+              bump_tpk, sprintf('time of bump peak (%s from onset)',TB.unit),      'time to bump peak vs. turn size'};
+    for k = 1:size(panels,1)
+        subplot(1,3,k); hold on
+        V = panels{k,1};
+        for gi = 1:numel(geno_keep)
+            Y = V(cat_x==gi,:);
+            xj = (1:n_bins) + (gi-(numel(geno_keep)+1)/2)*(0.7/numel(geno_keep));
+            plot(repmat(xj,size(Y,1),1)',Y','.','Color',[geno_colors(gi,:),.3],'MarkerSize',8,'HandleVisibility','off')
+            errorbar(xj,mean(Y,1,'omitnan'),sem(Y,1),'o-','Color',geno_colors(gi,:),'MarkerFaceColor',geno_colors(gi,:),'LineWidth',2, ...
+                'DisplayName',sprintf('%s (n=%d flies)',geno_keep{gi},sum(any(~isnan(Y),2))))
+        end
+        if k == 1
+            yline(1,':k','HandleVisibility','off'); yline(0.8,'--','Color',[.5,.5,.5],'HandleVisibility','off'); yline(0,'-','Color',[.85,.85,.85],'HandleVisibility','off')
+            ylim([-0.5,3]); legend('Location','northeast','Interpreter','none')
+        elseif k == 2
+            % group-mean fly peak per bin as a reference (black), so the bump peaks can be read against the fly's own
+            plot(1:n_bins,mean(fly_pk,1,'omitnan'),'k:','LineWidth',1.5,'DisplayName','fly peak, all flies'); legend('Location','northwest','Interpreter','none')
+        elseif k == 3 && tb == 1
+            % per-bin peak-window end and median turn duration as references
+            stairs((1:n_bins+1)-0.5,[win_end,win_end(end)],'k:','LineWidth',1.5,'DisplayName','peak window end')
+            stairs((1:n_bins+1)-0.5,[med_dur,med_dur(end)],'k--','LineWidth',1,'DisplayName','median turn duration')
+            legend('Location','northwest','Interpreter','none')
+        elseif k == 3
+            yline(1,'--','Color',[.3,.3,.3],'HandleVisibility','off'); yline(t_axis(end),':k','HandleVisibility','off')
+            ylim([0,t_axis(end)*1.05]); legend('Location','southeast','Interpreter','none')
+        end
+        xticks(1:n_bins); xticklabels(arrayfun(@(b) sprintf('%s%s',bin_labels{b},repmat('!',1,capped(b))),1:n_bins,'UniformOutput',false))
+        xlim([0.5,n_bins+0.5]); ylabel(panels{k,2}); title(panels{k,3})
+        if tb == 1, xlabel(sprintf('turn size (! = peak window capped at %g s)',turn_win_s(2))); else, xlabel('turn size'); end
+    end
+    sgtitle(sprintf('%s, %s, %s: peak of per-fly mean trace (%s) vs. turn size; faint = flies, thick = mean +/- SEM', ...
+        cname,slabel,TB.label,win_desc),'Interpreter','none')
+    export_fig(export_dir,preview_png_dir,sprintf('%s_fig%d_peak%s_%s_summary_%s',export_prefix,TB.fig_sum,TB.tag,stag,strrep(cname,' ','')))
+end
+end
 end
 
 %% report
@@ -756,6 +960,25 @@ end
 function y = wrap_to_range(x,lo)
     % wrap angles into [lo, lo+2*pi)
     y = mod(x-lo,2*pi)+lo;
+end
+
+function groupplot(cat_x, values, cat_labels, colors)
+    % jittered per-point scatter + mean +/- SEM errorbar per category, n
+    % embedded in the xtick label (same helper as lpsp_rnai_claude_v2.m)
+    hold on
+    n_cat = numel(cat_labels);
+    labels_with_n = cell(1,n_cat);
+    for c = 1:n_cat
+        y = values(cat_x==c); y = y(~isnan(y));
+        labels_with_n{c} = sprintf('%s (n=%d)',cat_labels{c},numel(y));
+        if isempty(y), continue, end
+        jitter = (rand(size(y))-.5)*.3;
+        scatter(c+jitter,y,20,colors(c,:),'filled','MarkerFaceAlpha',.4)
+        errorbar(c,mean(y),std(y)/sqrt(numel(y)),'o','Color',colors(c,:)*.6, ...
+            'MarkerFaceColor',colors(c,:)*.6,'LineWidth',2,'MarkerSize',7)
+    end
+    xticks(1:n_cat); xticklabels(labels_with_n); xtickangle(20)
+    xlim([0.5,n_cat+0.5])
 end
 
 function s = sem(X,dim)
