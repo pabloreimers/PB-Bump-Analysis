@@ -1,0 +1,34 @@
+fly,first_trial,indicator,first_pattern,first_gain_empirical,gain_source,first_trial_is_CL_0p7,note
+20221219 (-1..-4),20221219-1_EPG_7f_dark_.4,EPG_7f,background,0.39,folder label + fictrac,no,dark-only low/high flies; -3/-4 have no fictrac/DAQ data
+20221221/fly 1,20221221-1_EPG_7f_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20221221/fly 2,20221221-6_EPG_7f_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20221221/fly 3,20221221-10_EPG_7f_.7,EPG_7f,4px_brightbar,0.67,folder label + fictrac,yes,
+20230106/fly 1,20230106-1_EPG_7f_cl_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20230106/fly 2,20230106-5_EPG_7f_cl_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20230109/fly 1,20230109-1_EPG_7f_.7,EPG_7f,4px_brightbar,0.70,folder label + fictrac,yes,
+20230109/fly 2,20230109-7_EPG_7f_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20230110/fly 1,20230110-1_EPG_7f_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,
+20230110/fly 2,20230110-7_EPG_7f_.7,EPG_7f,4px_brightbar,0.68,folder label + fictrac,yes,
+"20230112 (no fly folder, -1..-6)",20230112-1_EPG_7f_.7,EPG_7f,4px_brightbar,0.69,folder label + fictrac,yes,6 trials 3:03-3:49 PM = one fly
+"20230113 (no fly folder, -1..-6)",20230113-1_EPG_7f_.7,EPG_7f,4px_brightbar,0.67,folder label + fictrac,yes,6 trials 10:12-10:57 AM = one fly
+"20230214 (no fly folder, -1..-6)",20230214-1_EPG_7f,EPG_7f,4px_brightbar,0.70,raw DAQ (no ficTracData_DAQ.mat),yes,6 trials 10:37-11:31 AM = one fly; not preprocessed
+20230504/fly 1,20230504-1_EPG_7f,EPG_7f,background,0.68,fictrac,no,first trial dark
+20230504/fly 2,20230504-7_EPG_7f,EPG_7f,4px_brightbar,0.48,fictrac,no,"first-trial gain ~0.5, not 0.7"
+20230504/fly 3,20230504-13_EPG_7f,EPG_7f,4px_brightbar,0.49,fictrac,no,"first-trial gain ~0.5, not 0.7"
+20230607/fly 1,20230607-1_EPG_7f,EPG_7f,background,0.69,fictrac + DAQ,no,first trial dark
+20230607/fly 2,20230607-7_EPG_7f,EPG_7f,4px_brightbar,0.67,fictrac + DAQ,yes,fly moved little in trial 1 (9 moving 1-s bins)
+20230609/fly 1,20230609-1_EPG_7f,EPG_7f,4px_brightbar_with_starfield,0.67,raw DAQ,yes,ficTracData_DAQ cuePos is wrong for pattern 0006 (gives ~5); DAQ g4panels vs ficTracYaw gives 0.67
+20230614/fly 1,20230614-1_EPG_7f_empty_kir,EPG_7f_empty_kir,4px_brightbar,0.70,raw DAQ,genotype?,"empty>kir control genotype, not plain EPG_7f"
+20230614/fly 2,20230614-1_EPG_7f,EPG_7f,4px_brightbar_with_starfield,0.70,raw DAQ,yes,same cuePos caveat as 20230609
+20230615/fly 1,20230615-1_EPG_7f,EPG_7f,4px_brightbar,0.68,fictrac + DAQ,yes,
+20230616/fly 1,20230616-1_EPG_7f,EPG_7f,4px_brightbar,0.69,raw DAQ,yes,only 2 trials; not preprocessed
+20230616/fly 2,20230616-3_EPG_7f,EPG_7f,4px_brightbar,0.69,raw DAQ,yes,not preprocessed
+20230719/fly 1,20230719-1_EPG_7f,EPG_7f,starfield_bar,0.69,fictrac,yes,
+20230721/fly 1,20230721-1_EPG_7f,EPG_7f,starfield_bar,0.68,fictrac,yes,
+20230731/fly 1,20230731-1_EPG_7f,EPG_7f,starfield_bar,0.70,fictrac,yes,
+20230731/fly 2,20230731-7_EPG_7f,EPG_7f,starfield_bar,0.68,fictrac,yes,
+20230801/fly 1,20230801-1_EPG_7f,EPG_7f,starfield_bar,0.68,fictrac,yes,
+"20230802 (no fly folder, -1..-6)",20230802-1_EPG_7f,EPG_7f,starfield_bar,0.77,raw DAQ,weak,fly barely walked in trial 1 (14 moving bins); trial 2 (dark) = 0.70; not preprocessed
+20230901/fly 1,20230901-1_EPG_7f_split,EPG_7f_split,starfield_bar,0.69,raw DAQ,yes (split line),not preprocessed
+20230901/fly 2,20230901-7_EPG_7f_split,EPG_7f_split,starfield_bar,0.69,raw DAQ,yes (split line),not preprocessed
+to do/20250403..20250410 (6 epg_7f flies),e.g. 20250403-1_epg_7f,epg_7f,bar,0.76-0.80,fictrac,no (gain 0.8),2025 flies run at ~0.8 first; 20250409 fly 2 starts dark

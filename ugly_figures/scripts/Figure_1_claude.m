@@ -8,10 +8,11 @@
 %   1) example fly, example closed-loop trial: im.z heatmap with bump
 %      position (im.mu, white) and fly heading (-ft.cue, colored) overlaid.
 %   2) same example trial: im.mu and -ft.cue traces overlaid, line-only.
-%   3) per-fly correlation summary, 4 x-tick categories: circular position
-%      correlation (mu vs. -cue) in closed loop / dark, and Pearson
-%      velocity correlation (bump vel vs. fly rotation) in closed loop /
-%      dark. One dot per fly.
+%   3) per-fly correlation summary, closed loop only, 2 x-tick categories:
+%      circular position correlation (mu vs. -cue) and Pearson velocity
+%      correlation (bump vel vs. fly rotation). One dot per fly. (Dark
+%      trials are still processed below but no longer plotted -- same for
+%      the row-5 co-imaging panels.)
 %
 % Loads the SAME three source .mat files combined by
 % lpsp_compartments_claude_script.m (lpsp_cl, lpsp_cl_redo, epg_dlight),
@@ -30,13 +31,15 @@
 % will mislabel whatever small subset of trials that script's CSV
 % cross-check would have caught; revisit with drive access if that matters.
 %
-% ==THE "4 CATEGORIES" IN ROW 3==
-% Ported directly from lpsp_compartments_claude_script.m section 7's own
-% two per-fly metrics (figures 40 and 43 there): circular position
-% correlation (mean of many 30s-window circ_corrcc(mu,-cue) values) and
-% Pearson velocity correlation (corr(bump_vel, fly r_speed) over
-% discernable-bump samples), each split by closed-loop vs. dark -- 2
-% metrics x 2 conditions = 4 x-axis categories, one dot per fly.
+% ==ROW 3 METRICS AND LAGS==
+% Ported from lpsp_compartments_claude_script.m section 7's own two per-fly
+% metrics (figures 40 and 43 there): circular position correlation (mean
+% of many 30s-window circ_corrcc(mu,-cue) values) and Pearson velocity
+% correlation (corr(bump_vel, fly r_speed) over discernable-bump samples),
+% one dot per fly, closed loop only. Fluorescence-vs-behavior lag is
+% chosen SEPARATELY per indicator and per metric (6 lags total), as the
+% lag in [-1,+1] s that maximizes the population-mean of that metric
+% across flies -- see the "per-indicator, per-metric lag" section.
 %
 % ==HACKATHON (EPG>GCaMP) ADAPTATION==
 % The hackathon dataset's berg4 trials change gain/luminance mid-trial (a
@@ -46,12 +49,12 @@
 % (gain, cue_brightness), with a dark block inheriting the most recently
 % active closed-loop gain for that fly) to chunk every trial into
 % constant-gain-or-dark blocks, then keeps only gain=0.8 blocks (both
-% closed-loop and dark, per the user's request). Each kept block
-% contributes ONE circ_corrcc value (rather than lpsp's several 30s
-% sliding-window values -- most gain=0.8 berg4 blocks are themselves only
-% ~7.5s long, shorter than a 30s window) and one pool of (bump_vel,
-% r_speed) samples to that fly's velocity-correlation pool; per-fly
-% aggregation is otherwise identical code to the lpsp columns.
+% closed-loop and dark, per the user's request). Each kept block is one
+% "unit" put through the same unit_metrics() as an lpsp trial: 30s sliding
+% windows for the position correlation where the block is long enough,
+% otherwise the whole block as a single window (most gain=0.8 berg4
+% blocks are only ~7.5s long), plus one pool of (bump_vel, r_speed)
+% samples for that fly's velocity correlation.
 % Per hackathon_claude.m's own finding, the fly's rotation direction
 % relative to bump motion is sign-FLIPPED on the berg4 rig relative to the
 % older G4-pattern rig -- r_speed is sign-corrected for that (fly_sign),
@@ -62,7 +65,7 @@
 %% paths
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
 addpath(fullfile(repo_root,'circ_stats'))
-data_dir = fullfile(repo_root,'data');
+data_dir = fullfile(repo_root,'.data'); % processed datasets live in the gitignored .data/ (not data/, which only holds the small LED-stim summaries)
 export_dir = fullfile(repo_root,'ugly_figures','exports');
 
 %% shared analysis constants (ported from lpsp_compartments_claude_script.m / hackathon_claude.m)
@@ -79,7 +82,7 @@ min_vel_n         = 100;  % minimum pooled samples to trust one fly's velocity P
 window_s          = 30;   % s, lpsp sliding-window length for position correlation
 window_step_s     = 10;   % s, lpsp sliding-window step
 
-lag_frames_grid   = -30:3:180; % same grid as lpsp_compartments_claude_script.m section 2
+lag_grid_s        = -1:0.05:1; % s, candidate fluorescence-vs-behavior lags swept per indicator x metric (see the lag section below)
 
 %% load hackathon data (EPG>GCaMP)
 tmp = load(fullfile(data_dir,'hackathon_20250729.mat'),'all_data');
@@ -122,11 +125,10 @@ for i = 1:numel(hack_data)
     hack_data(i).im.d   = dff;
 end
 
-%% flash-frame detection + fly ID + per-trial fluorescence average (for the lag sweep)
+%% flash-frame detection + fly ID
 n_hack = numel(hack_data);
 hack_flash    = cell(n_hack,1);
 hack_fly      = cell(n_hack,1);
-hack_fluoravg = cell(n_hack,1); % mean dF/F across wedges, flash-excluded, on the ft.xf timebase
 
 for i = 1:n_hack
     hack_flash{i} = detect_flash_frames(hack_data(i).im.f, flash_mad_thresh);
@@ -137,17 +139,7 @@ for i = 1:n_hack
         tok = parts{end-2};
     end
     hack_fly{i} = tok;
-
-    xf = hack_data(i).ft.xf;
-    xb = get_xb(hack_data(i).ft, size(hack_data(i).im.d,2));
-    keep = ~hack_flash{i}(:);
-    avg_im = mean(hack_data(i).im.d(:,keep),1)';
-    hack_fluoravg{i} = interp1(xb(keep),avg_im,xf);
 end
-
-%% optimal lag for EPG>GCaMP: |r_speed| vs. fluor_avg, pooled across all trials
-hack_lag_frames = fit_group_lag({hack_data.ft}, hack_fluoravg, lag_frames_grid);
-fprintf('EPG>GCaMP optimal lag: %d frames\n', hack_lag_frames);
 
 %% segment every hackathon trial into constant-gain/dark blocks, gain=0.8 only
 % ported from hackathon_claude.m's compute_gain_blocks (block-splitting part
@@ -205,43 +197,6 @@ end
 n_hack_units = numel(hack_unit_trial);
 fprintf('%d gain=0.8 hackathon blocks (%d closed loop, %d dark)\n', n_hack_units, sum(~hack_unit_isdark), sum(hack_unit_isdark));
 
-%% per-block position/velocity signals for hackathon
-hack_unit_wincorr = cell(n_hack_units,1); % 1-element cell (or empty): this block's own circ_corrcc(mu,-cue)
-hack_unit_bumpvel = cell(n_hack_units,1);
-hack_unit_rspeed  = cell(n_hack_units,1);
-hack_unit_offset  = cell(n_hack_units,1); % only meaningful for closed-loop blocks
-hack_unit_nbumpok = zeros(n_hack_units,1);
-
-hack_trial_cache = containers.Map('KeyType','double','ValueType','any'); % avoid recomputing lagged_track_signals per trial for every block
-for u = 1:n_hack_units
-    i = hack_unit_trial(u);
-    if ~isKey(hack_trial_cache,i)
-        ft = hack_data(i).ft;
-        xf = ft.xf(:);
-        xb = get_xb(ft,size(hack_data(i).im.d,2));
-        keep = ~hack_flash{i}(:);
-        fly_sign = 1 - 2*strcmpi(ft.pattern,'berg4'); % -1 for berg4, +1 otherwise
-        [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,~,orig_idx] = lagged_track_signals( ...
-            xf,xb,hack_data(i).im.mu,hack_data(i).im.rho,keep,ft.r_speed,ft.cue,hack_lag_frames,fly_sign);
-        bump_ok = abs(r_speed_l)>rot_thresh_track & rho_l>rho_thresh_track & abs(bump_vel_l)<bump_vel_thresh & ...
-                  ~isnan(mu_l) & ~isnan(cue_l) & ~isnan(rho_l);
-        hack_trial_cache(i) = struct('mu_l',mu_l,'cue_l',cue_l,'bump_vel_l',bump_vel_l,'r_speed_l',r_speed_l, ...
-                                      'orig_idx',orig_idx,'bump_ok',bump_ok);
-    end
-    c = hack_trial_cache(i);
-    mask = c.bump_ok & c.orig_idx>=hack_unit_s(u) & c.orig_idx<=hack_unit_e(u);
-    n_ok = sum(mask);
-    hack_unit_nbumpok(u) = n_ok;
-    if n_ok >= min_window_n
-        hack_unit_wincorr{u} = circ_corrcc(c.mu_l(mask),c.cue_l(mask));
-    end
-    hack_unit_bumpvel{u} = c.bump_vel_l(mask);
-    hack_unit_rspeed{u}  = c.r_speed_l(mask);
-    if ~hack_unit_isdark(u)
-        hack_unit_offset{u} = circ_dist(c.mu_l(mask),c.cue_l(mask));
-    end
-end
-
 %% ===================== process lpsp (LPsP>syt7f, EPG>GRAB(DA2m)) =====================
 
 n_lpsp = numel(lpsp_data);
@@ -249,7 +204,6 @@ lpsp_is_dark = false(n_lpsp,1);
 lpsp_indicator = cell(n_lpsp,1);
 lpsp_fly = cell(n_lpsp,1);
 lpsp_flash = cell(n_lpsp,1);
-lpsp_fluoravg = cell(n_lpsp,1);
 
 for i = 1:n_lpsp
     meta = lpsp_data(i).meta;
@@ -269,34 +223,15 @@ for i = 1:n_lpsp
     lpsp_fly{i}       = trial_fly_id(lpsp_data(i).dataset,meta);
 
     lpsp_flash{i} = detect_flash_frames(lpsp_data(i).im.f, flash_mad_thresh);
-
-    xf = lpsp_data(i).ft.xf;
-    xb = get_xb(lpsp_data(i).ft,size(lpsp_data(i).im.d,2));
-    keep = ~lpsp_flash{i}(:);
-    avg_im = mean(lpsp_data(i).im.d(:,keep),1)';
-    lpsp_fluoravg{i} = interp1(xb(keep),avg_im,xf);
 end
 
 %% figure columns: only syt7f and GRAB(DA2m) are used from this combined dataset
 lpsp_groups = {'syt7f','GRAB(DA2m)'};
 
-lpsp_lag = nan(1,numel(lpsp_groups));
-for g = 1:numel(lpsp_groups)
-    rows = find(strcmp(lpsp_indicator,lpsp_groups{g}));
-    lpsp_lag(g) = fit_group_lag({lpsp_data(rows).ft}, lpsp_fluoravg(rows), lag_frames_grid);
-    fprintf('%s optimal lag: %d frames (n=%d trials)\n', lpsp_groups{g}, lpsp_lag(g), numel(rows));
-end
-
-%% per-trial position/velocity signals for the two lpsp columns (sliding 30s windows)
+% one "unit" per lpsp trial (the whole trial); which column it feeds
 lpsp_unit_fly      = cell(n_lpsp,1);
 lpsp_unit_isdark   = false(n_lpsp,1);
-lpsp_unit_wincorr  = cell(n_lpsp,1);
-lpsp_unit_bumpvel  = cell(n_lpsp,1);
-lpsp_unit_rspeed   = cell(n_lpsp,1);
-lpsp_unit_offset   = cell(n_lpsp,1);
-lpsp_unit_nbumpok  = zeros(n_lpsp,1);
 lpsp_unit_group    = zeros(n_lpsp,1); % 1=syt7f, 2=GRAB(DA2m), 0=neither (unused)
-
 for i = 1:n_lpsp
     g = find(strcmp(lpsp_groups,lpsp_indicator{i}),1);
     if isempty(g)
@@ -305,53 +240,26 @@ for i = 1:n_lpsp
     lpsp_unit_group(i)  = g;
     lpsp_unit_fly{i}    = lpsp_fly{i};
     lpsp_unit_isdark(i) = lpsp_is_dark(i);
-
-    ft = lpsp_data(i).ft;
-    xf = ft.xf(:);
-    xb = get_xb(ft,size(lpsp_data(i).im.d,2));
-    keep = ~lpsp_flash{i}(:);
-
-    [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,xf_l,~] = lagged_track_signals( ...
-        xf,xb,lpsp_data(i).im.mu,lpsp_data(i).im.rho,keep,ft.r_speed,ft.cue,lpsp_lag(g),1);
-    bump_ok = abs(r_speed_l)>rot_thresh_track & rho_l>rho_thresh_track & abs(bump_vel_l)<bump_vel_thresh & ...
-              ~isnan(mu_l) & ~isnan(cue_l) & ~isnan(rho_l);
-    lpsp_unit_nbumpok(i) = sum(bump_ok);
-
-    if ~lpsp_unit_isdark(i)
-        lpsp_unit_offset{i} = circ_dist(mu_l(bump_ok),cue_l(bump_ok));
-    end
-    lpsp_unit_bumpvel{i} = bump_vel_l(bump_ok);
-    lpsp_unit_rspeed{i}  = r_speed_l(bump_ok);
-
-    window_starts = xf_l(1):window_step_s:(xf_l(end)-window_s);
-    win_corrs = [];
-    for w = 1:numel(window_starts)
-        idx = xf_l >= window_starts(w) & xf_l < window_starts(w)+window_s & bump_ok;
-        if sum(idx) < min_window_n
-            continue
-        end
-        c = circ_corrcc(mu_l(idx),cue_l(idx));
-        if ~isnan(c)
-            win_corrs(end+1) = c; %#ok<AGROW>
-        end
-    end
-    lpsp_unit_wincorr{i} = win_corrs;
+end
+for g = 1:numel(lpsp_groups)
+    fprintf('%s: n=%d trials\n', lpsp_groups{g}, sum(lpsp_unit_group==g));
 end
 
 %% ===================== assemble the 3 figure columns =====================
+% per column: its units (trial + [start,end] index on ft.xf), fly ids,
+% light condition, which flash-frame list / rotation-sign rule applies.
+% The per-unit tracking metrics (wincorr, bumpvel, rspeed, offset,
+% nbumpok) are filled in by the lag section right after this.
 group_defs = struct( ...
     'title',    {'EPG > GCaMP','LPsP > syt7f','EPG > GRAB(DA2m)'}, ...
     'unit_fly',    {hack_unit_fly,    lpsp_unit_fly(lpsp_unit_group==1),    lpsp_unit_fly(lpsp_unit_group==2)}, ...
     'unit_isdark', {hack_unit_isdark, lpsp_unit_isdark(lpsp_unit_group==1), lpsp_unit_isdark(lpsp_unit_group==2)}, ...
-    'unit_wincorr',{hack_unit_wincorr,lpsp_unit_wincorr(lpsp_unit_group==1),lpsp_unit_wincorr(lpsp_unit_group==2)}, ...
-    'unit_bumpvel',{hack_unit_bumpvel,lpsp_unit_bumpvel(lpsp_unit_group==1),lpsp_unit_bumpvel(lpsp_unit_group==2)}, ...
-    'unit_rspeed', {hack_unit_rspeed, lpsp_unit_rspeed(lpsp_unit_group==1), lpsp_unit_rspeed(lpsp_unit_group==2)}, ...
-    'unit_offset', {hack_unit_offset, lpsp_unit_offset(lpsp_unit_group==1), lpsp_unit_offset(lpsp_unit_group==2)}, ...
-    'unit_nbumpok',{hack_unit_nbumpok,lpsp_unit_nbumpok(lpsp_unit_group==1),lpsp_unit_nbumpok(lpsp_unit_group==2)}, ...
     'unit_trial',  {hack_unit_trial,  find(lpsp_unit_group==1),             find(lpsp_unit_group==2)}, ...
     'unit_s',      {hack_unit_s,      ones(sum(lpsp_unit_group==1),1),      ones(sum(lpsp_unit_group==2),1)}, ...
     'unit_e',      {hack_unit_e,      [],                                   []}, ...
-    'all_data',    {hack_data,        lpsp_data,                            lpsp_data} ...
+    'all_data',    {hack_data,        lpsp_data,                            lpsp_data}, ...
+    'flash',       {hack_flash,       lpsp_flash,                           lpsp_flash}, ...
+    'use_berg4_sign', {true,          false,                                false} ... % hackathon berg4 trials need r_speed sign-flipped (see header)
 );
 % lpsp units' block end = the whole trial (numel of that trial's own ft.xf)
 for gi = 2:3
@@ -361,6 +269,50 @@ for gi = 2:3
         e_vals(r) = numel(group_defs(gi).all_data(rows(r)).ft.xf);
     end
     group_defs(gi).unit_e = e_vals;
+end
+
+%% per-indicator, per-metric lag: maximize the POPULATION mean correlation
+% Two lags per column, each picked by sweeping lag_grid_s (-1..+1 s) and
+% taking the lag at which the mean across closed-loop flies of that metric
+% is largest:
+%   lag_pos_s(gi) - for the windowed circular position correlation
+%   lag_vel_s(gi) - for the bump-velocity vs. rotation Pearson r
+% Positive lag = fluorescence shifted EARLIER, i.e. fluorescence lags
+% behavior (see lagged_track_signals). This replaces the earlier single
+% per-indicator lag fit on |r_speed| vs. mean fluorescence -- a different
+% signal from either metric, suspected of under-aligning the velocity
+% metric for EPG>GCaMP. unit_metrics() computes both metrics identically
+% for all three columns (sliding window_s windows for the position
+% correlation; a unit shorter than one window, as most hackathon gain=0.8
+% blocks are, is a single window).
+P = struct('rot_thresh_track',rot_thresh_track,'rho_thresh_track',rho_thresh_track,'bump_vel_thresh',bump_vel_thresh, ...
+           'min_window_n',min_window_n,'window_s',window_s,'window_step_s',window_step_s);
+lag_pos_s = nan(1,3); lag_vel_s = nan(1,3);
+lag_sweep_pos = nan(3,numel(lag_grid_s)); % population-mean position correlation at each candidate lag, per column
+lag_sweep_vel = nan(3,numel(lag_grid_s)); % population-mean velocity correlation at each candidate lag, per column
+for gi = 1:3
+    G = group_defs(gi);
+    for L = 1:numel(lag_grid_s)
+        U = unit_metrics(G.all_data,G.flash,G.unit_trial,G.unit_s,G.unit_e,G.unit_isdark,lag_grid_s(L),G.use_berg4_sign,P);
+        [pv,vv] = per_fly_cl(U,G.unit_fly,G.unit_isdark,min_vel_n);
+        lag_sweep_pos(gi,L) = mean(pv,'omitnan');
+        lag_sweep_vel(gi,L) = mean(vv,'omitnan');
+    end
+    [~,bp] = max(lag_sweep_pos(gi,:));
+    [~,bv] = max(lag_sweep_vel(gi,:));
+    lag_pos_s(gi) = lag_grid_s(bp);
+    lag_vel_s(gi) = lag_grid_s(bv);
+    fprintf('%s: position lag %+.2f s (pop. mean r=%.2f), velocity lag %+.2f s (pop. mean r=%.2f)\n', ...
+        G.title, lag_pos_s(gi), lag_sweep_pos(gi,bp), lag_vel_s(gi), lag_sweep_vel(gi,bv));
+
+    % final per-unit metrics, each at its own metric's lag
+    U_pos = unit_metrics(G.all_data,G.flash,G.unit_trial,G.unit_s,G.unit_e,G.unit_isdark,lag_pos_s(gi),G.use_berg4_sign,P);
+    U_vel = unit_metrics(G.all_data,G.flash,G.unit_trial,G.unit_s,G.unit_e,G.unit_isdark,lag_vel_s(gi),G.use_berg4_sign,P);
+    group_defs(gi).unit_wincorr = U_pos.wincorr;
+    group_defs(gi).unit_offset  = U_pos.offset;
+    group_defs(gi).unit_nbumpok = U_pos.nbumpok;
+    group_defs(gi).unit_bumpvel = U_vel.bumpvel;
+    group_defs(gi).unit_rspeed  = U_vel.rspeed;
 end
 
 %% pick, per column, the example fly + a 120s snippet showing good bump tracking
@@ -374,21 +326,35 @@ end
 snippet_s      = 60;  % s, requested example-trace window length, all 3 columns
 snippet_step_s = 10;  % s, sliding step when searching for the best snippet_s-second sub-window
 
-group_lags = [hack_lag_frames, lpsp_lag(1), lpsp_lag(2)];
-
 % manual override: force a specific fly as the example for a column instead
 % of the automatic pick_best_fly() choice below (leave '' for automatic).
 % GRAB(DA2m)'s auto-picked fly (20221205_1) didn't look like the best
 % example on inspection -- 20221122_1 (its 20221122-1_EPG_GRABDA(2m)_1
 % trial, "Trial 1") was flagged as a more promising one instead. Likewise
 % syt7f's auto-picked fly (20221114_2) was swapped for 20221123_2 (its
-% 20221123-7_LPsP_syt7f_cl_2 trial, "Trial 7").
-forced_fly = {'','20221123_2','20221122_1'};
+% 20221123-7_LPsP_syt7f_cl_2 trial, "Trial 7"). EPG>GCaMP's auto-picked
+% fly (8_np_6) was on a menotaxis bout in its auto-picked snippet, and the
+% first replacement (5_np_4 / trial 27 / t0 = 33.8 s, chosen purely on
+% walking statistics) turned out to have the dimmest raw PB in the dataset
+% (50x128 px, 10-frame SNR ~1.5). A second scan ranking trials by raw PB
+% image quality (mean-image contrast and 10-frame SNR) as well as walking
+% statistics picked 1_np_1 / hackathon trial 7 / t0 = 540 s: one of only
+% two flies recorded at 100x256 px, with the sharpest PB in the dataset
+% (mean-image contrast 8.4, 10-frame SNR 4.3) and walking statistics close
+% to the other two columns' (full-circle coverage, circ. std 1.14, mean
+% |r| 0.44 rad/s), though with some heading holds at the rear of the arena
+% (see forced_trial / forced_snippet_t0).
+forced_fly = {'1_np_1','20221123_2','20221122_1'};
+
+% manual override: force a specific trial (index into that column's
+% all_data) as the example, instead of the "fly's best closed-loop unit"
+% choice below (NaN = automatic). Only meaningful with forced_fly set.
+forced_trial = [7, nan, nan];
 
 % manual override: force a specific snippet start time (s, on that trial's
 % own ft.xf clock) for a column instead of pick_snippet()'s automatic
 % choice below (NaN = automatic).
-forced_snippet_t0 = [nan, nan, nan];
+forced_snippet_t0 = [540.0, nan, nan];
 
 for gi = 1:3
     G = group_defs(gi);
@@ -430,6 +396,19 @@ for gi = 1:3
         [~,longest] = max(unit_dur_s);
         candidates = sel(longest);
     end
+    if ~isnan(forced_trial(gi))
+        % restrict to this fly's closed-loop units in the forced trial; if
+        % a snippet start is also forced, take the unit that contains it
+        candidates = sel(G.unit_trial(sel)==forced_trial(gi));
+        assert(~isempty(candidates), 'forced_trial %d has no closed-loop units for fly "%s" in column %d (%s)', forced_trial(gi), chosen_fly, gi, G.title)
+        if ~isnan(forced_snippet_t0(gi))
+            xf_ft = G.all_data(forced_trial(gi)).ft.xf;
+            contains_t0 = xf_ft(G.unit_s(candidates)) <= forced_snippet_t0(gi) & xf_ft(G.unit_e(candidates)) >= forced_snippet_t0(gi)+snippet_s;
+            if any(contains_t0)
+                candidates = candidates(contains_t0);
+            end
+        end
+    end
     [~,best_rel] = max(G.unit_nbumpok(candidates));
     example_unit = candidates(best_rel);
 
@@ -444,15 +423,15 @@ for gi = 1:3
     % snippet search can slide a window and check each candidate's own
     % offset variance.
     xb = get_xb(ft,size(G.all_data(i).im.d,2));
-    if gi == 1
-        keep = ~hack_flash{i}(:);
+    keep = ~G.flash{i}(:);
+    if G.use_berg4_sign
         fly_sign = 1 - 2*strcmpi(ft.pattern,'berg4');
     else
-        keep = ~lpsp_flash{i}(:);
         fly_sign = 1;
     end
-    [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,xf_l,orig_idx] = lagged_track_signals( ...
-        ft.xf(:),xb,G.all_data(i).im.mu,G.all_data(i).im.rho,keep,ft.r_speed,ft.cue,group_lags(gi),fly_sign);
+    fs_i = 1/median(diff(ft.xf));
+    [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,xf_l,orig_idx] = lagged_track_signals( ... % position lag: this is a position-tracking display
+        ft.xf(:),xb,G.all_data(i).im.mu,G.all_data(i).im.rho,keep,ft.r_speed,ft.cue,round(lag_pos_s(gi)*fs_i),fly_sign);
     bump_ok = abs(r_speed_l)>rot_thresh_track & rho_l>rho_thresh_track & abs(bump_vel_l)<bump_vel_thresh & ...
               ~isnan(mu_l) & ~isnan(cue_l) & ~isnan(rho_l);
     in_unit = orig_idx>=us & orig_idx<=ue;
@@ -471,34 +450,83 @@ for gi = 1:3
     group_defs(gi).example_t1  = t1;
 end
 
-%% per-fly correlation summary (row 3): 4 categories, grouped by light
-% condition first (CL together, dark together), metric second within each:
-% position (CL), velocity (CL), position (dark), velocity (dark).
-cat_labels = {'position (CL)','velocity (CL)','position (dark)','velocity (dark)'};
-cat_colors = [0.20 0.45 0.85; 0.20 0.45 0.85; 0.10 0.10 0.10; 0.10 0.10 0.10];
+%% two strong-bump frames ~180 deg apart in each example snippet + their raw summed-z images
+% For each column's example snippet: among non-flash frames whose bump
+% strength (im.rho) is in the top (100-frame_pair_rho_pct)% of the snippet,
+% take the pair of frames whose bump positions are at least
+% frame_pair_min_sep_deg apart and, among those, has the largest
+% min(rho_A, rho_B) -- i.e. two confidently-localised bumps on opposite
+% sides of the PB. (Falls back to the most-separated pair if none reach
+% the separation bar.) Then load those two frames' raw registered images
+% (summed over z) straight from the trial's own imaging file on Z: so the
+% heatmap row can be compared against actual PB images at the same two
+% instants. Frames are sorted in time: A is earlier, B later.
+frame_pair_min_sep_deg = 150;
+frame_pair_rho_pct     = 50;
+frame_avg_n            = 10;  % total frames averaged for each raw image, window [f-floor((n-1)/2), f+ceil((n-1)/2)] around A / B (a single z-summed frame is mostly shot noise, esp. the 50x128 px hackathon movies)
+frame_img_smooth_sigma = 1;   % px, Gaussian spatial smoothing of the displayed raw image (0 = none)
+frame_img_clim_pct     = [5 99.7]; % percentiles of all pixels (both images) for the raw-image color scale
+% manual override of the selected frame TIMES (s, on that trial's own ft.xf
+% clock) per column, [tA tB]; NaN = keep the automatic pick for that one.
+% LPsP > syt7f's automatic B (t = 363.5 s) fell on a much faster turn than
+% its A -- moved ~10 s earlier to a point with a similar rotational speed.
+forced_frame_t = {[nan nan], [nan 353.5], [nan nan]};
+for gi = 1:3
+    G  = group_defs(gi);
+    i  = G.example_i;
+    im = G.all_data(i).im;
+    ft = G.all_data(i).ft;
+    xb = get_xb(ft,size(im.z,2));
+
+    cand  = find(xb>=G.example_t0 & xb<=G.example_t1 & ~G.flash{i}(:));
+    rho_c = im.rho(cand); mu_c = im.mu(cand);
+    strong = rho_c >= prctile(rho_c,frame_pair_rho_pct);
+    cand = cand(strong); rho_c = rho_c(strong); mu_c = mu_c(strong);
+
+    [A,B]  = meshgrid(1:numel(cand));
+    sep    = abs(circ_dist(mu_c(A),mu_c(B)));
+    score  = min(rho_c(A),rho_c(B));
+    upper  = A < B; % each unordered pair once
+    ok     = upper & sep >= deg2rad(frame_pair_min_sep_deg);
+    if any(ok(:))
+        score(~ok) = -inf;
+        [~,k] = max(score(:));
+    else
+        sep(~upper) = -inf;
+        [~,k] = max(sep(:));
+    end
+    fr = sort([cand(A(k)), cand(B(k))]);
+    for k = 1:2 % manual time override -> nearest imaging frame
+        if ~isnan(forced_frame_t{gi}(k))
+            [~,fr(k)] = min(abs(xb - forced_frame_t{gi}(k)));
+        end
+    end
+    group_defs(gi).example_frames = fr;
+    rs_at = interp1(ft.xf(:),abs(ft.r_speed(:)),xb(fr)); % fly rotational speed at each selected frame, for the log
+    fprintf('%s: frame A %d (t=%.1f s, mu=%+.2f, rho=%.2f, |r|=%.2f rad/s), frame B %d (t=%.1f s, mu=%+.2f, rho=%.2f, |r|=%.2f rad/s), %.0f deg apart\n', ...
+        G.title, fr(1), xb(fr(1)), im.mu(fr(1)), im.rho(fr(1)), rs_at(1), fr(2), xb(fr(2)), im.mu(fr(2)), im.rho(fr(2)), rs_at(2), ...
+        rad2deg(abs(circ_dist(im.mu(fr(1)),im.mu(fr(2))))));
+
+    [imgs, mask] = load_summed_frames(G.all_data(i).meta, fr, size(im.z,2), frame_avg_n);
+    group_defs(gi).example_frame_imgs = imgs;
+    group_defs(gi).example_mask       = mask;
+end
+
+%% per-fly correlation summary (row 3): closed-loop only, 2 categories:
+% position, velocity -- each at its own metric's population-optimal lag
+% (unit_wincorr was computed at lag_pos_s, unit_bumpvel/rspeed at
+% lag_vel_s). Dark units are still computed above (and kept in group_defs)
+% but deliberately not shown in this figure.
+cat_labels = {'position','velocity'};
+cat_colors = [0.20 0.45 0.85; 0.20 0.45 0.85];
 
 for gi = 1:3
     G = group_defs(gi);
-    cat_x = []; val = [];
-    for c = 0:1 % 0 = closed loop, 1 = dark
-        rows = find(G.unit_isdark==logical(c));
-        these_flies = unique(G.unit_fly(rows));
-        for f = 1:numel(these_flies)
-            sel = rows(strcmp(G.unit_fly(rows),these_flies{f}));
-
-            wc = cat(2,G.unit_wincorr{sel});
-            if ~isempty(wc)
-                cat_x(end+1) = 1 + 2*c; val(end+1) = mean(wc,'omitnan'); %#ok<AGROW>
-            end
-
-            bv = cat(1,G.unit_bumpvel{sel}); rs = cat(1,G.unit_rspeed{sel});
-            if numel(bv) >= min_vel_n
-                cat_x(end+1) = 2 + 2*c; val(end+1) = corr(bv,rs); %#ok<AGROW>
-            end
-        end
-    end
-    group_defs(gi).cat_x = cat_x;
-    group_defs(gi).val   = val;
+    U = struct('wincorr',{G.unit_wincorr},'bumpvel',{G.unit_bumpvel},'rspeed',{G.unit_rspeed});
+    [pv,vv] = per_fly_cl(U,G.unit_fly,G.unit_isdark,min_vel_n);
+    pv = pv(~isnan(pv)); vv = vv(~isnan(vv));
+    group_defs(gi).cat_x = [ones(1,numel(pv)), 2*ones(1,numel(vv))];
+    group_defs(gi).val   = [pv(:)', vv(:)'];
 end
 
 % shared y-limits across all 3 row-3 panels: 1 at the top, the minimum
@@ -520,8 +548,33 @@ group_max_color = [0 .7 .7;   % EPG > GCaMP    -> teal
 % 20221123-7 trial.
 forced_zclim = {[], [-2 8], []};
 
-figure('color','w','Position',[50 50 1500 2000]); clf
-t = tiledlayout(5,3,'TileSpacing','loose','Padding','compact'); % 'loose' (not 'compact') leaves room for rows 1-2's outside-the-axes scale bars; rows 4-5 are the bonus co-imaging panels below
+% row 2 bump-position trace style: 'line' (continuous mu trace, wrap
+% breaks blanked) or 'scatter' (one dot per imaging frame, shown only
+% where im.rho > row2_rho_min, so frames without a discernable bump drop
+% out instead of being drawn). Heading (-cue) is always a line.
+row2_mu_style = 'scatter';
+row2_rho_min  = 0.1;
+row2_dot_size = 6;
+
+% figure width: every panel is made horizontally thinner by narrowing the
+% whole page (1500 -> 1200 px, i.e. 0.8x), rather than popping each axes out
+% of the tiledlayout individually -- same visual effect, keeps the layout
+% intact. Height is unchanged.
+fig_width_px = 1200;
+figure('color','w','Position',[50 50 fig_width_px 2000]); clf
+% 6 visual rows x 3 columns, but laid out on a finer grid so the rows can
+% have different heights: row 1 (heatmaps) gets 3 grid units, every other
+% row 2, so row 1 is 1.5x as tall as the rest. tile(r,c) gives the
+% linear tile index of the top-left grid cell of visual row r, column c;
+% each nexttile call spans [row_units(r) 1]. Visual rows:
+%   1 heatmaps   2 raw summed-z frames A/B   3 mu vs. heading traces
+%   4 per-fly correlations   5 co-imaging example   6 co-imaging summaries
+% (code comments below still call the traces "row 2" and the correlation
+% dots "row 3" from before the raw-frame row was inserted.)
+row_units = [3 2 2 2 2 2];
+row_start = cumsum([1, row_units(1:end-1)]); % first grid row of each visual row
+tile = @(r,c) (row_start(r)-1)*3 + c;
+t = tiledlayout(sum(row_units),3,'TileSpacing','loose','Padding','compact'); % 'loose' (not 'compact') leaves room for rows 1-2's outside-the-axes scale bars; rows 4-5 are the bonus co-imaging panels below
 row2_axes = gobjects(1,3);
 row3_axes = gobjects(1,3);
 
@@ -560,7 +613,7 @@ for gi = 1:3
 
     % row 1: imagesc heatmap only (white-to-this-column's-color), no
     % bump/heading overlay -- see row 2 for those traces
-    ax1 = nexttile(t,gi); hold(ax1,'on')
+    ax1 = nexttile(t,tile(1,gi),[row_units(1) 1]); hold(ax1,'on')
     imagesc(xb(xb_idx),unwrap(im.alpha),im.z(:,xb_idx),z_clim)
     colormap(ax1, white_to_color(group_max_color(gi,:)))
     cb = colorbar(ax1);
@@ -573,13 +626,69 @@ for gi = 1:3
     ylabel('PB angle (rad)')
     title(sprintf('%s\nexample fly %s (%.0fs closed-loop snippet)',G.title,G.example_fly,t1-t0),'Interpreter','none')
     add_time_scalebar(ax1,t0,t1,y_range1)
+    % small black up-arrows just below the bottom edge at the two selected
+    % frames (A earlier, B later), with the letter inside the axes right
+    % above each arrow; their raw images are in the row directly below
+    fr = G.example_frames;
+    for k = 1:2
+        plot(ax1,xb(fr(k)),y_range1(1)-0.035*diff(y_range1),'^k','MarkerFaceColor','k','MarkerSize',6,'Clipping','off')
+        text(ax1,xb(fr(k)),y_range1(1)-0.07*diff(y_range1),char('A'+k-1),'HorizontalAlignment','center','VerticalAlignment','top', ...
+            'FontWeight','bold','FontSize',9,'Clipping','off') % letter under the arrow, outside the heatmap
+    end
+
+    % new row 2: the raw registered PB image (summed over z, averaged over
+    % frame_avg_n frames, lightly smoothed) at frames A and B,
+    % side by side in one axes with a transparent gap between them. The
+    % full field of view is shown (no mask clipping / outline); the shared
+    % color scale is a percentile range of all pixels in both images. Same
+    % white-to-color map as the heatmap above. A/B labels + times under
+    % each image tie it back to its dashed line in the heatmap.
+    ax1b = nexttile(t,tile(2,gi),[row_units(2) 1]); hold(ax1b,'on')
+    imgs = G.example_frame_imgs;
+    if frame_img_smooth_sigma > 0
+        for k = 1:2
+            imgs(:,:,k) = imgaussfilt(imgs(:,:,k),frame_img_smooth_sigma);
+        end
+    end
+    % display rotated 180 deg (image and mask together, so the outline
+    % stays registered)
+    imgs = rot90(imgs,2);
+    msk_disp = rot90(G.example_mask,2);
+    clim_f = prctile(imgs(:),frame_img_clim_pct);
+    [H,W,~] = size(imgs);
+    gap  = max(4,round(W*0.04));
+    comp = [imgs(:,:,1), nan(H,gap), imgs(:,:,2)];
+    h_img = imagesc(ax1b,comp,clim_f);
+    h_img.AlphaData = ~isnan(comp);
+    colormap(ax1b, white_to_color(group_max_color(gi,:)))
+    axis(ax1b,'image'); axis(ax1b,'ij'); axis(ax1b,'off')
+    % PB mask outline (dotted gray) on both images -- the image itself is
+    % NOT clipped to the mask
+    bnd = bwboundaries(msk_disp);
+    for b = 1:numel(bnd)
+        plot(ax1b,bnd{b}(:,2),bnd{b}(:,1),':','Color',[0.45 0.45 0.45],'LineWidth',0.8)
+        plot(ax1b,bnd{b}(:,2)+W+gap,bnd{b}(:,1),':','Color',[0.45 0.45 0.45],'LineWidth',0.8)
+    end
+    text(ax1b,W/2,H+1,sprintf('A: t = %.1f s\nframe %d',xb(fr(1)),fr(1)),'HorizontalAlignment','center','VerticalAlignment','top','FontSize',8,'FontWeight','bold')
+    text(ax1b,1.5*W+gap,H+1,sprintf('B: t = %.1f s\nframe %d',xb(fr(2)),fr(2)),'HorizontalAlignment','center','VerticalAlignment','top','FontSize',8,'FontWeight','bold')
+    title(ax1b,sprintf('raw PB image at A / B (bumps %.0f%s apart)\nz-summed, mean of %d frames', ...
+        rad2deg(abs(circ_dist(im.mu(fr(1)),im.mu(fr(2))))), char(176), frame_avg_n),'FontSize',9)
 
     % row 2: im.mu (this column's own row-1 color) and -ft.cue (black)
     % traces overlaid, line-only
-    ax2 = nexttile(t,3+gi); hold(ax2,'on')
-    hm2 = plot(xb(xb_idx),mu_xb,'-','Color',group_max_color(gi,:),'LineWidth',1.2); hm2.YData(abs(diff(hm2.YData))>pi) = nan;
+    ax2 = nexttile(t,tile(3,gi),[row_units(3) 1]); hold(ax2,'on')
+    if strcmp(row2_mu_style,'scatter')
+        % one dot per imaging frame, only where the bump is discernable
+        % (im.rho > row2_rho_min) -- frames with a weak/absent bump are
+        % simply left blank rather than drawn as a noisy line
+        rho_ok2 = im.rho(xb_idx) > row2_rho_min;
+        hm2 = scatter(xb(xb_idx(rho_ok2)),mu_xb(rho_ok2),row2_dot_size,group_max_color(gi,:),'filled');
+    else
+        hm2 = plot(xb(xb_idx),mu_xb,'-','Color',group_max_color(gi,:),'LineWidth',1.2); hm2.YData(abs(diff(hm2.YData))>pi) = nan;
+    end
     hc2 = plot(ft.xf(xf_idx),cue_xf,'-k','LineWidth',1.2); hc2.YData(abs(diff(hc2.YData))>pi) = nan;
     xlim([t0,t1]); ylim([-pi,pi])
+    yticks([-pi,pi]); yticklabels({'-\pi','\pi'}) % angle axis in pi units (TeX labels)
     xticks([])
     ylabel('angle (rad)')
     add_time_scalebar(ax2,t0,t1,[-pi,pi])
@@ -589,11 +698,11 @@ for gi = 1:3
     row2_axes(gi) = ax2;
 
     % row 3: per-fly correlation summary, 4 categories
-    ax3 = nexttile(t,6+gi);
+    ax3 = nexttile(t,tile(4,gi),[row_units(4) 1]);
     ylim(row3_ylim) % set before plotting so plot_fly_categories' "n=" labels land at the true bottom
-    plot_fly_categories(G.cat_x,G.val,cat_labels,cat_colors)
+    plot_fly_categories(G.cat_x,G.val,cat_labels,cat_colors,false) % no per-category n= labels: n is in the title
     ylabel('correlation')
-    title(sprintf('n=%d flies (closed loop)',numel(unique(G.unit_fly(~G.unit_isdark)))))
+    title(sprintf('n=%d flies (closed loop)\nlag: position %+.2f s, velocity %+.2f s',numel(unique(G.unit_fly(~G.unit_isdark))),lag_pos_s(gi),lag_vel_s(gi)))
     row3_axes(gi) = ax3;
 end
 
@@ -639,7 +748,7 @@ coimg_color   = [0 .7 .7; 0 .7 0]; % geco -> EPG>GCaMP teal, grab -> EPG>GRAB(DA
 coimg_label   = {'jRGECo1a (co-imaged with GRAB(DA2m))','GRAB(DA2m) (co-imaged with jRGECo1a)'};
 
 for k = 1:2
-    ax = nexttile(t,9+k); hold(ax,'on')
+    ax = nexttile(t,tile(5,k),[row_units(5) 1]); hold(ax,'on')
     ch = coimg_channel{k};
     z_snip = ch.z(:,coimg_xb_idx);
     z_clim = [prctile(min(z_snip,[],1),5), prctile(max(z_snip,[],1),95)];
@@ -659,7 +768,7 @@ end
 
 % third bonus panel: both channels' bump position (mu), overlaid, in their
 % respective colors -- same time window/axis as the two heatmaps above
-ax_mu = nexttile(t,12); hold(ax_mu,'on')
+ax_mu = nexttile(t,tile(5,3),[row_units(5) 1]); hold(ax_mu,'on')
 h_geco = plot(cxb(coimg_xb_idx),wrap_to_pi(coimg_channel{1}.mu(coimg_xb_idx)),'-','Color',coimg_color(1,:),'LineWidth',1.2);
 h_geco.YData(abs(diff(h_geco.YData))>pi) = nan;
 h_grab = plot(cxb(coimg_xb_idx),wrap_to_pi(coimg_channel{2}.mu(coimg_xb_idx)),'-','Color',coimg_color(2,:),'LineWidth',1.2);
@@ -669,7 +778,7 @@ xticks([])
 ylabel('angle (rad)')
 title(sprintf('bump position (mu), both channels\n20260113-4, fly 2 (%.0fs snippet)',coimg_t1-coimg_t0),'Interpreter','none')
 add_time_scalebar(ax_mu,coimg_t0,coimg_t1,[-pi,pi])
-legend([h_geco,h_grab],{'jRGECo1a mu','GRAB(DA2m) mu'},'Location','northeast') % created after the scale bar so its line isn't auto-added as a legend entry
+lgd_mu = legend([h_geco,h_grab],{'jRGECo1a mu','GRAB(DA2m) mu'},'Location','southoutside','Orientation','horizontal'); % below the panel so it never covers the traces; created after the scale bar so its line isn't auto-added as a legend entry. Nudged further down at the very end (after the final layout pass) so it clears the scale bar's "10 s" label.
 
 %% per-fly optimal lag: GRAB onto GECO, by light condition
 % Step 1 of 2: find each fly's own best-aligning lag BEFORE computing any
@@ -677,11 +786,14 @@ legend([h_geco,h_grab],{'jRGECo1a mu','GRAB(DA2m) mu'},'Location','northeast') %
 % (not raw, lag=0) traces below. For each trial, sweep candidate lags,
 % circularly shifting GRAB (mu+rho together, so each shifted sample still
 % carries its own valid discernible-bump gate) and recomputing mean
-% |circ_dist| onto GECO at each one; positive lag = GRAB shifted to a
-% LATER time (circshift(...,+lag) moves each sample forward), i.e. GRAB
-% lagging behind GECO. A fly's optimal lag averages its own trials'
+% |circ_dist| onto GECO at each one. SIGN CONVENTION (verified against a
+% synthetic delayed copy): circshift(grab,+L) makes shifted_grab(t) =
+% grab(t-L), so if GRAB truly LAGS GECO by d (grab(t) = geco(t-d)) the
+% best alignment is at L = -d. I.e. a NEGATIVE circshift optimum means
+% GRAB lags GECO; the plotted axis below is therefore -L ("GRAB delay"),
+% so that right = GRAB lags GECO. A fly's optimal lag averages its own trials'
 % metric-vs-lag curves (same per-trial-then-average convention as
-% fit_group_lag's group-level lag fit earlier in this script) and takes
+% the row-3 lag sweep's population-mean-over-flies rule earlier in this script) and takes
 % the argmin of that averaged curve. Pools ALL co-imaging trials, not just
 % the 20260113-4 example above; discernable-bump restriction (both
 % channels must show a bump, fly must be rotating) and flash-frame
@@ -695,8 +807,18 @@ coimg_rho_g = cell(n_coimg,1);
 coimg_rho_r = cell(n_coimg,1);
 coimg_fs    = nan(n_coimg,1);
 
-lag_grid_coimg_s = -2:0.1:2; % s, candidate lags for the grab-onto-geco lag sweep
-coimg_lag_curve = nan(n_coimg,numel(lag_grid_coimg_s)); % mean |circ_dist| at each candidate lag, per trial
+lag_grid_coimg_s = -5:0.1:5; % s, candidate lags for the grab-onto-geco lag sweep (widened from +/-2 s so the correlation curves' fall-off on both sides is visible)
+coimg_lag_curve  = nan(n_coimg,numel(lag_grid_coimg_s)); % mean |circ_dist| at each candidate lag, per trial (used to PICK each fly's lag)
+coimg_corr_curve = nan(n_coimg,numel(lag_grid_coimg_s)); % circ_corrcc(geco mu, shifted grab mu) at each candidate lag, per trial (what row 5 col 1 PLOTS)
+% The correlation is computed in sliding window_s-second windows (same
+% window_s/window_step_s/min_window_n as row 3's lpsp position correlation)
+% and averaged per trial, NOT over the whole trial at once: circ_corrcc
+% correlates deviations from each signal's own circular mean, and over a
+% whole trial in which heading sweeps the full circle that mean is
+% ill-defined and can differ arbitrarily between the two channels, which
+% drags a near-perfect agreement (~0.9+ in every 60 s window of
+% 20260113-4) down to ~0.55 whole-trial and even moves the peak lag. mean
+% |circ_dist| (the lag-picking metric) doesn't have this problem.
 
 for i = 1:n_coimg
     parts = split_path(coimg(i).meta);
@@ -722,6 +844,7 @@ for i = 1:n_coimg
     coimg_fs(i) = 1/median(diff(cxf_i));
 
     lag_frames_grid_coimg = round(lag_grid_coimg_s*coimg_fs(i));
+    coimg_win_starts = cxf_i(1):window_step_s:(cxf_i(end)-window_s);
     for Li = 1:numel(lag_frames_grid_coimg)
         lag = lag_frames_grid_coimg(Li);
         mu_g_shift  = circshift(mu_g_t,lag);
@@ -731,14 +854,21 @@ for i = 1:n_coimg
         if sum(ok_lag) >= min_window_n
             coimg_lag_curve(i,Li) = mean(abs(circ_dist(mu_r_t(ok_lag),mu_g_shift(ok_lag))));
         end
+        win_corrs = nan(numel(coimg_win_starts),1);
+        for w = 1:numel(coimg_win_starts)
+            idx = ok_lag & cxf_i>=coimg_win_starts(w) & cxf_i<coimg_win_starts(w)+window_s;
+            if sum(idx) >= min_window_n
+                win_corrs(w) = circ_corrcc(mu_r_t(idx),mu_g_shift(idx));
+            end
+        end
+        coimg_corr_curve(i,Li) = mean(win_corrs,'omitnan');
     end
 end
 
-coimg_lag_cat_labels = {'closed loop','dark'};
-coimg_lag_cat_colors = [0.20 0.45 0.85; 0.10 0.10 0.10];
-coimg_lag_cat_x = []; coimg_lag_val = [];
 coimg_fly_lag = containers.Map('KeyType','char','ValueType','double'); % "flyid|0/1" -> that fly+condition's optimal lag (s)
-for c = 0:1 % 0 = closed loop, 1 = dark
+coimg_fly_corr_curve = [];     % closed loop only: one row per fly, that fly's trial-averaged correlation-vs-lag curve
+coimg_fly_corr_isexample = []; % ... and whether that row is the row-4 example fly (20260113 fly 2)
+for c = 0 % 0 = closed loop only (1 = dark, excluded from the figure)
     rows = find(coimg_is_dark==logical(c));
     these_flies = unique(coimg_fly_id(rows));
     for f = 1:numel(these_flies)
@@ -748,17 +878,38 @@ for c = 0:1 % 0 = closed loop, 1 = dark
             continue
         end
         [~,best_Li] = min(mean_curve);
-        coimg_lag_cat_x(end+1) = 1 + c; %#ok<AGROW>
-        coimg_lag_val(end+1)   = lag_grid_coimg_s(best_Li); %#ok<AGROW>
         coimg_fly_lag(sprintf('%s|%d',these_flies{f},c)) = lag_grid_coimg_s(best_Li);
+        coimg_fly_corr_curve(end+1,:)   = mean(coimg_corr_curve(sel,:),1,'omitnan'); %#ok<AGROW>
+        coimg_fly_corr_isexample(end+1) = strcmp(these_flies{f},coimg_fly_id{coimg_i}); %#ok<AGROW>
     end
 end
 
-ax_coimg_lag = nexttile(t,13);
-plot_fly_categories(coimg_lag_cat_x,coimg_lag_val,coimg_lag_cat_labels,coimg_lag_cat_colors)
-ylim([lag_grid_coimg_s(1),lag_grid_coimg_s(end)])
-ylabel('optimal lag, GRAB onto GECO (s)')
-title(sprintf('GRAB(DA2m) vs. jRGECo1a: best-aligning lag, per fly\n(positive = GRAB lags GECO)'))
+% row 5 col 1: per-fly correlation-vs-lag curves (faint gray; the row-4
+% example fly in GRAB green), with the across-fly mean on top. Plotted
+% against GRAB DELAY = -circshift lag (see sign-convention note above) so
+% that right = GRAB lags GECO. Note the lag CORRECTION applied in the next
+% section still uses each fly's argmin of mean |circ_dist| (coimg_fly_lag),
+% not the argmax of these correlation curves -- the two are expected to
+% agree closely but aren't forced to.
+grab_delay_s = -lag_grid_coimg_s;
+ax_coimg_lag = nexttile(t,tile(6,1),[row_units(6) 1]); hold(ax_coimg_lag,'on')
+plot(grab_delay_s,coimg_fly_corr_curve(~coimg_fly_corr_isexample,:)','-','Color',[0 0 0 0.25],'LineWidth',0.8)
+h_ex = plot(grab_delay_s,coimg_fly_corr_curve(logical(coimg_fly_corr_isexample),:)','-','Color',coimg_color(2,:),'LineWidth',0.8);
+coimg_mean_corr_curve = mean(coimg_fly_corr_curve,1,'omitnan');
+h_mn = plot(grab_delay_s,coimg_mean_corr_curve,'-','Color',[0 0 0],'LineWidth',2.5);
+plot([0 0],[-1 1],':k')
+[~,peak_Li] = max(coimg_mean_corr_curve);
+coimg_pop_peak_delay_s = grab_delay_s(peak_Li);
+plot(coimg_pop_peak_delay_s*[1 1],[-1 1],'--','Color',[0 0 0],'LineWidth',1.2) % population-mean peak (dashed, vs. the dotted line at 0)
+text(coimg_pop_peak_delay_s,0.98,sprintf(' %+.1f s',coimg_pop_peak_delay_s),'Color',[0 0 0],'FontSize',8,'VerticalAlignment','top')
+fprintf('GRAB-onto-GECO population correlation peak: GRAB delay = %+.1f s\n', coimg_pop_peak_delay_s);
+xlim([min(grab_delay_s),max(grab_delay_s)]); ylim([-0.2 1])
+xlabel(sprintf('GRAB delay relative to GECO (s)\n\\leftarrow GRAB leads GECO          GRAB lags GECO \\rightarrow'))
+ylabel(sprintf('circular correlation\n(GRAB mu, GECO mu)'))
+title(sprintf('GRAB(DA2m) vs. jRGECo1a:\nbump-position correlation vs. lag\n(one trace per fly, closed loop, n=%d)',size(coimg_fly_corr_curve,1)))
+% legend lives in the otherwise-empty tile 15 (row 5, col 3) so it doesn't
+% cover any of the per-fly traces
+legend(ax_coimg_lag,[h_mn,h_ex(1)],{'mean across flies','example fly (row 4)'},'Location','southoutside','Orientation','horizontal') % below the panel (under the x-label)
 
 %% per-fly summary: mean |circ_dist(grab mu, geco mu)|, by light condition
 % Step 2 of 2: now apply EACH FLY'S OWN optimal lag (just found above) to
@@ -808,10 +959,10 @@ for i = 1:n_coimg
     end
 end
 
-coimg_cat_labels = {'CL (real)','CL (shuffled)','dark (real)','dark (shuffled)'};
-coimg_cat_colors = [0.20 0.45 0.85; 0.65 0.78 0.92; 0.10 0.10 0.10; 0.65 0.65 0.65];
+coimg_cat_labels = {'CL (real)','CL (shifted)'};
+coimg_cat_colors = [0.20 0.45 0.85; 0.65 0.78 0.92];
 coimg_cat_x = []; coimg_val = [];
-for c = 0:1 % 0 = closed loop, 1 = dark
+for c = 0 % 0 = closed loop only (1 = dark, excluded from the figure)
     rows = find(coimg_is_dark==logical(c));
     these_flies = unique(coimg_fly_id(rows));
     for f = 1:numel(these_flies)
@@ -842,13 +993,13 @@ for c = 0:1 % 0 = closed loop, 1 = dark
     end
 end
 
-ax_coimg_summary = nexttile(t,14);
+ax_coimg_summary = nexttile(t,tile(6,2),[row_units(6) 1]);
 plot_fly_categories(coimg_cat_x,coimg_val,coimg_cat_labels,coimg_cat_colors)
 ylim([0,pi])
 yticks([0 pi/4 pi/2 3*pi/4 pi])
 yticklabels({'0','\pi/4','\pi/2','3\pi/4','\pi'})
-ylabel('mean |circ\_dist(grab mu, geco mu)| (rad)')
-title(sprintf('GRAB(DA2m) vs. jRGECo1a bump agreement, per fly (lag-corrected)\nvs. %ds+ circularly-shuffled null (n=%d draws/trial)',min_shuffle_lag_s,n_shuffles))
+ylabel(sprintf('mean |circ\\_dist(GRAB mu, GECO mu)|\n(rad)'))
+title(sprintf('GRAB(DA2m) vs. jRGECo1a bump agreement,\nper fly (lag-corrected) vs. %ds+\ncircularly-shifted null (n=%d draws/trial)',min_shuffle_lag_s,n_shuffles))
 
 sgtitle('Figure 1: bump tracks fly heading across indicators/genotypes')
 
@@ -858,21 +1009,45 @@ sgtitle('Figure 1: bump tracks fly heading across indicators/genotypes')
 % layout changes, so setting it mid-loop got silently undone by the
 % subsequent nexttile/sgtitle calls re-laying out the tiledlayout.
 drawnow
+% scooch row 2 down toward row 3 to tighten the gap between them. The
+% tiledlayout owns its children's Position, so pop each row-2 axes out of
+% the layout first (reparenting to the figure keeps its on-screen
+% Position), then shift it down. Row-2 axes carry no colorbar, and their
+% scale bars are in-axes data-coordinate objects, so both move with them;
+% the row-2 col-1 legend has a named Location and re-tracks its axes.
+row2_shift = 0.025; % normalized figure units, downward
+for gi = 1:3
+    p = row2_axes(gi).Position;
+    row2_axes(gi).Parent = gcf;
+    row2_axes(gi).Position = [p(1), p(2)-row2_shift, p(3), p(4)];
+end
+drawnow
 for gi = 1:3
     row2_axes(gi).XAxis.Axle.Visible = 'off';
     row3_axes(gi).XAxis.Axle.Visible = 'off';
 end
+% nudge the row-4 mu-overlay legend down so it clears the panel's "10 s"
+% scale-bar label (which sits just below the axes box). Setting Position
+% detaches the legend from the layout's auto-placement, which is fine
+% here since this is the final layout.
+lgd_mu.Position(2) = lgd_mu.Position(2) - 0.012; % normalized figure units
 ax_mu.XAxis.Axle.Visible = 'off';
-ax_coimg_summary.XAxis.Axle.Visible = 'off';
-ax_coimg_lag.XAxis.Axle.Visible = 'off';
+ax_coimg_summary.XAxis.Axle.Visible = 'off'; % (ax_coimg_lag keeps its x-axis: it's a real lag axis now, not categories)
 
 %% export
 if ~isfolder(export_dir); mkdir(export_dir); end
 exportgraphics(gcf, fullfile(export_dir,'Figure_1_claude.png'), 'Resolution', 300)
+savefig(gcf, fullfile(export_dir,'Figure_1_claude.fig')) % so the PDF/PNG can be re-exported (openfig + exportgraphics) without the ~7 min recompute
 
 all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
 if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
-exportgraphics(gcf, fullfile(all_figs_dir,'Fig1_V1.pdf'), 'ContentType', 'auto') % 'auto' rasterizes the dense heatmaps but keeps text/lines vector -- 'vector' would bloat the file turning each heatmap pixel into its own path
+try
+    exportgraphics(gcf, fullfile(all_figs_dir,'Fig1_V1.pdf'), 'ContentType', 'auto') % 'auto' rasterizes the dense heatmaps but keeps text/lines vector -- 'vector' would bloat the file turning each heatmap pixel into its own path
+catch err
+    % most likely the PDF is open in a viewer and locked -- don't fail the
+    % whole (long) run over it; the PNG above has already been written
+    warning('Figure1:pdfExport','could not write Fig1_V1.pdf (%s) -- is it open in a viewer?', err.message);
+end
 
 %% ===================== functions =====================
 
@@ -991,35 +1166,147 @@ function [run_starts,run_ends,run_vals] = find_runs(x)
     run_vals   = x(run_starts);
 end
 
-function best_lag = fit_group_lag(ft_list, fluor_avg_list, lag_grid)
-    % same lag-selection recipe as lpsp_compartments_claude_script.m section
-    % 2: correlate |r_speed(t)| against fluor_avg(t+lag) across a grid of
-    % candidate lags, pooling the mean correlation across trials, and pick
-    % the lag that maximizes it.
-    n_lags = numel(lag_grid);
-    n_trials = numel(ft_list);
-    corr_grid = nan(n_trials,n_lags);
-    for ii = 1:n_trials
-        speed = abs(ft_list{ii}.r_speed);
-        fa    = fluor_avg_list{ii};
-        for L = 1:n_lags
-            lag = lag_grid(L);
-            if lag == 0
-                s_win = speed; fa_win = fa;
-            elseif lag > 0
-                s_win = speed(1:end-lag); fa_win = fa(lag+1:end);
+function U = unit_metrics(all_data, flash, unit_trial, unit_s, unit_e, unit_isdark, lag_s, use_berg4_sign, P)
+    % per-unit bump-tracking signals at ONE lag (lag_s, seconds; converted
+    % to frames per trial from that trial's own ft.xf rate; positive =
+    % fluorescence shifted earlier, see lagged_track_signals). A "unit" is a
+    % (trial, start index, end index) chunk on the ft.xf timebase: one
+    % gain=0.8 block for hackathon, one whole trial for lpsp. Returns:
+    %   wincorr - circ_corrcc(mu,-cue) in sliding P.window_s windows (step
+    %             P.window_step_s) over discernable-bump samples; a unit
+    %             shorter than one window is treated as a single window
+    %   bumpvel, rspeed - pooled discernable-bump samples (velocity Pearson r)
+    %   offset  - circ_dist(mu,-cue) over discernable-bump samples
+    %             (closed-loop units only)
+    %   nbumpok - discernable-bump sample count
+    % lagged_track_signals is run once per trial and cached across that
+    % trial's units.
+    n_units = numel(unit_trial);
+    U.wincorr = cell(n_units,1);
+    U.bumpvel = cell(n_units,1);
+    U.rspeed  = cell(n_units,1);
+    U.offset  = cell(n_units,1);
+    U.nbumpok = zeros(n_units,1);
+    cache = containers.Map('KeyType','double','ValueType','any');
+    for u = 1:n_units
+        i = unit_trial(u);
+        if ~isKey(cache,i)
+            ft = all_data(i).ft;
+            xf = ft.xf(:);
+            xb = get_xb(ft,size(all_data(i).im.d,2));
+            keep = ~flash{i}(:);
+            if use_berg4_sign
+                fly_sign = 1 - 2*strcmpi(ft.pattern,'berg4'); % -1 for berg4, +1 otherwise
             else
-                s_win = speed(-lag+1:end); fa_win = fa(1:end+lag);
+                fly_sign = 1;
             end
-            valid = ~isnan(s_win) & ~isnan(fa_win);
-            if sum(valid) > 100
-                corr_grid(ii,L) = corr(s_win(valid),fa_win(valid));
+            fs = 1/median(diff(xf));
+            [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,xf_l,orig_idx] = lagged_track_signals( ...
+                xf,xb,all_data(i).im.mu,all_data(i).im.rho,keep,ft.r_speed,ft.cue,round(lag_s*fs),fly_sign);
+            bump_ok = abs(r_speed_l)>P.rot_thresh_track & rho_l>P.rho_thresh_track & abs(bump_vel_l)<P.bump_vel_thresh & ...
+                      ~isnan(mu_l) & ~isnan(cue_l) & ~isnan(rho_l);
+            cache(i) = struct('mu_l',mu_l,'cue_l',cue_l,'bump_vel_l',bump_vel_l,'r_speed_l',r_speed_l, ...
+                              'xf_l',xf_l,'orig_idx',orig_idx,'bump_ok',bump_ok,'xf',xf);
+        end
+        c = cache(i);
+        mask = c.bump_ok & c.orig_idx>=unit_s(u) & c.orig_idx<=unit_e(u);
+        U.nbumpok(u) = sum(mask);
+        U.bumpvel{u} = c.bump_vel_l(mask);
+        U.rspeed{u}  = c.r_speed_l(mask);
+        if ~unit_isdark(u)
+            U.offset{u} = circ_dist(c.mu_l(mask),c.cue_l(mask));
+        end
+
+        t_lo = c.xf(unit_s(u)); t_hi = c.xf(unit_e(u));
+        if t_hi - t_lo <= P.window_s
+            win_starts = t_lo; win_len = (t_hi - t_lo) + 1e-9; % whole unit as one window (inclusive of t_hi)
+        else
+            win_starts = t_lo:P.window_step_s:(t_hi-P.window_s); win_len = P.window_s;
+        end
+        wc = [];
+        for w = win_starts
+            idx = mask & c.xf_l>=w & c.xf_l<w+win_len;
+            if sum(idx) < P.min_window_n
+                continue
+            end
+            cc = circ_corrcc(c.mu_l(idx),c.cue_l(idx));
+            if ~isnan(cc)
+                wc(end+1) = cc; %#ok<AGROW>
             end
         end
+        U.wincorr{u} = wc;
     end
-    mean_corr = mean(corr_grid,1,'omitnan');
-    [~,best_idx] = max(mean_corr);
-    best_lag = lag_grid(best_idx);
+end
+
+function [imgs, mask] = load_summed_frames(meta, frames, n_frames_expected, n_avg)
+    % raw PB images (summed over z, then averaged over n_avg frames
+    % [f-floor((n_avg-1)/2), f+ceil((n_avg-1)/2)] around each requested
+    % centre frame f -- for even n_avg the window is one frame longer after
+    % f than before it) plus the
+    % trial's PB mask, read from the trial's own registered imaging file on
+    % the Z: drive. Two dataset layouts:
+    %   hackathon_gain_change: <meta>\imagingData.mat, var imgData
+    %       (y x frames; already z-summed), mask.mat one folder up
+    %   lpsp_cl: <meta>\imagingData_reg_ch1_trial_001.mat (v7.3), var
+    %       regProduct (y x z frames), partially loaded through matfile so
+    %       the 1.4-1.7 GB file isn't read whole; mask.mat in the same folder
+    % Frame k of these files is column k of im.z (process_im keeps frames
+    % 1:1); n_frames_expected = size(im.z,2) is checked against the file,
+    % and if they disagree the requested frames are rescaled proportionally
+    % (with a warning) rather than erroring out of a long run.
+    if contains(meta,'hackathon_gain_change','IgnoreCase',true)
+        S = load(fullfile(meta,'imagingData.mat'),'imgData');
+        n_file = size(S.imgData,3);
+        frames = remap_frames(frames,n_frames_expected,n_file,meta);
+        imgs = zeros(size(S.imgData,1),size(S.imgData,2),numel(frames));
+        for k = 1:numel(frames)
+            win = max(1,frames(k)-floor((n_avg-1)/2)):min(n_file,frames(k)+ceil((n_avg-1)/2));
+            imgs(:,:,k) = mean(double(S.imgData(:,:,win)),3);
+        end
+        M = load(fullfile(fileparts(meta),'mask.mat'),'mask');
+    else
+        mf = matfile(fullfile(meta,'imagingData_reg_ch1_trial_001.mat'));
+        sz = size(mf,'regProduct');
+        n_file = sz(4);
+        frames = remap_frames(frames,n_frames_expected,n_file,meta);
+        imgs = zeros(sz(1),sz(2),numel(frames));
+        for k = 1:numel(frames)
+            win = max(1,frames(k)-floor((n_avg-1)/2)):min(n_file,frames(k)+ceil((n_avg-1)/2));
+            imgs(:,:,k) = mean(sum(double(mf.regProduct(:,:,:,win)),3),4);
+        end
+        M = load(fullfile(meta,'mask.mat'),'mask');
+    end
+    mask = logical(M.mask);
+end
+
+function frames = remap_frames(frames, n_expected, n_file, meta)
+    if n_file ~= n_expected
+        warning('Figure1:frameCountMismatch', ...
+            '%s: imaging file has %d frames but im.z has %d columns -- rescaling requested frame indices proportionally', meta, n_file, n_expected);
+        frames = max(1,min(n_file,round(frames * n_file / n_expected)));
+    end
+end
+
+function [pos_vals, vel_vals] = per_fly_cl(U, unit_fly, unit_isdark, min_vel_n)
+    % closed-loop per-fly summaries from unit_metrics output: mean windowed
+    % position correlation (NaN if the fly has no usable windows) and
+    % pooled velocity Pearson r (NaN if fewer than min_vel_n samples), one
+    % entry per closed-loop fly, in unique(fly) order.
+    rows = find(~unit_isdark);
+    flies = unique(unit_fly(rows));
+    pos_vals = nan(numel(flies),1);
+    vel_vals = nan(numel(flies),1);
+    for f = 1:numel(flies)
+        sel = rows(strcmp(unit_fly(rows),flies{f}));
+        wc = cat(2,U.wincorr{sel});
+        if ~isempty(wc)
+            pos_vals(f) = mean(wc,'omitnan');
+        end
+        bv = cat(1,U.bumpvel{sel}); rs = cat(1,U.rspeed{sel});
+        if numel(bv) >= min_vel_n
+            vel_vals(f) = corr(bv,rs);
+        end
+    end
 end
 
 function [mu_l,rho_l,cue_l,r_speed_l,bump_vel_l,xf_l,orig_idx] = lagged_track_signals( ...
@@ -1204,9 +1491,13 @@ function y = wrap_to_pi(x)
     y = mod(x+pi,2*pi) - pi;
 end
 
-function plot_fly_categories(cat_x, values, cat_labels, colors)
+function plot_fly_categories(cat_x, values, cat_labels, colors, show_n)
     % adapted from lpsp_compartments_claude_script.m's groupplot(): one
-    % jittered dot per fly per category + mean+/-sem, with an n= label.
+    % jittered dot per fly per category + mean+/-sem, with an n= label
+    % (show_n=false suppresses the n= labels, e.g. when n is in the title).
+    if nargin < 5
+        show_n = true;
+    end
     hold on
     n_cat = numel(cat_labels);
     for c = 1:n_cat
@@ -1222,10 +1513,12 @@ function plot_fly_categories(cat_x, values, cat_labels, colors)
     end
     xticks(1:n_cat); xticklabels(cat_labels); xtickangle(20)
     xlim([0.5,n_cat+0.5])
-    y_lims = ylim;
-    for c = 1:n_cat
-        n = sum(cat_x==c & ~isnan(values));
-        text(c,y_lims(1),sprintf('n=%d',n),'HorizontalAlignment','center','VerticalAlignment','bottom','FontSize',8)
+    if show_n
+        y_lims = ylim;
+        for c = 1:n_cat
+            n = sum(cat_x==c & ~isnan(values));
+            text(c,y_lims(1),sprintf('n=%d',n),'HorizontalAlignment','center','VerticalAlignment','bottom','FontSize',8)
+        end
     end
     plot(xlim,[0,0],':k')
 end
