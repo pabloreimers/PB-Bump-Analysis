@@ -84,11 +84,6 @@ window_step_s     = 10;   % s, lpsp sliding-window step
 
 lag_grid_s        = -1:0.05:1; % s, candidate fluorescence-vs-behavior lags swept per indicator x metric (see the lag section below)
 
-%% load hackathon data (EPG>GCaMP)
-tmp = load(fullfile(data_dir,'hackathon_20250729.mat'),'all_data');
-hack_data = tmp.all_data(:);
-fprintf('loaded %d hackathon trials\n', numel(hack_data));
-
 %% load the three lpsp_compartments_claude_script.m source datasets and combine
 dataset_names = {'lpsp_cl','lpsp_cl_redo','epg_dlight'};
 source_files  = {'lpsp_cl_data_20240206.mat','lpsp_cl_redo_data_20240306.mat','epg_dlight_20260415.mat'};
@@ -105,97 +100,34 @@ end
 lpsp_data = combine_datasets(lpsp_sets{:});
 fprintf('loaded %d combined lpsp trials (lpsp_cl + lpsp_cl_redo + epg_dlight)\n', numel(lpsp_data));
 
-%% ===================== process hackathon (EPG>GCaMP) =====================
-
-%% recompute bump (mu,rho,z,d) from smoothed im.f, exactly as hackathon_claude.m
-for i = 1:numel(hack_data)
-    f   = smoothdata(hack_data(i).im.f,2,'movmean',smooth_frames_f);
-    f0  = prctile(f,f0_pct,2);
-    dff = (f - f0) ./ f0;
-    z   = zscore(dff,[],2);
-
-    alpha    = hack_data(i).im.alpha;
-    [x,y]    = pol2cart(alpha,z');
-    [mu,rho] = cart2pol(mean(x,2),mean(y,2));
-    mu = mod(mu,2*pi); mu(mu>pi) = mu(mu>pi)-2*pi;
-
-    hack_data(i).im.mu  = mu;
-    hack_data(i).im.rho = rho;
-    hack_data(i).im.z   = z;
-    hack_data(i).im.d   = dff;
+%% ===================== column 1 source (EPG calcium indicator) =====================
+% col1_source selects which EPG calcium dataset fills the first column; the
+% rest of the script only sees the C1 struct (trials, flash frames, fly ids,
+% units) so the two sources are interchangeable downstream:
+%   'hackathon' - .data/hackathon_20250729.mat: berg4 rig, EPG>syt8m,
+%                 gain-staircase trials chunked into constant-gain blocks,
+%                 gain=0.8 blocks kept (see prep_hackathon_column)
+%   'epg7f'     - .data/epg_7f_20261007.mat: gain_change rig, 16 EPG>GCaMP7f
+%                 flies, whole 300 s trials at closed-loop gain 0.7 (bar or
+%                 dark), 100x256 px imaging (see prep_epg7f_column)
+col1_source = 'epg7f';
+switch col1_source
+    case 'hackathon'
+        C1 = prep_hackathon_column(data_dir, flash_mad_thresh, f0_pct, smooth_frames_f);
+    case 'epg7f'
+        C1 = prep_epg7f_column(data_dir, flash_mad_thresh);
+    otherwise
+        error('unknown col1_source "%s"', col1_source)
 end
-
-%% flash-frame detection + fly ID
-n_hack = numel(hack_data);
-hack_flash    = cell(n_hack,1);
-hack_fly      = cell(n_hack,1);
-
-for i = 1:n_hack
-    hack_flash{i} = detect_flash_frames(hack_data(i).im.f, flash_mad_thresh);
-
-    tok = regexp(hack_data(i).meta,'\d+_[a-z]{2}_\d+','match','once');
-    if isempty(tok)
-        parts = split_path(hack_data(i).meta);
-        tok = parts{end-2};
-    end
-    hack_fly{i} = tok;
-end
-
-%% segment every hackathon trial into constant-gain/dark blocks, gain=0.8 only
-% ported from hackathon_claude.m's compute_gain_blocks (block-splitting part
-% only -- this figure doesn't need its bump-mobility/gain_fly/gain_cue metrics)
-hack_flies = unique(hack_fly);
-
-hack_unit_trial  = [];
-hack_unit_s      = [];
-hack_unit_e      = [];
-hack_unit_fly    = {};
-hack_unit_isdark = [];
-
-for f = 1:numel(hack_flies)
-    trial_idx = find(strcmp(hack_fly,hack_flies{f}));
-    last_gain = nan;
-    for i = trial_idx(:)'
-        ft = hack_data(i).ft;
-        xf = ft.xf(:);
-        pattern = ft.pattern;
-
-        if strcmpi(pattern,'berg4')
-            cb    = ft.cue_brightness(:);
-            state = round(ft.gain(:),2);
-            state(cb==0) = -inf;
-            [run_starts,run_ends,run_vals] = find_runs(state);
-            run_isdark = isinf(run_vals);
-        elseif contains(pattern,'background')
-            run_starts = 1; run_ends = numel(xf); run_vals = nan; run_isdark = true;
-        else
-            run_starts = 1; run_ends = numel(xf); run_vals = median(local_measured_gain(ft)); run_isdark = false;
-        end
-
-        for k = 1:numel(run_starts)
-            if run_isdark(k)
-                label_gain = last_gain;
-                is_dark_block = true;
-            else
-                if ~isnan(run_vals(k))
-                    last_gain = run_vals(k);
-                end
-                label_gain = run_vals(k);
-                is_dark_block = false;
-            end
-
-            if ~isnan(label_gain) && round(label_gain,1)==0.8
-                hack_unit_trial(end+1,1)  = i;   %#ok<AGROW>
-                hack_unit_s(end+1,1)      = run_starts(k); %#ok<AGROW>
-                hack_unit_e(end+1,1)      = run_ends(k);   %#ok<AGROW>
-                hack_unit_fly{end+1,1}    = hack_fly{i};   %#ok<AGROW>
-                hack_unit_isdark(end+1,1) = is_dark_block; %#ok<AGROW>
-            end
-        end
-    end
-end
-n_hack_units = numel(hack_unit_trial);
-fprintf('%d gain=0.8 hackathon blocks (%d closed loop, %d dark)\n', n_hack_units, sum(~hack_unit_isdark), sum(hack_unit_isdark));
+% downstream code keeps the historical hack_* names for column 1
+hack_data        = C1.data;
+hack_flash       = C1.flash;
+hack_fly         = C1.fly;
+hack_unit_trial  = C1.unit_trial;
+hack_unit_s      = C1.unit_s;
+hack_unit_e      = C1.unit_e;
+hack_unit_fly    = C1.unit_fly;
+hack_unit_isdark = C1.unit_isdark;
 
 %% ===================== process lpsp (LPsP>syt7f, EPG>GRAB(DA2m)) =====================
 
@@ -251,7 +183,7 @@ end
 % The per-unit tracking metrics (wincorr, bumpvel, rspeed, offset,
 % nbumpok) are filled in by the lag section right after this.
 group_defs = struct( ...
-    'title',    {'EPG > GCaMP','LPsP > syt7f','EPG > GRAB(DA2m)'}, ...
+    'title',    {C1.title,'LPsP > syt7f','EPG > GRAB(DA2m)'}, ...
     'unit_fly',    {hack_unit_fly,    lpsp_unit_fly(lpsp_unit_group==1),    lpsp_unit_fly(lpsp_unit_group==2)}, ...
     'unit_isdark', {hack_unit_isdark, lpsp_unit_isdark(lpsp_unit_group==1), lpsp_unit_isdark(lpsp_unit_group==2)}, ...
     'unit_trial',  {hack_unit_trial,  find(lpsp_unit_group==1),             find(lpsp_unit_group==2)}, ...
@@ -259,7 +191,7 @@ group_defs = struct( ...
     'unit_e',      {hack_unit_e,      [],                                   []}, ...
     'all_data',    {hack_data,        lpsp_data,                            lpsp_data}, ...
     'flash',       {hack_flash,       lpsp_flash,                           lpsp_flash}, ...
-    'use_berg4_sign', {true,          false,                                false} ... % hackathon berg4 trials need r_speed sign-flipped (see header)
+    'use_berg4_sign', {C1.use_berg4_sign, false,                           false} ... % hackathon berg4 trials need r_speed sign-flipped (see header)
 );
 % lpsp units' block end = the whole trial (numel of that trial's own ft.xf)
 for gi = 2:3
@@ -355,6 +287,11 @@ forced_trial = [7, nan, nan];
 % own ft.xf clock) for a column instead of pick_snippet()'s automatic
 % choice below (NaN = automatic).
 forced_snippet_t0 = [540.0, nan, nan];
+if ~strcmp(col1_source,'hackathon')
+    % the column-1 overrides above refer to hackathon flies/trials; for any
+    % other source fall back to the automatic picks
+    forced_fly{1} = ''; forced_trial(1) = nan; forced_snippet_t0(1) = nan;
+end
 
 for gi = 1:3
     G = group_defs(gi);
@@ -461,16 +398,17 @@ end
 % (summed over z) straight from the trial's own imaging file on Z: so the
 % heatmap row can be compared against actual PB images at the same two
 % instants. Frames are sorted in time: A is earlier, B later.
-frame_pair_min_sep_deg = 150;
-frame_pair_rho_pct     = 50;
+frame_pair_min_sep_deg = 100;
+frame_pair_rho_pct     = 80;
 frame_avg_n            = 10;  % total frames averaged for each raw image, window [f-floor((n-1)/2), f+ceil((n-1)/2)] around A / B (a single z-summed frame is mostly shot noise, esp. the 50x128 px hackathon movies)
 frame_img_smooth_sigma = 1;   % px, Gaussian spatial smoothing of the displayed raw image (0 = none)
-frame_img_clim_pct     = [5 99.7]; % percentiles of all pixels (both images) for the raw-image color scale
+frame_img_clim_pct     = [5 98]; % percentiles of all pixels (both images) for the raw-image color scale
 % manual override of the selected frame TIMES (s, on that trial's own ft.xf
 % clock) per column, [tA tB]; NaN = keep the automatic pick for that one.
 % LPsP > syt7f's automatic B (t = 363.5 s) fell on a much faster turn than
 % its A -- moved ~10 s earlier to a point with a similar rotational speed.
 forced_frame_t = {[nan nan], [nan 353.5], [nan nan]};
+if ~strcmp(col1_source,'hackathon'), forced_frame_t{1} = [nan nan]; end
 for gi = 1:3
     G  = group_defs(gi);
     i  = G.example_i;
@@ -507,7 +445,8 @@ for gi = 1:3
         G.title, fr(1), xb(fr(1)), im.mu(fr(1)), im.rho(fr(1)), rs_at(1), fr(2), xb(fr(2)), im.mu(fr(2)), im.rho(fr(2)), rs_at(2), ...
         rad2deg(abs(circ_dist(im.mu(fr(1)),im.mu(fr(2))))));
 
-    [imgs, mask] = load_summed_frames(G.all_data(i).meta, fr, size(im.z,2), frame_avg_n);
+    im_mask = []; if isfield(im,'mask'), im_mask = im.mask; end % epg7f carries its PB mask in the dataset
+    [imgs, mask] = load_summed_frames(G.all_data(i).meta, fr, size(im.z,2), frame_avg_n, im_mask);
     group_defs(gi).example_frame_imgs = imgs;
     group_defs(gi).example_mask       = mask;
 end
@@ -538,7 +477,7 @@ row3_ylim = [min([group_defs.val]), 1];
 % each column gets its own white-to-color colormap (row 1 only) so its
 % heatmap reads as "that indicator's own color" rather than all 3 sharing
 % one generic colormap.
-group_max_color = [0 .7 .7;   % EPG > GCaMP    -> teal
+group_max_color = [0 .2 1;   % EPG > GCaMP    -> teal
                     .7 0 .7;  % LPsP > syt7f   -> magenta
                     0 .7 0];  % EPG > GRAB(DA2m) -> dark green
 
@@ -654,10 +593,17 @@ for gi = 1:3
     % stays registered)
     imgs = rot90(imgs,2);
     msk_disp = rot90(G.example_mask,2);
-    clim_f = prctile(imgs(:),frame_img_clim_pct);
+    
+    % use only pixels inside the PB mask for the displayed color limits
+    mask2 = rot90(G.example_mask, 2);
+
     [H,W,~] = size(imgs);
     gap  = max(4,round(W*0.04));
     comp = [imgs(:,:,1), nan(H,gap), imgs(:,:,2)];
+    valid = ~isnan(comp) & [mask2,false(H,gap),mask2];
+    pix = comp(valid);
+
+    clim_f = prctile(pix, frame_img_clim_pct);
     h_img = imagesc(ax1b,comp,clim_f);
     h_img.AlphaData = ~isnan(comp);
     colormap(ax1b, white_to_color(group_max_color(gi,:)))
@@ -1166,6 +1112,165 @@ function [run_starts,run_ends,run_vals] = find_runs(x)
     run_vals   = x(run_starts);
 end
 
+function C = prep_hackathon_column(data_dir, flash_mad_thresh, f0_pct, smooth_frames_f)
+    % column-1 source 'hackathon': load .data/hackathon_20250729.mat, recompute
+    % the bump from smoothed im.f exactly as hackathon_claude.m, detect flash
+    % frames, derive fly ids, and chunk every trial into constant-gain/dark
+    % blocks keeping gain=0.8 (closed loop and dark). Returns the common
+    % column struct C (data, flash, fly, unit_*, use_berg4_sign, title).
+    tmp = load(fullfile(data_dir,'hackathon_20250729.mat'),'all_data');
+    hack_data = tmp.all_data(:);
+    fprintf('loaded %d hackathon trials\n', numel(hack_data));
+
+
+    % -- recompute bump (mu,rho,z,d) from smoothed im.f, exactly as hackathon_claude.m
+    for i = 1:numel(hack_data)
+        f   = smoothdata(hack_data(i).im.f,2,'movmean',smooth_frames_f);
+        f0  = prctile(f,f0_pct,2);
+        dff = (f - f0) ./ f0;
+        z   = zscore(dff,[],2);
+
+        alpha    = hack_data(i).im.alpha;
+        [x,y]    = pol2cart(alpha,z');
+        [mu,rho] = cart2pol(mean(x,2),mean(y,2));
+        mu = mod(mu,2*pi); mu(mu>pi) = mu(mu>pi)-2*pi;
+
+        hack_data(i).im.mu  = mu;
+        hack_data(i).im.rho = rho;
+        hack_data(i).im.z   = z;
+        hack_data(i).im.d   = dff;
+    end
+
+    % -- flash-frame detection + fly ID
+    n_hack = numel(hack_data);
+    hack_flash    = cell(n_hack,1);
+    hack_fly      = cell(n_hack,1);
+
+    for i = 1:n_hack
+        hack_flash{i} = detect_flash_frames(hack_data(i).im.f, flash_mad_thresh);
+
+        tok = regexp(hack_data(i).meta,'\d+_[a-z]{2}_\d+','match','once');
+        if isempty(tok)
+            parts = split_path(hack_data(i).meta);
+            tok = parts{end-2};
+        end
+        hack_fly{i} = tok;
+    end
+
+    % -- segment every hackathon trial into constant-gain/dark blocks, gain=0.8 only
+    % ported from hackathon_claude.m's compute_gain_blocks (block-splitting part
+    % only -- this figure doesn't need its bump-mobility/gain_fly/gain_cue metrics)
+    hack_flies = unique(hack_fly);
+
+    hack_unit_trial  = [];
+    hack_unit_s      = [];
+    hack_unit_e      = [];
+    hack_unit_fly    = {};
+    hack_unit_isdark = [];
+
+    for f = 1:numel(hack_flies)
+        trial_idx = find(strcmp(hack_fly,hack_flies{f}));
+        last_gain = nan;
+        for i = trial_idx(:)'
+            ft = hack_data(i).ft;
+            xf = ft.xf(:);
+            pattern = ft.pattern;
+
+            if strcmpi(pattern,'berg4')
+                cb    = ft.cue_brightness(:);
+                state = round(ft.gain(:),2);
+                state(cb==0) = -inf;
+                [run_starts,run_ends,run_vals] = find_runs(state);
+                run_isdark = isinf(run_vals);
+            elseif contains(pattern,'background')
+                run_starts = 1; run_ends = numel(xf); run_vals = nan; run_isdark = true;
+            else
+                run_starts = 1; run_ends = numel(xf); run_vals = median(local_measured_gain(ft)); run_isdark = false;
+            end
+
+            for k = 1:numel(run_starts)
+                if run_isdark(k)
+                    label_gain = last_gain;
+                    is_dark_block = true;
+                else
+                    if ~isnan(run_vals(k))
+                        last_gain = run_vals(k);
+                    end
+                    label_gain = run_vals(k);
+                    is_dark_block = false;
+                end
+
+                if ~isnan(label_gain) && round(label_gain,1)==0.8
+                    hack_unit_trial(end+1,1)  = i;   %#ok<AGROW>
+                    hack_unit_s(end+1,1)      = run_starts(k); %#ok<AGROW>
+                    hack_unit_e(end+1,1)      = run_ends(k);   %#ok<AGROW>
+                    hack_unit_fly{end+1,1}    = hack_fly{i};   %#ok<AGROW>
+                    hack_unit_isdark(end+1,1) = is_dark_block; %#ok<AGROW>
+                end
+            end
+        end
+    end
+    n_hack_units = numel(hack_unit_trial);
+    fprintf('%d gain=0.8 hackathon blocks (%d closed loop, %d dark)\n', n_hack_units, sum(~hack_unit_isdark), sum(hack_unit_isdark));
+
+    C.data = hack_data; C.flash = hack_flash; C.fly = hack_fly;
+    C.unit_trial = hack_unit_trial; C.unit_s = hack_unit_s; C.unit_e = hack_unit_e;
+    C.unit_fly = hack_unit_fly; C.unit_isdark = logical(hack_unit_isdark);
+    C.use_berg4_sign = true; % berg4 trials need r_speed sign-flipped (see header)
+    C.title = 'EPG > GCaMP';
+end
+
+function C = prep_epg7f_column(data_dir, flash_mad_thresh)
+    % column-1 source 'epg7f': load .data/epg_7f_20261007.mat (built by
+    % data scripts/epg_7f_gain07_batch.m via claude/pb_gain_trial.m) and adapt
+    % it to the lab all_data layout this script expects:
+    %   - behavior at fictrac rate: that dataset stores cue/heading/r_speed
+    %     RESAMPLED onto the volume clock in ft.cue etc. and keeps the 60 Hz
+    %     originals as ft.*_raw -- the latter become ft.cue / ft.r_speed here
+    %     (the script interpolates imaging onto ft.xf itself)
+    %   - im.d (only used for its frame count) = im.f; im.mask kept for the
+    %     raw-frame row; dropout volumes (im.badVol) are folded into the
+    %     per-trial "flash" exclusion list
+    %   - one unit per trial (whole trial), dark from ft.dark, fly id
+    %     '<date>_flyN' (or '<date>' for dates without fly subfolders)
+    % Sign conventions were checked on all closed-loop trials: bump position
+    % correlates with -cue (as for lpsp) and bump velocity with +r_speed, so
+    % no rotation sign flip is needed.
+    tmp = load(fullfile(data_dir,'epg_7f_20261007.mat'),'all_data');
+    src = tmp.all_data(:);
+    n = numel(src);
+    data  = struct('ft',cell(n,1),'im',cell(n,1),'meta',cell(n,1));
+    flash = cell(n,1);
+    fly   = cell(n,1);
+    for i = 1:n
+        s = src(i);
+        ft = struct();
+        ft.xf = s.ft.xf(:); ft.xb = s.ft.xb(:);
+        ft.cue = s.ft.cue_raw(:); ft.r_speed = s.ft.r_speed_raw(:); ft.f_speed = s.ft.f_speed_raw(:);
+        ft.pattern = char(s.ft.pattern); ft.dark = logical(s.ft.dark); ft.gain_empirical = s.ft.gain_empirical;
+        im = struct('f',s.im.f,'z',s.im.z,'d',s.im.f,'mu',s.im.mu(:),'rho',s.im.rho(:),'alpha',s.im.alpha(:),'mask',logical(s.im.mask));
+        data(i).ft = ft; data(i).im = im; data(i).meta = s.meta;
+        bad = false(1,size(s.im.f,2));
+        if isfield(s.im,'badVol') && ~isempty(s.im.badVol), bad = logical(s.im.badVol(:))'; end
+        flash{i} = detect_flash_frames(s.im.f, flash_mad_thresh) | bad;
+        parts = split_path(s.meta.flyDir); parts(cellfun(@isempty,parts)) = [];
+        if startsWith(parts{end},'fly')
+            fly{i} = sprintf('%s_%s', parts{end-1}, strrep(parts{end},' ',''));
+        else
+            fly{i} = parts{end};
+        end
+    end
+    C.data = data; C.flash = flash; C.fly = fly;
+    C.unit_trial  = (1:n)';
+    C.unit_s      = ones(n,1);
+    C.unit_e      = arrayfun(@(d) numel(d.ft.xf), data);
+    C.unit_fly    = fly;
+    C.unit_isdark = arrayfun(@(d) d.ft.dark, data);
+    C.use_berg4_sign = false;
+    C.title = 'EPG > GCaMP7f';
+    fprintf('loaded %d epg_7f trials (%d flies; %d closed loop, %d dark)\n', n, numel(unique(fly)), sum(~C.unit_isdark), sum(C.unit_isdark));
+end
+
 function U = unit_metrics(all_data, flash, unit_trial, unit_s, unit_e, unit_isdark, lag_s, use_berg4_sign, P)
     % per-unit bump-tracking signals at ONE lag (lag_s, seconds; converted
     % to frames per trial from that trial's own ft.xf rate; positive =
@@ -1238,7 +1343,7 @@ function U = unit_metrics(all_data, flash, unit_trial, unit_s, unit_e, unit_isda
     end
 end
 
-function [imgs, mask] = load_summed_frames(meta, frames, n_frames_expected, n_avg)
+function [imgs, mask] = load_summed_frames(meta, frames, n_frames_expected, n_avg, im_mask)
     % raw PB images (summed over z, then averaged over n_avg frames
     % [f-floor((n_avg-1)/2), f+ceil((n_avg-1)/2)] around each requested
     % centre frame f -- for even n_avg the window is one frame longer after
@@ -1254,7 +1359,22 @@ function [imgs, mask] = load_summed_frames(meta, frames, n_frames_expected, n_av
     % 1:1); n_frames_expected = size(im.z,2) is checked against the file,
     % and if they disagree the requested frames are rescaled proportionally
     % (with a warning) rather than erroring out of a long run.
-    if contains(meta,'hackathon_gain_change','IgnoreCase',true)
+    if isstruct(meta)
+        % epg7f (gain_change rig): pb_gain_trial caches the registered,
+        % z-summed movie as <trialDir>\claude_pipeline\imgData_sum_reg_trial_00k.mat
+        % (var imgData_sum_reg, y x frames, single); the mask comes with the
+        % dataset (im.mask), passed in as im_mask
+        mf = matfile(fullfile(meta.trialDir,'claude_pipeline',sprintf('imgData_sum_reg_trial_%03d.mat',meta.tifIdx)));
+        sz = size(mf,'imgData_sum_reg');
+        n_file = sz(3);
+        frames = remap_frames(frames,n_frames_expected,n_file,meta.trialDir);
+        imgs = zeros(sz(1),sz(2),numel(frames));
+        for k = 1:numel(frames)
+            win = max(1,frames(k)-floor((n_avg-1)/2)):min(n_file,frames(k)+ceil((n_avg-1)/2));
+            imgs(:,:,k) = mean(double(mf.imgData_sum_reg(:,:,win)),3);
+        end
+        M.mask = im_mask;
+    elseif contains(meta,'hackathon_gain_change','IgnoreCase',true)
         S = load(fullfile(meta,'imagingData.mat'),'imgData');
         n_file = size(S.imgData,3);
         frames = remap_frames(frames,n_frames_expected,n_file,meta);

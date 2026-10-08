@@ -69,6 +69,12 @@ arguments
                         % of being recomputed. Needed because the CV image has no contrast when the bump
                         % is weak (dark trials): e.g. 20221221 fly 1 trial 2 gave a random blob (Jaccard 0.13).
     opts.refMaxShiftPx (1,1) double = 15
+    opts.barSign (1,1) double = -1 % FIXED convention, not estimated per trial. With bins numbered left->right in
+                                    % the image, the PVA angle runs opposite to the bar: bump ~ -bar + const. Measured
+                                    % on all 32 trials of the 2026-10-07 epg_7f batch (31/32 agree; the one exception
+                                    % is a dark trial with 2% walking). A bump moving against the bar is physiology,
+                                    % not a display artefact, so it is NOT compensated; the per-trial slope of bump
+                                    % vs heading is still saved as a diagnostic (bump.slope_mu_vs_heading).
     opts.preferHandMask (1,1) logical = true % use <trial>\mask.mat (hand-drawn) when it exists; the auto CV
                                              % mask failed on 2 of the first 5 reference flies of the gain_change
                                              % batch (one hemisphere only), so the hand mask is the safer default
@@ -211,6 +217,14 @@ end
 %% 4-5. glomeruli, traces, PVA
 clusterIdx = pb_skeleton_glomeruli(mask, opts.nPerHemisphere);
 nClusters = 2 * opts.nPerHemisphere;
+% number the bins left -> right in the image, always. pb_skeleton_glomeruli
+% starts at whichever skeleton endpoint bwmorph finds first, which is not
+% guaranteed; a consistent numbering is what makes the bump/bar relation a
+% property of the fly rather than of the mask.
+[~, x1] = find(clusterIdx == 1); [~, xN] = find(clusterIdx == nClusters);
+if mean(x1) > mean(xN)
+    tmp = clusterIdx; tmp(clusterIdx > 0) = nClusters + 1 - clusterIdx(clusterIdx > 0); clusterIdx = tmp; clear tmp
+end
 img_2d = reshape(img, [], nVol); clear img
 bg = mean(img_2d(~mask(:), :), 1);
 f_cluster = nan(nClusters, nVol); nCorePx = zeros(nClusters, 1);
@@ -246,25 +260,24 @@ excl_vol = movmax(double(barFrozen & flyTurning), winV) > 0;
 exclSegs = local_segments(excl_vol, t_vol);
 
 ok = rho >= opts.rhoThresh & ~isnan(mu) & ~excl_vol;
-% Sign of the glomerulus order relative to the display. Decided from the
-% HEADING, not the bar: the bump integrates heading in the light and in the
-% dark alike, whereas the bar-based test (which offset is tighter) is a coin
-% flip in dark trials and gave opposite signs for two dark trials of the same
-% fly with the same mask (20230504 fly 1, 20230607 fly 1). In closed loop
-% bar = gain_emp*heading (gain_emp < 0), and bar_sign*mu ~ bar, so
-% sign(slope of mu vs heading) = bar_sign * sign(gain_emp).
+% Diagnostics of the bump/bar relation. The sign itself is NOT estimated per
+% trial any more (see opts.barSign): with left->right numbering the bump
+% runs as -bar in 31/32 trials of this dataset, and a bump moving against
+% the bar is physiology, not something to compensate. Saved per trial:
+% slope of unwrapped bump vs heading (1-s bins where the fly turned), and
+% the circular spread of bump-bar and bump+bar.
 mu_tmp = mu; mu_tmp(~ok) = NaN; iOk = ~isnan(mu_tmp); mu_u = nan(size(mu)); mu_u(iOk) = unwrap(mu_tmp(iOk));
 stepV = max(1, round(1 / median(diff(t_vol))));
 ib2 = 1:stepV:nVol; dmu = diff(mu_u(ib2)); dhd = diff(head_vol(ib2));
 good = ok(ib2(1:end-1)) & ok(ib2(2:end)) & abs(dhd) > 0.15 & ~isnan(dmu);
 if nnz(good) >= 5, slope_mu_head = median(dmu(good) ./ dhd(good)); else, slope_mu_head = NaN; end
 cs_same = local_circ_std(mu(ok) - cue_vol(ok)); cs_flip = local_circ_std(mu(ok) + cue_vol(ok));
-if isfinite(slope_mu_head) && isfinite(gain_emp) && slope_mu_head ~= 0
-    bar_sign = sign(slope_mu_head) * sign(gain_emp); signSrc = 'heading';
-else
-    bar_sign = 1 - 2 * (cs_flip < cs_same); signSrc = 'bar (heading slope unavailable)';
+bar_sign = opts.barSign;
+if bar_sign < 0, signNote = 'fixed convention: bump ~ -bar'; else, signNote = 'fixed convention: bump ~ +bar'; end
+measuredSign = sign(slope_mu_head) * sign(gain_emp);
+if isfinite(measuredSign) && measuredSign ~= bar_sign
+    signNote = [signNote sprintf(' (NB measured bump/heading slope %.2f disagrees, %d turning bins)', slope_mu_head, nnz(good))];
 end
-if bar_sign < 0, signNote = ['MIRRORED (bump ~ -bar), from ' signSrc]; else, signNote = ['WITH display (bump ~ +bar), from ' signSrc]; end
 cue_c = exp(1i * cue_vol); dt = median(diff(t_vol));
 lagScan = opts.lagRangeSec(1):dt:opts.lagRangeSec(2); lagScore = nan(size(lagScan));
 for L = 1:numel(lagScan)
@@ -282,10 +295,11 @@ say('  %d vol @ %.2f Hz (%d bad) | %s: %d px, width %.0f%% (Jaccard vs hand %.2f
 %% pack
 out.ft = struct('xf', ft.t, 'xb', t_vol, 'cue', cue_vol, 'heading', head_vol, 'r_speed', rspd_vol, 'f_speed', fspd_vol, ...
     'cue_src', ft.src, 'gain_empirical', gain_emp, 'dark', ft.dark, 'pattern', ft.pattern, ...
-    'cue_raw', ft.cue, 'heading_raw', ft.heading, 'r_speed_raw', ft.r_speed, 'f_speed_raw', ft.f_speed);
+    'cue_raw', ft.cue, 'heading_raw', ft.heading, 'heading_raw_uncleaned', ft.heading_uncleaned, 'heading_clean_info', ft.heading_clean_info, ...
+    'r_speed_raw', ft.r_speed, 'f_speed_raw', ft.f_speed);
 out.im = struct('f', f_cluster, 'z', z_cluster, 'mu', mu, 'rho', rho, 'alpha', alpha, 'mask', mask, 'maskCore', maskCore, ...
     'clusterIdx', clusterIdx, 'projMean', projMean, 'projCV', projCV, 'nCorePx', nCorePx, 'badVol', badVol);
-out.bump = struct('bar_sign', bar_sign, 'signNote', signNote, 'slope_mu_vs_heading', slope_mu_head, ...
+out.bump = struct('bar_sign', bar_sign, 'signNote', signNote, 'slope_mu_vs_heading', slope_mu_head, 'n_turning_bins', nnz(good), ...
     'bar_offset_circstd_same', cs_same, 'bar_offset_circstd_flip', cs_flip, 'lag_sec', lag_sec, 'cue_lag', cue_lag, 'offset', offset, ...
     'ok', ok, 'excl_vol', excl_vol, 'exclSegs', exclSegs, 'offset_circstd_deg', rad2deg(local_circ_std(offset(ok))), ...
     'offset_circmean_deg', rad2deg(angle(mean(exp(1i*offset(ok)), 'omitnan'))), 'rho_thresh', opts.rhoThresh);
@@ -344,7 +358,7 @@ if numel(f) == 1
     cue = T.cuePos{row}(:)' / 192 * 2*pi;
     cue(abs(gradient(unwrap(cue))) > 2) = NaN;
     ft.cue = angle(exp(1i * fillmissing(cue, 'linear', 'EndValues', 'nearest')));
-    ft.heading = unwrap(T.intHD{row}(:)');
+    ft.heading_uncleaned = unwrap(T.intHD{row}(:)');
     ft.r_speed = T.velYaw{row}(:)';
     ft.f_speed = T.velFor{row}(:)';
     ft.rate = 1 / median(diff(ft.t));
@@ -357,17 +371,23 @@ else
     vn = D.Properties.VariableNames;
     pan = D.(vn{find(contains(lower(vn), 'panel'), 1)}); yaw = D.(vn{find(contains(lower(vn), 'yaw'), 1)}); fwd = D.(vn{find(contains(lower(vn), 'forward'), 1)});
     ds = round(fs / 60); % to ~60 Hz like the fictrac table
-    pan = movmedian(pan, ds); yaw = movmedian(yaw, ds); fwd = movmedian(fwd, ds);
-    idx = 1:ds:numel(pan);
-    pan = pan(idx); yaw = yaw(idx); fwd = fwd(idx);
+    % unwrap the 0-10 V (= one turn) channels BEFORE any filtering: a median
+    % filter across the 10 V -> 0 V wrap manufactures intermediate values
+    % that unwrap into spurious heading blips
+    yawU = unwrap(yaw(:)' / 10 * 2*pi); fwdU = unwrap(fwd(:)' / 10 * 2*pi); panU = unwrap(pan(:)' / 10 * 2*pi);
+    yawU = movmedian(yawU, ds); fwdU = movmedian(fwdU, ds); panU = movmedian(panU, ds);
+    idx = 1:ds:numel(yawU);
     ft.t = (idx - 1) / fs;
-    ft.cue = angle(exp(1i * pan(:)' / 10 * 2*pi));
-    ft.heading = unwrap(yaw(:)' / 10 * 2*pi);
+    ft.cue = angle(exp(1i * panU(idx)));
+    ft.heading_uncleaned = yawU(idx);
     ft.rate = fs / ds;
-    ft.r_speed = gradient(ft.heading) * ft.rate;
-    ft.f_speed = gradient(unwrap(fwd(:)' / 10 * 2*pi)) * ft.rate; % integrated-forward channel; units = (ball rad)/s on the 0-10 V = 2 pi convention
+    ft.f_speed = gradient(fwdU(idx)) * ft.rate; % integrated-forward channel; units = (ball rad)/s on the 0-10 V = 2 pi convention
     ft.src = 'daqData';
 end
+% single-frame fictrac glitches (spikes while locking on, steps after losing
+% the ball): remove them from the integrated heading, see pb_clean_heading
+[ft.heading, ft.heading_clean_info] = pb_clean_heading(ft.heading_uncleaned);
+if strcmp(ft.src, 'daqData'), ft.r_speed = gradient(ft.heading) * ft.rate; end
 end
 
 function cv = local_cv_image(img, goodVol, fps, projMean, borderMask)
