@@ -300,7 +300,7 @@ if isempty(which('circ_mean')) && isfolder(fullfile(repoRootDir, 'circ_stats'))
     addpath(fullfile(repoRootDir, 'circ_stats'));
 end
 
-trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20260930-1_epg_syt8s_lpsp_cschrimson\trial_002\';
+trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20261009-2_epg_syt8s_lpsp_cschrimson\trial_005';
 % batch override: matlab -batch "obs_trialDir='Z:\...\trial_003\'; run('overshoot_bar_stim_script.m')"
 if exist('obs_trialDir', 'var') && ~isempty(obs_trialDir)
     trialDir = obs_trialDir;
@@ -747,6 +747,67 @@ outFile = fullfile(trialDir, 'holdDiff_stimOn_minus_off.png');
 obs_export(figure(4), outFile);
 
 %% local functions
+
+function s = obs_h5_sync_nostim(h5Path)
+% Everything this script needs from the WaveSurfer file, on two clocks:
+% the fine DAQ clock (t_fine, fs) and the imaging volume clock (t_volume =
+% si_volumeclock rising edges). LED is optional; if the file has no
+% led_stim_feedback channel, s.led is all false and s.led_on/off are empty.
+
+info = h5info(h5Path);
+sweepNames = {info.Groups.Name};
+sweepNames = sweepNames(~strcmp(sweepNames, '/header'));
+if numel(sweepNames) ~= 1
+    error('overshoot_bar_stim_script:h5sweep', ...
+        'Expected exactly one sweep group in %s, found %d.', h5Path, numel(sweepNames));
+end
+
+s.fs = double(h5read(h5Path, '/header/AcquisitionSampleRate'));
+diNames = strtrim(string(h5read(h5Path, '/header/DIChannelNames')));
+aiNames = strtrim(string(h5read(h5Path, '/header/AIChannelNames')));
+coef = double(h5read(h5Path, '/header/AIScalingCoefficients')); % polynomial (c0..c3) per AI channel, raw counts -> volts
+
+digi = int32(h5read(h5Path, [sweepNames{1} '/digitalScans']));
+volCh = find(diNames == "si_volumeclock", 1);
+ledCh = find(diNames == "led_stim_feedback", 1);
+barCh = find(aiNames == "vr_ao0_copy", 1);
+
+if isempty(volCh) || isempty(barCh)
+    error('overshoot_bar_stim_script:h5chan', ...
+        'Missing si_volumeclock / vr_ao0_copy in %s (DI: %s; AI: %s).', ...
+        h5Path, strjoin(diNames, ', '), strjoin(aiNames, ', '));
+end
+
+N = numel(digi);
+s.t_fine = (0:N-1)' / s.fs;
+volBit = bitget(digi, volCh);
+s.t_volume = s.t_fine(find(diff(volBit) > 0) + 1);
+
+if isempty(ledCh)
+    s.hasLed = false;
+    s.led = false(N, 1);
+    s.led_on = zeros(0, 1);
+    s.led_off = zeros(0, 1);
+else
+    s.hasLed = true;
+    s.led = bitget(digi, ledCh) > 0;
+    onI  = find(diff([0; double(s.led)]) == 1);
+    offI = find(diff([double(s.led); 0]) == -1);
+    m = min(numel(onI), numel(offI));
+    s.led_on  = s.t_fine(onI(1:m))';
+    s.led_off = s.t_fine(offI(1:m))';
+end
+
+ana = h5read(h5Path, [sweepNames{1} '/analogScans']);
+if size(ana, 1) < size(ana, 2)
+    ana = ana';
+end
+s.bar_rad = polyval(flipud(coef(:, barCh)), double(ana(:, barCh))); % volts == radians for this channel
+
+% VR start: first time the bar channel leaves ~0 V.
+s.vr_start = s.t_fine(find(s.bar_rad > 0.2, 1));
+s.vr_end   = s.t_fine(find(s.bar_rad > 0.2, 1, 'last'));
+end
 
 function s = obs_h5_sync(h5Path)
 % Everything this script needs from the WaveSurfer file, on two clocks:

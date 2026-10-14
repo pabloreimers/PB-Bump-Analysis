@@ -38,10 +38,42 @@ arguments
     options.maxShift (1,2) double = [25 25]
     options.verbose (1,1) logical = true
     options.figureVisible (1,1) logical = true
+    options.outlierJumpPx (1,1) double = 3   % after estimation, frames whose shift deviates
+                               % from a 31-frame median-filtered shift trace by more than
+                               % this are treated as estimator failures and replaced by
+                               % the filtered value (0 disables). NoRMCorre occasionally
+                               % locks onto a spurious peak for 1-2 frames (20261012-2:
+                               % -15..-20 px jumps every ~45 volumes with true motion
+                               % < 2 px), which paints a shifted ghost into the mean.
+    options.applyShifts = []   % NoRMCorre shifts struct array (from a previous call on
+                               % another movie of the same xy size and frame count, e.g.
+                               % the PB planes of the same volumes): skip estimation and
+                               % just apply these. Used for the EB planes, whose own
+                               % registration is unstable because the structure is small.
 end
 
 if ndims(movie) ~= 3
     error('pb_register:badInput', 'movie must be [Y, X, T] (sum/select z-planes before registering); got %d dims.', ndims(movie));
+end
+
+% NoRMCorre lives in the lab's flyg repo (flyg\dependencies\NoRMCorre, plus
+% flyg\registration for normcorre_regProduct). It used to be on the saved
+% MATLAB path, but a MATLAB upgrade (R2026b, Oct 2026) reset pathdef, so
+% find it relative to this repo (GitHub\LPsP_2p\...\claude -> GitHub\flyg) or
+% the flyg-master copy under Documents, and add it if it is missing.
+if isempty(which('NoRMCorreSetParms'))
+    here = fileparts(mfilename('fullpath'));
+    cands = {fullfile(here, '..', '..', '..', '..', 'flyg'), fullfile(here, '..', '..', '..', '..', '..', 'flyg-master')};
+    for c = 1:numel(cands)
+        if isfolder(fullfile(cands{c}, 'dependencies', 'NoRMCorre'))
+            addpath(genpath(fullfile(cands{c}, 'dependencies', 'NoRMCorre')));
+            if isfolder(fullfile(cands{c}, 'registration')), addpath(fullfile(cands{c}, 'registration')); end
+            break
+        end
+    end
+    if isempty(which('NoRMCorreSetParms'))
+        error('pb_register:noNoRMCorre', 'NoRMCorre not found; add <flyg>\dependencies\NoRMCorre to the path.');
+    end
 end
 
 movieSingle = single(movie);
@@ -64,8 +96,29 @@ end
 options_rigid = NoRMCorreSetParms('d1', nY, 'd2', nX, ...
     'max_shift', [options.maxShift, 2], 'init_batch', min(100, nT), 'us_fac', 50);
 tic
-[~, shifts, ~, options_out] = normcorre(regInput, options_rigid);
-movieReg = apply_shifts(movieSingle, shifts, options_out);
+if ~isempty(options.applyShifts)
+    shifts = options.applyShifts(:);
+    assert(numel(shifts) == nT, 'pb_register:applyShifts', 'applyShifts has %d entries but the movie has %d frames.', numel(shifts), nT);
+    if options.verbose, fprintf('pb_register: applying %d precomputed shifts (no estimation)\n', nT); end
+    movieReg = apply_shifts(movieSingle, shifts, options_rigid);
+else
+    [~, shifts, ~, options_out] = normcorre(regInput, options_rigid);
+    if options.outlierJumpPx > 0 && nT >= 31
+        tr = cell2mat(arrayfun(@(s) reshape(s.shifts, 1, []), shifts(:), 'UniformOutput', false));   % nT x 2 (row, col)
+        trF = movmedian(tr, 31, 1);   % 31 frames: the spurious locks last up to ~7 frames, real drift is much slower
+        bad = any(abs(tr - trF) > options.outlierJumpPx, 2);
+        if any(bad)
+            if true
+                fprintf('pb_register: %d/%d frames have a shift jumping > %g px from the median-filtered trace -> replaced by the filtered shift\n', nnz(bad), nT, options.outlierJumpPx);
+            end
+            for f = find(bad)'
+                shifts(f).shifts(1, 1, 1, :) = trF(f, :);
+                if isfield(shifts, 'shifts_up') && ~isempty(shifts(f).shifts_up), shifts(f).shifts_up(1, 1, 1, :) = trF(f, :); end
+            end
+        end
+    end
+    movieReg = apply_shifts(movieSingle, shifts, options_out);
+end
 if options.verbose
     fprintf('pb_register: done in %.1f s\n', toc);
 end

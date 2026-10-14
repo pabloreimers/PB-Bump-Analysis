@@ -68,6 +68,25 @@ title('bump-heading correlation')
 
 sgtitle('mu vs fly heading, trials from 7/8 onward')
 
+% !!! IMPORTANT CAVEAT -- RHO AND MOBILITY ARE COUPLED (found 2026-10-14) !!!
+% In lpsp_p2x2_walking_20260728_post0708, bump vector strength (im.rho) and
+% the bump-mobility slope move together: across all dark trials with >=10
+% bouts, Spearman r(trial-mean rho, mobility) = -0.40 (n=73, p<0.001), and
+% within just the lpsp post-ATP dark trials r = -0.59 (n=11, p=0.06). The
+% lpsp group also shows a post-ATP DROP in dark-trial rho (fly-level mean
+% 0.437 -> 0.382, -12%, paired signrank p=0.09, n=14 flies) that the empty
+% group does not (0.454 -> 0.478, p=0.77, n=11). So the post-ATP mobility
+% increase comes with a weaker/broader bump. This is NOT necessarily an
+% artifact -- a destabilized EPG representation would look exactly like
+% this -- and the lpsp post-dark trials sit above pre-ATP mobility even at
+% normal rho (median 2.5 for rho>=0.35 trials vs 1.2 for all pre-dark).
+% But the two measures are not independent: path length is a total-
+% variation metric that inflates mechanically when mu is noisy, and mu
+% (one 60-sample Gaussian in section 2) is smoothed less than
+% r_speed (30 in process_ft + 60 here). REPORT the rho change alongside
+% any mobility result, and consider a rho-gated or rho-matched version as
+% a control. Quantified in the Claude session that produced
+% ugly_figures/scripts/fig_example_flies_pb_heatmaps.m.
 %% 2) how much does the bump (mu) move relative to how much the fly turns?
 %path-length gain metric, adapted from gain_metric_sandbox.m
 smooth_window      = 60;  %samples (~1s at xf's ~60Hz), gaussian smoothing window

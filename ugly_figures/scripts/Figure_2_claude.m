@@ -13,6 +13,14 @@
 % every design decision below, was identical between them; only the
 % render_variant_figure() call's inputs differ per variant.)
 %
+% UPDATE: the two variants are now rendered as two super columns of ONE
+% figure (left 2a/syt7f, right 2b/GRAB(DA2m)). Dark-condition panels were
+% removed, and since each column has its own R^2 panel the combined
+% syt7f+GRAB R^2 pair (old rows 6-7) is replaced by one closed-loop R^2
+% panel per column, beside that column's tuning curve (new row 6). Where
+% the text below says "row 6-7"/"row 8"/"closed loop | dark", read that as
+% this one closed-loop R^2 + tuning-curve row; "figure variants" = columns.
+%
 % Rows (identical structure in both variants):
 %   1) example fly, example closed-loop 60s snippet: imagesc heatmap
 %      (full-width row) of z-scored dF/F across all 32 PB glomeruli, with
@@ -145,7 +153,7 @@
 
 %% paths
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
-data_dir = fullfile(repo_root,'data');
+data_dir = fullfile(repo_root,'.data');
 export_dir = fullfile(repo_root,'ugly_figures','exports');
 all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
 
@@ -323,26 +331,37 @@ variants = struct( ...
     'sgtitle_suffix',            {'(syt7f example)',    '(GRAB(DA2m) example)'} ...
 );
 
+% ONE figure, two super columns (left = syt7f, right = GRAB(DA2m)), each
+% super column itself two tiles wide (6 rows x 4 tiles overall)
+figure('color','w','Position',[50 50 1700 1400]); clf
+t = tiledlayout(15,4,'TileSpacing','normal','Padding','compact');
 for v = 1:numel(variants)
-    render_variant_figure(S,variants(v))
+    render_variant_column(S,variants(v),t,2*(v-1))
 end
+sgtitle('Figure 2: PB dF/F encoding of forward/rotational speed (left: syt7f, right: GRAB(DA2m)), closed loop')
+
+if ~isfolder(export_dir); mkdir(export_dir); end
+exportgraphics(gcf, fullfile(export_dir,'Figure_2_claude.png'), 'Resolution', 300)
+if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
+exportgraphics(gcf, fullfile(all_figs_dir,'Fig2_V1.pdf'), 'ContentType', 'auto')
 
 %% ===================== functions =====================
 
-function render_variant_figure(S, variant)
-    % builds and exports one complete 8-row figure (rows described in this
-    % file's header) for one variant ('2a' or '2b'); everything it needs
-    % from the shared pipeline above is in S, everything that differs
-    % between the two variants is in `variant`.
+function render_variant_column(S, variant, t, col0)
+    % fills one super column (2 tiles wide, starting after col0 tiles) of
+    % the shared 6x4 tiledlayout t with one variant's 6 rows (header
+    % comment); everything it needs from the shared pipeline above is in S,
+    % everything that differs between the two variants is in `variant`.
+    % layout is a 15x4 grid so rows can have different heights: heatmap
+    % (grid rows 1-3), glomerulus scatters (4-6), then the three compact
+    % traces (7-8, 9-10, 11-12), then R^2 + tuning (13-15)
+    ntile = @(row,nrows,c_off,ncols) nexttile(t,(row-1)*4+col0+c_off+1,[nrows ncols]);
     rows_cl = find(strcmp(S.trial_indic,variant.example_indicator) & ~S.trial_isdark & S.analysis_ok);
     [example_fly,example_i,example_t0,example_t1] = pick_high_corr_example( ...
         rows_cl,S.lpsp_data,S.trial_fly,S.trial_p90z,S.snippet_s,S.snippet_step_s,variant.min_forward_speed_snippet, ...
         S.r_speed_display_smooth_sigma_s,S.max_quiet_run_s,S.quiet_r_speed_thresh,S.min_forward_speed);
     fprintf('[Figure %s] example fly: %s, trial "%s", snippet [%.1f, %.1f] s\n', ...
         variant.label,example_fly,meta_display(S.lpsp_data(example_i).meta),example_t0,example_t1);
-
-    figure('color','w','Position',[50 50 900 2200]); clf
-    t = tiledlayout(8,2,'TileSpacing','normal','Padding','compact');
 
     ex_ft = S.lpsp_data(example_i).ft;
     ex_im = S.lpsp_data(example_i).im;
@@ -377,15 +396,17 @@ function render_variant_figure(S, variant)
     hi_p10 = prctile(ex_im.z(:,high_frame),10);
     lo_p10 = prctile(ex_im.z(:,low_frame),10);
 
-    ax0 = nexttile(t,[1 2]); hold(ax0,'on')
+    ax0 = ntile(1,3,0,2); hold(ax0,'on')
     z_snip = ex_im.z(:,xb_idx);
-    z_clim = [prctile(min(z_snip,[],1),5), prctile(max(z_snip,[],1),95)]; % same recipe as Figure_1_claude.m row 1
+    z_clim = [prctile(min(z_snip,[],1),5), prctile(max(z_snip,[],1),99)]; % same recipe as Figure_1_claude.m row 1
     imagesc(ax0,xb_rel,1:n_glom,z_snip,z_clim)
-    colormap(ax0,white_to_color(variant.heatmap_max_color)) % matches Figure_1_claude.m's own column for this indicator
+    colormap(ax0,white_to_color(variant.heatmap_max_color)) % matches Figurfe_1_claude.m's own column for this indicator
     cb0 = colorbar(ax0); cb0.Label.String = 'z-score';
     ylabel(ax0,'PB glomerulus')
-    xlabel(ax0,'time (s)')
     xlim(ax0,[0,S.snippet_s]); ylim(ax0,[0.5,n_glom+0.5])
+    xticks(ax0,[]); % no time axis; a 10 s scale bar is drawn below instead
+    plot(ax0,[S.snippet_s-10,S.snippet_s],[-1.5,-1.5],'-k','LineWidth',2,'Clipping','off')
+    text(ax0,S.snippet_s-5,-2.5,'10 s','HorizontalAlignment','center','VerticalAlignment','top')
     title(ax0,{'z-scored dF/F, all PB glomeruli','(dark red = high-rotation frame, salmon = low-rotation frame)'})
 
     frame_dt = median(diff(xb_ex));
@@ -404,7 +425,7 @@ function render_variant_figure(S, variant)
     z_pad = 0.05*range(z_both);
     z_ylim = [min(z_both)-z_pad, max(z_both)+z_pad];
 
-    ax_scatter_hi = nexttile(t); hold(ax_scatter_hi,'on'); box(ax_scatter_hi,'on')
+    ax_scatter_hi = ntile(4,3,0,1); hold(ax_scatter_hi,'on'); box(ax_scatter_hi,'on')
     scatter(ax_scatter_hi,1:n_glom,ex_im.z(:,high_frame),25,color_dot,'filled')
     xlim(ax_scatter_hi,[0.5,n_glom+0.5]); ylim(ax_scatter_hi,z_ylim)
     plot(ax_scatter_hi,xlim(ax_scatter_hi),[hi_p90,hi_p90],'--','Color','k','LineWidth',1.2)
@@ -414,7 +435,7 @@ function render_variant_figure(S, variant)
     ylabel(ax_scatter_hi,'z-score')
     title(ax_scatter_hi,'high-rotation frame (dark red)')
 
-    ax_scatter_lo = nexttile(t); hold(ax_scatter_lo,'on'); box(ax_scatter_lo,'on')
+    ax_scatter_lo = ntile(4,3,1,1); hold(ax_scatter_lo,'on'); box(ax_scatter_lo,'on')
     scatter(ax_scatter_lo,1:n_glom,ex_im.z(:,low_frame),25,color_dot,'filled')
     xlim(ax_scatter_lo,[0.5,n_glom+0.5]); ylim(ax_scatter_lo,z_ylim)
     plot(ax_scatter_lo,xlim(ax_scatter_lo),[lo_p90,lo_p90],'--','Color','k','LineWidth',1.2)
@@ -424,39 +445,39 @@ function render_variant_figure(S, variant)
     ylabel(ax_scatter_lo,'z-score')
     title(ax_scatter_lo,'low-rotation frame (salmon)')
 
-    ax1 = nexttile(t,[1 2]); hold(ax1,'on')
-    plot(ax1,t_rel,S.trial_p90z{example_i}(xf_idx),'-k','LineWidth',1.2)
-    ylabel(ax1,{'90th %ile z-score','(whole PB)'})
+    ax1 = ntile(7,2,0,2); hold(ax1,'on')
+    plot(ax1,t_rel,S.trial_p90z{example_i}(xf_idx),'-k','LineWidth',1.2,'DisplayName','peak')
+    plot(ax1,t_rel,S.trial_p10z{example_i}(xf_idx),'-','Color',[0.5 0.5 0.5],'LineWidth',1.2,'DisplayName','trough')
+    yl1 = ylim(ax1); ylim(ax1,[yl1(1), yl1(2)+0.35*diff(yl1)]) % headroom so the legend clears the traces
+    legend(ax1,'Location','northeast','Box','off','Orientation','horizontal')
+    ylabel(ax1,'z-score')
     xlim(ax1,[0,S.snippet_s]); xticks(ax1,[])
     title(ax1,sprintf('example fly %s, %s closed-loop (%.0fs snippet, trial "%s")', ...
         example_fly,variant.example_indicator,S.snippet_s,meta_display(S.lpsp_data(example_i).meta)),'Interpreter','none')
 
-    ax2 = nexttile(t,[1 2]);
+    ax2 = ntile(9,2,0,2);
     plot(ax2,t_rel,r_speed_postsmooth(xf_idx),'-r','LineWidth',1)
     ylabel(ax2,{'abs. rotational speed','(rad/s)'})
     xlim(ax2,[0,S.snippet_s]); xticks(ax2,[])
 
-    ax3 = nexttile(t,[1 2]);
+    ax3 = ntile(11,2,0,2);
     plot(ax3,t_rel,ex_ft.f_speed(xf_idx),'-b','LineWidth',1)
     ylabel(ax3,{'forward speed','(mm/s)'})
     xlim(ax3,[0,S.snippet_s])
     xlabel(ax3,'time (s)')
 
     linkaxes([ax0,ax1,ax2,ax3],'x')
+    set([ax1,ax2,ax3],'Box','off','TickDir','out') % bare x/y axes, no outline
 
-    for k = 1:numel(S.indicator_order)
-        for c = 1:2
-            ax = nexttile(t);
-            plot_r2_group(S.R2_panels{k,c})
-            n_flies = sum(~isnan(S.R2_panels{k,c}(:,1)));
-            title(ax,sprintf('%s, %s (n=%d flies)',S.indicator_order{k},S.cond_label{c},n_flies))
-            if c == 1
-                ylabel(ax,{'adjusted R^2','(90th %ile z-score)'})
-            end
-        end
-    end
+    %% row 6, left: adjusted R^2 (closed loop) for this variant's own indicator
+    k_r2 = find(strcmp(S.indicator_order,variant.example_indicator));
+    ax = ntile(13,3,0,1);
+    plot_r2_group(S.R2_panels{k_r2,1})
+    n_flies = sum(~isnan(S.R2_panels{k_r2,1}(:,1)));
+    title(ax,sprintf('%s, %s (n=%d flies)',variant.example_indicator,S.cond_label{1},n_flies))
+    ylabel(ax,{'adjusted R^2','(90th %ile z-score)'})
 
-    %% bottom row: binned tuning curve, |rotational speed| vs. 90th/10th %ile z-score
+    %% row 6, right: binned tuning curve, |rotational speed| vs. 90th/10th %ile z-score
     % one point per fly per bin (that fly's own mean over its own pooled,
     % lag-shifted samples in that bin), plus a population mean+/-SEM
     % errorbar per bin -- same "pool a fly's own trials, then average
@@ -478,24 +499,12 @@ function render_variant_figure(S, variant)
     speed_bin_centers = (speed_bin_edges(1:end-1)+speed_bin_edges(2:end))/2;
     min_n_per_bin = 20; % minimum pooled samples for one fly's one-bin mean to count
 
-    for c = 1:2
-        rows = find(strcmp(S.trial_indic,tuning_indicator) & (S.trial_isdark==(c==2)) & S.analysis_ok);
-        [~,fly_mean90,fly_mean10] = bin_tuning_by_fly( ...
-            rows,S.trial_fly,S.trial_rspeed_smooth,S.trial_fspeed_smooth,S.trial_p90z,S.trial_p10z,lag_tuning,speed_bin_edges,min_n_per_bin);
-        ax = nexttile(t);
-        plot_binned_tuning(ax,speed_bin_centers,fly_mean90,fly_mean10)
-        title(ax,sprintf('%s, %s',tuning_indicator,S.cond_label{c}))
-    end
-
-    sgtitle(sprintf('Figure %s: PB dF/F encoding of forward/rotational speed, syt7f and GRAB(DA2m) %s', ...
-        variant.label,variant.sgtitle_suffix))
-
-    %% export
-    if ~isfolder(S.export_dir); mkdir(S.export_dir); end
-    exportgraphics(gcf, fullfile(S.export_dir,sprintf('Figure_%s_claude.png',variant.label)), 'Resolution', 300)
-
-    if ~isfolder(S.all_figs_dir); mkdir(S.all_figs_dir); end
-    exportgraphics(gcf, fullfile(S.all_figs_dir,sprintf('Fig%s_V1.pdf',variant.label)), 'ContentType', 'auto')
+    rows = find(strcmp(S.trial_indic,tuning_indicator) & ~S.trial_isdark & S.analysis_ok);
+    [~,fly_mean90,fly_mean10] = bin_tuning_by_fly( ...
+        rows,S.trial_fly,S.trial_rspeed_smooth,S.trial_fspeed_smooth,S.trial_p90z,S.trial_p10z,lag_tuning,speed_bin_edges,min_n_per_bin);
+    ax = ntile(13,3,1,1);
+    plot_binned_tuning(ax,speed_bin_centers,fly_mean90,fly_mean10)
+    title(ax,sprintf('%s, %s',tuning_indicator,S.cond_label{1}))
 end
 
 function combined = combine_datasets(varargin)

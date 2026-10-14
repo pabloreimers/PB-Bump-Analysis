@@ -255,7 +255,7 @@ end
 % to show (the snippet_s-second sub-window with the lowest offset
 % variance among discernable-bump samples) -- one consistent metric for
 % both choices, not two different ones.
-snippet_s      = 60;  % s, requested example-trace window length, all 3 columns
+snippet_s      = 30;  % s, requested example-trace window length, all 3 columns
 snippet_step_s = 10;  % s, sliding step when searching for the best snippet_s-second sub-window
 
 % manual override: force a specific fly as the example for a column instead
@@ -276,7 +276,14 @@ snippet_step_s = 10;  % s, sliding step when searching for the best snippet_s-se
 % to the other two columns' (full-circle coverage, circ. std 1.14, mean
 % |r| 0.44 rad/s), though with some heading holds at the rear of the arena
 % (see forced_trial / forced_snippet_t0).
-forced_fly = {'1_np_1','20221123_2','20221122_1'};
+% syt7f: switched 2026-10-14 from 20221123_2 (t0 = 310 s, which covers only
+% ~4.2 rad of heading in a 30 s window) to 20221114_1 / trial
+% 20221114-1_LPsP_syt7f_cl_1 / t0 = 270 s -- top of a scan of all 27
+% closed-loop syt7f trials for 30 s windows with full-circle heading
+% coverage and good tracking (coverage 6.25, circ. std 1.39, rot_frac 0.58,
+% offset var 0.13, corr 0.73). That fly has a single closed-loop trial, so
+% forced_trial stays automatic.
+forced_fly = {'1_np_1','20221114_1','20221122_1'};
 
 % manual override: force a specific trial (index into that column's
 % all_data) as the example, instead of the "fly's best closed-loop unit"
@@ -286,11 +293,25 @@ forced_trial = [7, nan, nan];
 % manual override: force a specific snippet start time (s, on that trial's
 % own ft.xf clock) for a column instead of pick_snippet()'s automatic
 % choice below (NaN = automatic).
-forced_snippet_t0 = [540.0, nan, nan];
-if ~strcmp(col1_source,'hackathon')
-    % the column-1 overrides above refer to hackathon flies/trials; for any
-    % other source fall back to the automatic picks
-    forced_fly{1} = ''; forced_trial(1) = nan; forced_snippet_t0(1) = nan;
+forced_snippet_t0 = [540.0, 270.0, nan];
+switch col1_source
+    case 'hackathon'
+        % overrides above are already the hackathon picks
+    case 'epg7f'
+        % scan of every closed-loop 60 s window (walking statistics vs. the
+        % syt7f/GRAB example snippets + raw PB image quality, 2026-10-14):
+        % 20230110 fly 2 / trial 16 / t0 = 160 s -- second-ranked candidate,
+        % chosen for the best raw PB image in this low-contrast dataset
+        % (10-frame SNR 1.9, mean-image contrast 2.0; dataset range 0.6-2.0)
+        % with reasonable walking statistics (coverage 6.19, circ. std 0.90,
+        % rot_frac 0.55, mean |r| 1.22 vs. refs ~6.25 / 1.1 / 0.44 / 0.7;
+        % offset var 0.11). The closest walking-stat match was 20221221 fly 1
+        % / trial 1 / t0 = 170 s (SNR 1.7).
+        forced_fly{1} = '20230110_fly2'; forced_trial(1) = 16; forced_snippet_t0(1) = 160.0;
+    otherwise
+        % the overrides above refer to specific datasets; fall back to the
+        % automatic picks for anything else
+        forced_fly{1} = ''; forced_trial(1) = nan; forced_snippet_t0(1) = nan;
 end
 
 for gi = 1:3
@@ -398,7 +419,7 @@ end
 % (summed over z) straight from the trial's own imaging file on Z: so the
 % heatmap row can be compared against actual PB images at the same two
 % instants. Frames are sorted in time: A is earlier, B later.
-frame_pair_min_sep_deg = 100;
+frame_pair_min_sep_deg = 120;
 frame_pair_rho_pct     = 80;
 frame_avg_n            = 10;  % total frames averaged for each raw image, window [f-floor((n-1)/2), f+ceil((n-1)/2)] around A / B (a single z-summed frame is mostly shot noise, esp. the 50x128 px hackathon movies)
 frame_img_smooth_sigma = 1;   % px, Gaussian spatial smoothing of the displayed raw image (0 = none)
@@ -407,7 +428,7 @@ frame_img_clim_pct     = [5 98]; % percentiles of all pixels (both images) for t
 % clock) per column, [tA tB]; NaN = keep the automatic pick for that one.
 % LPsP > syt7f's automatic B (t = 363.5 s) fell on a much faster turn than
 % its A -- moved ~10 s earlier to a point with a similar rotational speed.
-forced_frame_t = {[nan nan], [nan 353.5], [nan nan]};
+forced_frame_t = {[nan nan], [nan nan], [nan nan]}; % (the old syt7f B override, 353.5 s, belonged to the previous 20221123-7 example)
 if ~strcmp(col1_source,'hackathon'), forced_frame_t{1} = [nan nan]; end
 for gi = 1:3
     G  = group_defs(gi);
@@ -477,15 +498,25 @@ row3_ylim = [min([group_defs.val]), 1];
 % each column gets its own white-to-color colormap (row 1 only) so its
 % heatmap reads as "that indicator's own color" rather than all 3 sharing
 % one generic colormap.
-group_max_color = [0 .2 1;   % EPG > GCaMP    -> teal
+group_max_color = [0 .2 1;   % EPG > GCaMP    -> dark blue (also used for every other EPG calcium panel, e.g. the jRGECo1a co-imaging panels)
                     .7 0 .7;  % LPsP > syt7f   -> magenta
                     0 .7 0];  % EPG > GRAB(DA2m) -> dark green
 
-% manual override: fix a column's row-1 color scale to a literal [floor,
-% ceiling] instead of the per-snippet percentile rule above (empty = use
-% the percentile rule). Requested specifically for LPsP > syt7f's
-% 20221123-7 trial.
-forced_zclim = {[], [-2 8], []};
+% ==HEATMAP COLOUR LIMITS -- the knobs==
+%  * forced_zclim{gi} = [floor ceiling] (z-score units) fixes a column's
+%    row-1 colour scale outright (empty = automatic). Raising the floor
+%    hides low-level background; lowering the ceiling saturates the bump and
+%    flattens whole-PB brightness swings (the vertical stripes in syt7f).
+%  * The automatic rule (in the plot loop below, "z_clim = [prctile(...") is
+%    the 5th percentile of the per-frame MINIMUM across wedges for the floor
+%    and the 95th percentile of the per-frame MAXIMUM for the ceiling, both
+%    over the plotted snippet only. Changing those two percentiles makes the
+%    automatic scale gentler/harsher for all columns at once.
+%  * The colormap itself is white_to_color(group_max_color(gi,:)), a linear
+%    white->colour ramp; a nonlinear ramp (e.g. gamma < 1) would also soften it.
+% The old syt7f override [-2 8] was tuned for the previous 20221123-7
+% example; the new 20221114-1 trial starts on the automatic rule.
+forced_zclim = {[], [-2, 6], []};
 
 % row 2 bump-position trace style: 'line' (continuous mu trace, wrap
 % breaks blanked) or 'scatter' (one dot per imaging frame, shown only
@@ -690,14 +721,14 @@ coimg_bump_ok = abs(cft.r_speed(:))>rot_thresh_track & rho_g_t>rho_thresh_track 
 coimg_xb_idx = find(cxb>=coimg_t0 & cxb<=coimg_t1);
 
 coimg_channel = {coimg(coimg_i).geco, coimg(coimg_i).grab};
-coimg_color   = [0 .7 .7; 0 .7 0]; % geco -> EPG>GCaMP teal, grab -> EPG>GRAB(DA2m) green
+coimg_color   = [group_max_color(1,:); group_max_color(3,:)]; % geco -> the EPG calcium blue, grab -> EPG>GRAB(DA2m) green
 coimg_label   = {'jRGECo1a (co-imaged with GRAB(DA2m))','GRAB(DA2m) (co-imaged with jRGECo1a)'};
 
 for k = 1:2
     ax = nexttile(t,tile(5,k),[row_units(5) 1]); hold(ax,'on')
     ch = coimg_channel{k};
     z_snip = ch.z(:,coimg_xb_idx);
-    z_clim = [prctile(min(z_snip,[],1),5), prctile(max(z_snip,[],1),95)];
+    z_clim = [prctile(min(z_snip,[],1),30), prctile(max(z_snip,[],1),95)];
     imagesc(cxb(coimg_xb_idx),unwrap(ch.alpha),z_snip,z_clim)
     colormap(ax, white_to_color(coimg_color(k,:)))
     cb = colorbar(ax);
@@ -1242,11 +1273,20 @@ function C = prep_epg7f_column(data_dir, flash_mad_thresh)
     data  = struct('ft',cell(n,1),'im',cell(n,1),'meta',cell(n,1));
     flash = cell(n,1);
     fly   = cell(n,1);
+    n_spikes = zeros(n,1);
     for i = 1:n
         s = src(i);
         ft = struct();
         ft.xf = s.ft.xf(:); ft.xb = s.ft.xb(:);
-        ft.cue = s.ft.cue_raw(:); ft.r_speed = s.ft.r_speed_raw(:); ft.f_speed = s.ft.f_speed_raw(:);
+        % bar position: despike first (see despike_cue) -- the fictrac-socket
+        % cuePos log has isolated 1-2 sample (17-33 ms) jumps to a random
+        % column and straight back, 0.1-0.6% of samples per trial, clustered
+        % during fast turns; the ball-heading channel has none (already
+        % cleaned upstream by pb_clean_heading). A bar at gain 0.7 cannot
+        % move > ~0.1 rad per 60 Hz sample, so these are log artefacts.
+        [ft.cue, n_spikes(i)] = despike_cue(s.ft.cue_raw(:));
+        ft.cue_uncleaned = s.ft.cue_raw(:);
+        ft.r_speed = s.ft.r_speed_raw(:); ft.f_speed = s.ft.f_speed_raw(:);
         ft.pattern = char(s.ft.pattern); ft.dark = logical(s.ft.dark); ft.gain_empirical = s.ft.gain_empirical;
         im = struct('f',s.im.f,'z',s.im.z,'d',s.im.f,'mu',s.im.mu(:),'rho',s.im.rho(:),'alpha',s.im.alpha(:),'mask',logical(s.im.mask));
         data(i).ft = ft; data(i).im = im; data(i).meta = s.meta;
@@ -1269,6 +1309,46 @@ function C = prep_epg7f_column(data_dir, flash_mad_thresh)
     C.use_berg4_sign = false;
     C.title = 'EPG > GCaMP7f';
     fprintf('loaded %d epg_7f trials (%d flies; %d closed loop, %d dark)\n', n, numel(unique(fly)), sum(~C.unit_isdark), sum(C.unit_isdark));
+    n_samp = arrayfun(@(d) numel(d.ft.cue), data);
+    fprintf('  cue despike: %d samples replaced in total (%.2f%%); per trial min %d, median %d, max %d (%.2f%% max)\n', ...
+        sum(n_spikes), 100*sum(n_spikes)/sum(n_samp), min(n_spikes), median(n_spikes), max(n_spikes), 100*max(n_spikes./n_samp));
+end
+
+function [cue_clean, n_fixed] = despike_cue(cue, max_dev_rad, max_run, win)
+    % remove isolated spikes from a wrapped angular bar-position trace:
+    % samples whose circular deviation from a running circular median (win
+    % samples) exceeds max_dev_rad, in runs of at most max_run consecutive
+    % samples, are replaced by circular linear interpolation between the
+    % neighbouring unflagged samples. Longer deviations are left alone (a
+    % sustained change is treated as real). cue in rad, wrapped to [-pi,pi].
+    if nargin < 2, max_dev_rad = 0.3; end  % ~17 deg
+    if nargin < 3, max_run = 4; end        % <= 67 ms at 60 Hz
+    if nargin < 4, win = 7; end            % ~0.1 s
+    cue = cue(:);
+    n = numel(cue);
+    % running circular median via the unwrapped trace (medfilt1 on unwrap is
+    % fine because spikes are brief; the unwrap itself may jump by 2pi at a
+    % spike, but the circular deviation below is wrap-safe)
+    cu  = unwrap(cue);
+    med = medfilt1(cu, win, 'truncate');
+    dev = angle(exp(1i*(cu - med)));
+    bad = abs(dev) > max_dev_rad;
+    % keep only short runs
+    d = diff([false; bad; false]); s = find(d==1); e = find(d==-1)-1;
+    for r = 1:numel(s)
+        if e(r)-s(r)+1 > max_run
+            bad(s(r):e(r)) = false;
+        end
+    end
+    n_fixed = sum(bad);
+    cue_clean = cue;
+    if n_fixed == 0, return, end
+    good = find(~bad);
+    if numel(good) < 2, return, end
+    % circular interpolation: interpolate the unit vector, take its angle
+    z = exp(1i*cue(good));
+    zi = interp1(good, z, find(bad), 'linear', 'extrap');
+    cue_clean(bad) = angle(zi);
 end
 
 function U = unit_metrics(all_data, flash, unit_trial, unit_s, unit_e, unit_isdark, lag_s, use_berg4_sign, P)
@@ -1589,12 +1669,12 @@ function add_time_scalebar(ax, t0, t1, y_range)
     % rows 1-2 -- xticks/xlabel removed there) -- Clipping is turned off on
     % the bar/label themselves so they render in that outside margin
     % rather than being cut off at the axes box.
-    bar_len = 10; % s
+    bar_len = 5; % s
     x1 = t1 - 0.02*(t1-t0);
     x0 = x1 - bar_len;
     y0 = y_range(1) - 0.07*diff(y_range);
     line(ax,[x0,x1],[y0,y0],'Color','k','LineWidth',2.5,'Clipping','off')
-    text(ax,x0+bar_len/2,y0,'10 s','Color','k','VerticalAlignment','top', ...
+    text(ax,x0+bar_len/2,y0,[num2str(bar_len),' s'],'Color','k','VerticalAlignment','top', ...
         'HorizontalAlignment','center','FontSize',9,'Clipping','off')
 end
 
