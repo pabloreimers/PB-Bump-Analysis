@@ -22,6 +22,7 @@ thisDir = fileparts(mfilename('fullpath'));
 outDir = fullfile(thisDir, '..', 'exports');
 root = 'Z:\noah_np123\Data\flyg\overshoot';
 dateStr = '20261013';
+if exist('figDate', 'var') && ~isempty(figDate), dateStr = figDate; end   % batch override
 win = [-10 20];
 
 %% 1. collect trials and plot

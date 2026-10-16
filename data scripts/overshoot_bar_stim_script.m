@@ -816,6 +816,11 @@ function s = obs_h5_sync(h5Path)
 % bar = vr_ao0_copy analog line, which is the bar angle at 1 V per radian
 % (checked against the VR's own per-iteration record in sync_info.mat:
 % slope 0.998, offset 0.011 V, circular residual 0.4 deg).
+% From 20261012 the LED is only logged as the analog vr_led_stim_copy (no
+% led_stim_feedback DI line): claude\pb_h5_sync handles both.
+if ~any(strtrim(string(h5read(h5Path, '/header/DIChannelNames'))) == "led_stim_feedback")
+    s = pb_h5_sync(h5Path); return
+end
 info = h5info(h5Path);
 sweepNames = {info.Groups.Name};
 sweepNames = sweepNames(~strcmp(sweepNames, '/header'));
