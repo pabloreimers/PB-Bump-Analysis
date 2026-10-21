@@ -83,7 +83,7 @@
 %% 1) load + labels
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 addpath(fullfile(repo_root,'circ_stats'))
-data_dir   = fullfile(repo_root,'.data');
+data_dir   = fullfile(repo_root,'.data'); if ~isfolder(data_dir), data_dir = fullfile(repo_root,'data'); end % .data on the Windows rig, data/ on the mac
 export_dir = fullfile(repo_root,'ugly_figures','exports','figure3_scratch');
 if ~isfolder(export_dir), mkdir(export_dir), end
 source_file = 'lpsp_p2x2_walking_20260728_post0708.mat';
