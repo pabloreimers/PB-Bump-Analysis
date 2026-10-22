@@ -21,7 +21,8 @@
 %% paths
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
 addpath(fullfile(repo_root,'circ_stats'))
-data_dir = fullfile(repo_root,'data');
+data_dir = fullfile(repo_root,'.data'); % Windows machine keeps datasets in .data/, the Mac in data/
+if ~isfolder(data_dir); data_dir = fullfile(repo_root,'data'); end
 export_dir = fullfile(repo_root,'ugly_figures','exports');
 all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
 
@@ -226,13 +227,23 @@ fprintf('  example stim side: %s -- rows 4-5 below are flipped to match this sid
 % pick the least representative empty stim, and ranking by "least
 % movement" would cherry-pick the other way. Amplitude matching makes the
 % two columns a like-for-like ejection, so any difference in the bump
-% response is down to genotype. example_rank_empty picks a different rank
-% by eye from column 2 of the gallery below.
-example_rank_empty = 1;
+% response is down to genotype.
+% Per explicit request the pick should also have a very SMOOTH whole-PB
+% atp trace (the amplitude-matched rank 1 was visibly wiggly), so: keep
+% only stims whose atp_peak_amp is within +-emp_amp_tol of the LPsP
+% example's, then rank those by trace roughness (atp_trace_roughness: SD
+% of the -2..20s whole-PB atp dF/F trace around a 1s-gaussian-smoothed
+% copy, as a fraction of its peak) -- smoothest first. Stims outside the
+% amplitude band follow, still by amplitude match. example_rank_empty
+% picks a rank by eye from column 2 of the gallery below: rank 3 (fly 4
+% empty, 20260429, stim 4) has the closest peak (~9 dF/F) and slow decay
+% to the LPsP example's own trace.
+emp_amp_tol = 0.25;
+example_rank_empty = 3;
 
 ref_amp = trial_events{example_i}(example_s).atp_peak_amp;
 empty_rows = find(strcmp(genotype,'empty>p2x2'));
-emp_trial = []; emp_stim = []; emp_score = []; emp_amp_err = [];
+emp_trial = []; emp_stim = []; emp_score = []; emp_amp_err = []; emp_rough = [];
 for k = 1:numel(empty_rows)
     i = empty_rows(k);
     if n_ejections_confirmed_all(i) < 2 || trial_is_right(i)~=reference_is_right; continue; end
@@ -245,17 +256,23 @@ for k = 1:numel(empty_rows)
         emp_stim(end+1)    = s; %#ok<AGROW>
         emp_score(end+1)   = abs(median(ev(s).mu_rel(settle_idx) - ev(s).head_rel(settle_idx),'omitnan')); %#ok<AGROW>
         emp_amp_err(end+1) = abs(ev(s).atp_peak_amp - ref_amp); %#ok<AGROW>
+        emp_rough(end+1)   = atp_trace_roughness(all_data(i), ev(s).onset_t); %#ok<AGROW>
     end
 end
-[~,emp_pool] = sort(emp_amp_err,'ascend');
+emp_in_band = find(emp_amp_err <= emp_amp_tol*ref_amp);
+emp_out_band = find(emp_amp_err > emp_amp_tol*ref_amp);
+[~,o_in]  = sort(emp_rough(emp_in_band),'ascend');
+[~,o_out] = sort(emp_amp_err(emp_out_band),'ascend');
+emp_pool = [emp_in_band(o_in), emp_out_band(o_out)];
+fprintf('\n%d/%d empty candidate stims within +-%.0f%% of the LPsP example''s atp amplitude (ranked by trace smoothness)\n', numel(emp_in_band), numel(emp_amp_err), 100*emp_amp_tol);
 
 best2 = emp_pool(example_rank_empty);
 example_i2 = emp_trial(best2);
 example_s2 = emp_stim(best2);
 best_score2 = emp_score(best2);
 
-fprintf('\nsecond example EMPTY>P2X2 trial (same side, %s): fly %s, trial "%s", stim %d (rank %d of %d by atp amplitude match)\n', ref_side_str, fly_id{example_i2}, meta_display(all_data(example_i2).meta), example_s2, example_rank_empty, numel(emp_pool));
-fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f (LPsP example: %.2f)\n', best_score2, trial_events{example_i2}(example_s2).atp_peak_amp, ref_amp);
+fprintf('\nsecond example EMPTY>P2X2 trial (same side, %s): fly %s, trial "%s", stim %d (rank %d of %d: amplitude-matched, then by atp trace smoothness)\n', ref_side_str, fly_id{example_i2}, meta_display(all_data(example_i2).meta), example_s2, example_rank_empty, numel(emp_pool));
+fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f (LPsP example: %.2f), atp trace roughness = %.4f\n', best_score2, trial_events{example_i2}(example_s2).atp_peak_amp, ref_amp, emp_rough(best2));
 
 %% ===================== SCRATCH: gallery of candidate example stims (row 1) =====================
 % per explicit request ("show me some different options, I think we can
@@ -266,7 +283,7 @@ fprintf('  post-ejection bump displacement = %.2f rad, atp_peak_amp = %.2f (LPsP
 % of the main figure below) instead of always taking the single top-score
 % stim. Column 1: LPsP candidates on the reference side, ranked by the
 % post-ejection bump-movement score. Column 2: empty>P2X2 candidates on
-% the SAME side, ranked by atp_peak_amp match to the LPsP pick. The
+% the SAME side, amplitude-matched to the LPsP pick, then ranked by atp trace smoothness. The
 % current picks (example_rank_ref/example_rank_empty above) are marked.
 % Reuses ref_pool/emp_pool computed above (not recomputed here).
 gallery_n = 8;
@@ -316,7 +333,7 @@ for r = 1:gallery_n
         if r==gallery_n; xlabel(ax,'time (s)'); end
     end
 end
-title(tg,sprintf('candidate gallery for Figure 3 rows 1-2 (top %d; LPsP ranked by post-ejection bump displacement, empty by atp amplitude match)',gallery_n))
+title(tg,sprintf('candidate gallery for Figure 3 rows 1-2 (top %d; LPsP ranked by post-ejection bump displacement, empty by atp amplitude match then trace smoothness)',gallery_n))
 
 exportgraphics(fig_gallery, fullfile(export_dir,'Figure_3_claude_scratch_example_gallery.png'), 'Resolution', 200)
 
@@ -341,11 +358,18 @@ zoom_post_s = 20; % s after the zoomed stim's onset -- 20s per explicit request 
 gcamp_color = [0 .2 1];   % dark blue, matches Figure_1_claude.m's EPG calcium color (group_max_color(1,:)), per explicit request (was teal [0 .7 .7])
 atp_color   = [.8 0 0];   % dark red, visually distinct from the gcamp row
 
+% z-planes summed for the row-1 mean images, per explicit request: planes
+% 1-2 (the most superficial, 4 um steps going deeper -- scan_params.json
+% z_positions) hold bright cell bodies above the PB that distract from it
+% in the full z-sum; the PB itself runs through planes 3-10 in both
+% example flies. Display only -- im/atp signals still use all planes.
+mean_img_planes = 3:10;
+
 example_idx      = [example_i, example_i2];
 example_stim_idx = [example_s, example_s2]; % which of that trial's confirmed-ejection stims was actually selected -- zoom into THIS one, not a fixed stim number
 example_col_label = {ref_side_str, ref_side_str};
 example_geno_label = {'LPsP>P2X2', 'empty>P2X2'};
-example_disp = struct('ex',{},'xb',{},'stim_t',{},'zoom_t0',{},'zoom_t1',{},'im_alpha',{},'atp_alpha',{},'im_clim',{},'atp_clim',{},'atp_avg_full',{});
+example_disp = struct('ex',{},'xb',{},'stim_t',{},'zoom_t0',{},'zoom_t1',{},'im_alpha',{},'atp_alpha',{},'im_clim',{},'atp_clim',{},'atp_avg_full',{},'mean_rgb',{});
 for c = 1:2
     i = example_idx(c);
     ex_c = all_data(i);
@@ -366,6 +390,7 @@ for c = 1:2
     example_disp(c).im_clim      = [prctile(min(ex_c.im.z(:,zoom_idx_c),[],1),5),  prctile(max(ex_c.im.z(:,zoom_idx_c),[],1),95)];
     example_disp(c).atp_clim     = [prctile(min(ex_c.atp.d(:,zoom_idx_c),[],1),5), prctile(max(ex_c.atp.d(:,zoom_idx_c),[],1),95)];
     example_disp(c).atp_avg_full = mean(ex_c.atp.d,1); % row 3: whole-PB average atp dF/F over time
+    example_disp(c).mean_rgb     = trial_mean_rgb(ex_c.meta, gcamp_color, atp_color, mean_img_planes); % row 1 left: whole-trial mean image, gcamp blue + atp red, rotated so the PB runs vertically
 end
 
 %% row 4: average bump-position trace across ALL confirmed ejections, all
@@ -709,11 +734,25 @@ for c = 1:2
     i = example_idx(c);
     zoom_idx = d.xb>=d.zoom_t0 & d.xb<=d.zoom_t1;
 
-    t1 = tiledlayout(t,5,1,'TileSpacing','none','Padding','none');
+    % outer 1x6 layout per example column: the trial's mean image (col 1)
+    % to the left of the trace+heatmap stack (cols 2-6). The image sits in
+    % its own 5x1 layout, in the same bottom 4/5 as the heatmap, so the
+    % rotated PB lines up vertically with the heatmap rows.
+    t1 = tiledlayout(t,1,6,'TileSpacing','compact','Padding','none');
     t1.Layout.Tile = (c-1)*12+1; t1.Layout.TileSpan = [1 12];
 
+    tm = tiledlayout(t1,5,1,'TileSpacing','none','Padding','none');
+    tm.Layout.Tile = 1;
+    axm = nexttile(tm,2,[4 1]);
+    image(axm,d.mean_rgb); axis(axm,'image','off')
+    text(axm,1,size(d.mean_rgb,1),' EPG','Color',gcamp_color,'FontWeight','bold','FontSize',8,'VerticalAlignment','bottom')
+    text(axm,size(d.mean_rgb,2),size(d.mean_rgb,1),'ATP ','Color',atp_color,'FontWeight','bold','FontSize',8,'VerticalAlignment','bottom','HorizontalAlignment','right')
+
+    t1b = tiledlayout(t1,5,1,'TileSpacing','none','Padding','none');
+    t1b.Layout.Tile = 2; t1b.Layout.TileSpan = [1 5];
+
     % small atp trace on top: no axis, a vertical dF/F scale bar on the right
-    axt = nexttile(t1,1); hold(axt,'on')
+    axt = nexttile(t1b,1); hold(axt,'on')
     plot(axt,d.xb,d.atp_avg_full,'Color',atp_color,'LineWidth',1.2)
     trace_lim = [min(d.atp_avg_full(zoom_idx)), max(d.atp_avg_full(zoom_idx))];
     trace_lim = trace_lim + [-.05,.05]*diff(trace_lim);
@@ -727,7 +766,7 @@ for c = 1:2
     cb_pad = colorbar(axt); cb_pad.Visible = 'off'; % reserves the same right-hand gutter as the heatmap's colorbar so the two plot boxes line up
     trace_axes(c) = axt;
 
-    axg = nexttile(t1,2,[4 1]); hold(axg,'on')
+    axg = nexttile(t1b,2,[4 1]); hold(axg,'on')
     imagesc(axg,d.xb,d.im_alpha,d.ex.im.z,d.im_clim)
     colormap(axg,white_to_color(gcamp_color))
     cbg = colorbar(axg); cbg.Label.String = 'z-score';
@@ -741,7 +780,17 @@ end
 % (former row 2, the atp-channel heatmaps under each example, moved to
 % Figure 3 supplement S5 per explicit request -- see Figure_3_supplements.m)
 
-ax4a = nexttile(t,25,[1 12]); hold(ax4a,'on')
+% row 2 panels sit in the same 1x6 split as row 1 (col 1 left empty under
+% the mean image, cols 2-6 for the plot) plus an invisible colorbar, per
+% explicit request, so their plot boxes line up with the heatmaps above
+row2_axes = gobjects(1,2);
+for c = 1:2
+    t2 = tiledlayout(t,1,6,'TileSpacing','compact','Padding','none');
+    t2.Layout.Tile = 24+(c-1)*12+1; t2.Layout.TileSpan = [1 12];
+    row2_axes(c) = nexttile(t2,2,[1 5]);
+    cb_pad = colorbar(row2_axes(c)); cb_pad.Visible = 'off';
+end
+ax4a = row2_axes(1); hold(ax4a,'on')
 h_geno = gobjects(1,numel(geno_order));
 for gi = 1:numel(geno_order)
     patch(ax4a,[t_trace,fliplr(t_trace)],[geno_mean(gi,:)+geno_sem(gi,:),fliplr(geno_mean(gi,:)-geno_sem(gi,:))], ...
@@ -756,7 +805,7 @@ ylabel(ax4a,sprintf('bump pos. (rad, %s-flip)',ref_side_str))
 legend(ax4a,h_geno,{sprintf('empty>P2X2 (n=%d flies)',geno_n(1)),sprintf('lpsp>P2X2 (n=%d flies)',geno_n(2))},'Location','best')
 title(ax4a,sprintf('average bump-position response (flipped to match the %s-stim example''s side)',ref_side_str))
 
-ax3b = nexttile(t,37,[1 12]); hold(ax3b,'on') % row 3 col 2: lpsp bump position by stim number (replaces the whole-PB atp population panel)
+ax3b = row2_axes(2); hold(ax3b,'on') % row 3 col 2: lpsp bump position by stim number (replaces the whole-PB atp population panel)
 stimnum_cmap = (1-linspace(.75,0,n_stim_per_trial)').*gcamp_color + linspace(.75,0,n_stim_per_trial)'.*[1 1 1]; % light -> dark with stim number, same ramp as Figure_3_supplements.m
 h_stim = gobjects(1,n_stim_per_trial);
 for sn = 1:n_stim_per_trial
@@ -782,7 +831,7 @@ for c = 1:2
     t3 = tiledlayout(t,5,1,'TileSpacing','none','Padding','none');
     t3.Layout.Tile = 48+(c-1)*12+1; t3.Layout.TileSpan = [1 7];
     axh = nexttile(t3,1,[2 1]); hold(axh,'on')
-    imagesc(axh, e.xb, e.alpha, e.z, [prctile(min(e.z,[],1),5), prctile(max(e.z,[],1),95)])
+    imagesc(axh, e.xb, e.alpha, e.z, [prctile(min(e.z,[],1),20), prctile(max(e.z,[],1),95)]) % floor at the 20th (not 5th) percentile of per-frame troughs, per explicit request -- whitens the background so the bump stands out
     colormap(axh, white_to_color(gcamp_color))
     xlim(axh,[0 mob_ex_win_s]); ylim(axh,[min(e.alpha) max(e.alpha)]); xticks(axh,[])
     if c==1; ylabel(axh,'PB angle (rad)'); end
@@ -894,6 +943,23 @@ for c = 1:2; add_time_scalebar(row1_axes(c), 10); add_time_scalebar(mob_trace_ax
 linkaxes([ax4a,ax3b],'xy') % row 3: both bump position (rad) -- same scale so the by-stim lines read directly against the genotype average
 set_pi_yticks(ax4a); set_pi_yticks(ax3b) % after linkaxes, so ticks match the shared limits
 linkaxes([ax6a,ax6b],'y') % separate from rows 2-3 -- totally different y-scale (mobility ratio, not bump position/dF/F); ax6c (a delta, can be negative) is its own scale too
+% bigger axis text, per explicit request: tick labels 12 pt, axis labels
+% 14 pt, colorbars 11/13 pt; titles kept at their own sizes (setting an
+% axes' FontSize would otherwise rescale them too). 16 pt labels were
+% tried first -- the long row-4 y-labels overflowed their axes.
+for ax_k = findall(fig3,'Type','axes')'
+    if strcmp(ax_k.Visible,'off'); continue; end % the scale-bar-only trace axes
+    title_fs = ax_k.Title.FontSize;
+    ax_k.FontSize = 12;
+    ax_k.Title.FontSize = title_fs;
+    ax_k.XLabel.FontSize = 14;
+    ax_k.YLabel.FontSize = 14;
+end
+for cb_k = findall(fig3,'Type','colorbar')'
+    cb_k.FontSize = 11;
+    cb_k.Label.FontSize = 13;
+end
+
 sgtitle('Figure 3 (draft). Supplements S1-S5: Figure_3_supplements.m','FontSize',10,'Interpreter','none')
 
 %% export
@@ -1570,6 +1636,58 @@ function len = nice_scale_len(x)
     p = 10^floor(log10(x));
     m = [1 2 5 10];
     len = p*m(find(m*p <= x,1,'last'));
+end
+
+function rgb = trial_mean_rgb(meta, gcamp_color, atp_color, planes)
+    % whole-trial mean image of one trial, as a two-channel RGB composite
+    % on a white background, same white->color convention as the heatmaps
+    % (white_to_color): each channel subtracts its complement from white,
+    % so gcamp alone goes white->gcamp_color, atp alone white->atp_color,
+    % and overlap darkens toward black.
+    % Both channels come from the SAME file
+    % (registration\imagingData_trial001.mat, img{1} = gcamp, img{2} = atp,
+    % per-plane 100x256x10xframes int16, ~3 GB, ~20 s to load) so they're
+    % guaranteed to share one registration -- its z-sum is identical to
+    % registration\imagingData.mat, which only exists pre-summed, so the
+    % per-plane file is needed to sum just the requested z-planes. Cropped
+    % to the trial's mask.mat bounding box
+    % (+pad) and rotated 90 deg counter-clockwise: process_im orders the
+    % glomeruli from the mask skeleton's first (= leftmost, column-major
+    % find) endpoint, so image-left = glomerulus 1 = bottom of the
+    % heatmap (YDir normal), which is exactly where rot90 puts it. Each
+    % channel is clipped to its own 1st-99.5th (gcamp: 95th) percentile over the PB mask
+    % pixels only (per explicit request -- the atp pipette tip is ~4x
+    % brighter than the ejection cloud, and stray bright structure outside
+    % the PB would otherwise set the gcamp range).
+    S = load(fullfile(meta,'imagingData_trial001.mat'),'img');
+    g = sum(mean(S.img{1}(:,:,planes,:),4),3);
+    a = sum(mean(S.img{2}(:,:,planes,:),4),3);
+    clear S
+    mk = load(fullfile(fileparts(meta),'mask.mat'),'mask');
+    [ym,xm] = find(mk.mask);
+    pad = 5;
+    rows = max(1,min(ym)-pad):min(size(g,1),max(ym)+pad);
+    cols = max(1,min(xm)-pad):min(size(g,2),max(xm)+pad);
+    g = fliplr(rot90(g(rows,cols))); a = fliplr(rot90(a(rows,cols))); % fliplr: mirrored about the vertical axis, per explicit request (leaves the glomerulus order bottom-to-top unchanged)
+    m = fliplr(rot90(mk.mask(rows,cols)));
+    norm01 = @(x,ref,hi) min(max((x-prctile(ref,1))/(prctile(ref,hi)-prctile(ref,1)),0),1);
+    % gcamp ceiling at the 95th percentile (not 99.5th), per explicit
+    % request -- brings up the dimmer glomeruli
+    rgb = max(1 - norm01(g,g(m),95).*reshape(1-gcamp_color,1,1,3) - norm01(a,a(m),99.5).*reshape(1-atp_color,1,1,3), 0);
+end
+
+function rough = atp_trace_roughness(ex, onset_t)
+    % how wiggly one stim's whole-PB atp dF/F trace is, -2..20s around
+    % onset_t (the row-1 display window): SD of the trace around a
+    % 1s-gaussian-smoothed copy of itself, divided by the smoothed trace's
+    % peak above its own -2..0s baseline -- so a big ejection isn't
+    % penalized just for having bigger absolute frame-to-frame noise.
+    xb = ex.ft.xb;
+    idx = xb>=onset_t-2 & xb<=onset_t+20;
+    tr = mean(ex.atp.d(:,idx),1);
+    dt = median(diff(xb));
+    sm = smoothdata(tr,'gaussian',round(1/dt));
+    rough = std(tr-sm) / (max(sm) - mean(sm(1:round(2/dt))));
 end
 
 function cmap = white_to_color(max_color)

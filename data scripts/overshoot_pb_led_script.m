@@ -37,6 +37,19 @@
 %     ON, 10 s post) separated by 810-deg sweeps, then two burn-in sweeps.
 %     LED = 8 pulses x 10 s; e.g. 20261013-2 trial_002: DAQ 239-621 s,
 %     6959 volumes.
+%   lpsp_cl_multigauss150_dark_cl_dot150_360s (20261021-2 onward): no bar
+%     sweeps; 3 x 120-s closed-loop blocks with a different visual scene
+%     each: multigauss pattern (pattern_idx 2) at brightness 150, dark, then
+%     the dot at brightness 150.
+%
+% Visual epochs (which pattern / dot is shown, and at what brightness) come
+% from the per-iteration ViRMEn log in sync_info.mat (pattern_idx,
+% pattern_brightness, dot_brightness on the DAQ clock) or, if that is
+% missing, from the protocol .csv in the trial folder (time column is VR
+% time, so offset by vr_start). They are drawn as a strip under figures 2
+% and 3, dotted lines mark the epoch boundaries, and they go into
+% bump_results.mat as bump.visEpochs. pattern_idx -> name is not logged
+% anywhere, so pattern_names below is filled in by hand.
 %
 % Headless:
 %   matlab -batch "opl_trialDir='Z:\...\trial_002\'; run('overshoot_pb_led_script.m')"
@@ -50,7 +63,7 @@ addpath(fullfile(thisDir, '..', 'claude'));
 if isempty(which('graph_sort')), addpath(fullfile(thisDir, '..')); end
 if isempty(which('circ_mean')), addpath(fullfile(thisDir, '..', 'circ_stats')); end
 
-trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20261013-5_epg_syt8s_lpsp_cschrimson\trial_002\';
+trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20261021-2_epg_syt8s_lpsp_cschrimson\trial_012\';
 if exist('opl_trialDir', 'var') && ~isempty(opl_trialDir), trialDir = opl_trialDir; end
 if trialDir(end) ~= '\' && trialDir(end) ~= '/', trialDir(end+1) = filesep; end
 parts = strsplit(trialDir, filesep); parts = parts(~cellfun(@isempty, parts));
@@ -62,6 +75,7 @@ maxShift_px = [6 8]; max_ok_shift_px = 8;
 min_hold_sec = 4; hold_flat_tol_V = 0.1;
 if exist('opl_min_hold_sec', 'var') && ~isempty(opl_min_hold_sec), min_hold_sec = opl_min_hold_sec; end
 lag_range_sec = [-2 5]; rho_thresh = 0.1;
+pattern_names = containers.Map({2}, {'multigauss'});    % pattern_idx -> label; unknown idx shows as 'pattern N'
 overwrite_video = false; overwrite_reg = false; overwrite_mask = false;
 if exist('opl_overwrite_video', 'var') && ~isempty(opl_overwrite_video), overwrite_video = opl_overwrite_video; end
 if exist('opl_overwrite_reg', 'var') && ~isempty(opl_overwrite_reg), overwrite_reg = opl_overwrite_reg; end
@@ -144,6 +158,14 @@ opl_export(figure(1), fullfile(trialDir, 'mask_qc.png'));
 h5list = dir(fullfile(trialDir, '*.h5')); assert(numel(h5list) == 1, 'expected exactly one .h5 in %s', trialDir);
 sync = pb_h5_sync(fullfile(h5list(1).folder, h5list(1).name));
 fprintf('LED source: %s\n', sync.ledSource);
+if isempty(sync.vr_start)
+    % vr_ao0_copy only carries the DOT angle: with the dot off (e.g. the
+    % open-loop dangling_pattern_* sweeps) it sits at 0 V and vr_start/vr_end
+    % come back empty. Take the cue angle from the ViRMEn iteration log
+    % instead (pattern_deg_ego, or dot_deg_ego while the dot is shown).
+    sync = opl_cue_from_iter_log(sync, trialDir);
+    fprintf('bar channel flat -> cue angle from the iteration log (%s); VR %.1f-%.1f s DAQ\n', sync.barSource, sync.vr_start, sync.vr_end);
+end
 S = load(regFile, 'imgData_sum_reg', 'regShifts'); img = single(S.imgData_sum_reg);
 sh = cell2mat(arrayfun(@(s) reshape(s.shifts, 1, []), S.regShifts(:), 'UniformOutput', false)); clear S
 badVol = any(abs(sh) > max_ok_shift_px, 2)';
@@ -169,6 +191,12 @@ for k = 1:size(holdSegs, 1)
 end
 if isempty(sync.led_on), fprintf('LED: no pulses.\n');
 else, fprintf('LED: %d pulses of %.1f s (%.1f-%.1f s DAQ), %d fully inside holds\n', numel(sync.led_on), median(sync.led_off - sync.led_on), sync.led_on(1), sync.led_off(end), nnz(pulseInHold)); end
+visEp = opl_visual_epochs(trialDir, sync.vr_start, sync.vr_end, pattern_names);
+if isempty(visEp), fprintf('visual epochs: no pattern log found (sync_info.mat iter / protocol csv).\n');
+else
+    fprintf('visual epochs (from %s):\n', visEp(1).src);
+    for k = 1:numel(visEp), fprintf('  %7.1f - %7.1f s  %s\n', visEp(k).t0, visEp(k).t1, visEp(k).label); end
+end
 zoomWin = [];
 if ~isempty(sync.led_on)
     zoomWin = [max(sync.led_on(1) - 30, t_vol(1)), min(sync.led_off(end) + 30, t_vol(end))];
@@ -192,16 +220,17 @@ z_cluster = (f_cluster - mean(f_cluster, 2, 'omitnan')) ./ std(f_cluster, 0, 2, 
 for zoomPass = 1:(1 + ~isempty(zoomWin))
     if zoomPass == 1, xl = [t_vol(1) t_vol(end)]; tag = 'fullTrial'; else, xl = zoomWin; tag = 'stim'; end
     figure(2); clf; set(gcf, 'Position', [50 50 1600 900], 'Color', 'w')
-    ax1 = subplot(6, 1, 1:3);
+    ax1 = subplot(7, 1, 1:3);
     imagesc(t_vol, 1:nClusters, z_cluster, 'AlphaData', double(~isnan(z_cluster))); colormap(ax1, rwb); clim([-3 3]); hold on
-    set(ax1, 'Color', [0.7 0.7 0.7]); opl_mark_holds(holdSegs); ylabel('glomerulus (1-16 left, 17-32 right)')
+    set(ax1, 'Color', [0.7 0.7 0.7]); opl_mark_holds(holdSegs); opl_mark_visual(visEp); ylabel('glomerulus (1-16 left, 17-32 right)')
     title(sprintf('%s: z-scored glomerulus activity (background-subtracted, %d glomeruli); dashed = held-bar segments (%d)', trialName, nClusters, size(holdSegs, 1)), 'Interpreter', 'none')
     cb = colorbar(ax1); cb.Label.String = 'z-score';
-    ax2 = subplot(6, 1, 4:5); opl_shade_pulses(sync.led_on, sync.led_off, [0 360]); hold on
-    plot(t_vol, bar_deg_plot, 'k', 'LineWidth', 1); ylim([0 360]); yticks(0:90:360); ylabel('bar position (deg)')
+    ax2 = subplot(7, 1, 4:5); opl_shade_pulses(sync.led_on, sync.led_off, [0 360]); hold on
+    plot(t_vol, bar_deg_plot, 'k', 'LineWidth', 1); ylim([0 360]); yticks(0:90:360); ylabel('bar position (deg)'); opl_mark_visual(visEp)
     title('bar position on the LED display (red shading = stim LED on)')
-    ax3 = subplot(6, 1, 6); plot(t_vol, double(led_vol), 'r', 'LineWidth', 1); ylim([-0.1 1.1]); yticks([0 1]); yticklabels({'off', 'on'}); ylabel('stim LED'); xlabel('DAQ time (s)')
-    linkaxes([ax1 ax2 ax3], 'x'); xlim(xl); ax1.Position([1 3]) = ax2.Position([1 3]);
+    ax3 = subplot(7, 1, 6); plot(t_vol, double(led_vol), 'r', 'LineWidth', 1); ylim([-0.1 1.1]); yticks([0 1]); yticklabels({'off', 'on'}); ylabel('stim LED')
+    ax4 = subplot(7, 1, 7); opl_draw_visual(visEp); xlabel('DAQ time (s)')
+    linkaxes([ax1 ax2 ax3 ax4], 'x'); xlim(xl); for ax = [ax1 ax4], ax.Position([1 3]) = ax2.Position([1 3]); end
     opl_export(figure(2), fullfile(trialDir, sprintf('glomHeatmap_zscore_%s.png', tag)));
 end
 
@@ -232,6 +261,7 @@ bump = struct('t_vol', t_vol, 'mu', mu, 'rho', rho, 'bar_rad', bar_rad_vol, 'bar
     'offset', offset, 'led', led_vol, 'inHold', inHold_vol, 'badVol', badVol, 'holdSegs', holdSegs, 'led_on', sync.led_on, 'led_off', sync.led_off, ...
     'vr_start', sync.vr_start, 'vr_end', sync.vr_end, 'rho_thresh', rho_thresh, 'z_cluster', z_cluster, 'f_cluster', f_cluster, ...
     'clusterIdx', clusterIdx, 'nCorePx', nCorePx, 'alpha', alpha, 'trialName', trialName, 'signNote', signNote, 'structure', 'PB'); %#ok<NASGU>
+bump.visEpochs = visEp;
 save(fullfile(trialDir, 'bump_results.mat'), 'bump'); fprintf('saved %s\n', fullfile(trialDir, 'bump_results.mat'));
 mu_plot = rad2deg(mu); mu_plot(rho < rho_thresh) = NaN; mu_plot(abs(diff([mu_plot mu_plot(end)])) > 180) = NaN;
 barS_plot = rad2deg(angle(exp(1i * bar_sign * bar_pm))); barS_plot(abs(diff([barS_plot barS_plot(end)])) > 180) = NaN;
@@ -239,17 +269,18 @@ off_plot = rad2deg(offset); off_plot(rho < rho_thresh) = NaN;
 for zoomPass = 1:(1 + ~isempty(zoomWin))
     if zoomPass == 1, xl = [t_vol(1) t_vol(end)]; tag = 'fullTrial'; else, xl = zoomWin; tag = 'stim'; end
     figure(3); clf; set(gcf, 'Position', [50 50 1600 900], 'Color', 'w')
-    ax1 = subplot(3, 1, 1); opl_shade_pulses(sync.led_on, sync.led_off, [-180 180]); hold on
-    plot(t_vol, barS_plot, '-', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5); plot(t_vol, mu_plot, 'b.', 'MarkerSize', 4); opl_mark_holds(holdSegs)
+    ax1 = subplot(7, 1, 1:2); opl_shade_pulses(sync.led_on, sync.led_off, [-180 180]); hold on
+    plot(t_vol, barS_plot, '-', 'Color', [0.3 0.3 0.3], 'LineWidth', 1.5); plot(t_vol, mu_plot, 'b.', 'MarkerSize', 4); opl_mark_holds(holdSegs); opl_mark_visual(visEp)
     ylim([-180 180]); yticks(-180:90:180); ylabel('angle (deg)')
     legend({sprintf('bar (signed, lagged %.2f s)', lag_sec), sprintf('bump (PVA), rho >= %.1f', rho_thresh)}, 'Location', 'northeastoutside')
     title(sprintf('%s: bump vs bar -- %s; lag %.2f s; red = stim LED on', trialName, signNote, lag_sec), 'Interpreter', 'none')
-    ax2 = subplot(3, 1, 2); opl_shade_pulses(sync.led_on, sync.led_off, [0 max(rho) * 1.05]); hold on
-    plot(t_vol, rho, 'k'); yline(rho_thresh, 'r:'); ylabel('bump strength (rho)')
-    ax3 = subplot(3, 1, 3); opl_shade_pulses(sync.led_on, sync.led_off, [-180 180]); hold on
-    plot(t_vol, off_plot, 'b.', 'MarkerSize', 4); yline(0, 'k:'); opl_mark_holds(holdSegs)
-    ylim([-180 180]); yticks(-180:90:180); ylabel(sprintf('bump - bar(t - %.2f s) (deg)', lag_sec)); xlabel('DAQ time (s)')
-    linkaxes([ax1 ax2 ax3], 'x'); xlim(xl); for ax = [ax2 ax3], ax.Position([1 3]) = ax1.Position([1 3]); end
+    ax2 = subplot(7, 1, 3:4); opl_shade_pulses(sync.led_on, sync.led_off, [0 max(rho) * 1.05]); hold on
+    plot(t_vol, rho, 'k'); yline(rho_thresh, 'r:'); ylabel('bump strength (rho)'); opl_mark_visual(visEp)
+    ax3 = subplot(7, 1, 5:6); opl_shade_pulses(sync.led_on, sync.led_off, [-180 180]); hold on
+    plot(t_vol, off_plot, 'b.', 'MarkerSize', 4); yline(0, 'k:'); opl_mark_holds(holdSegs); opl_mark_visual(visEp)
+    ylim([-180 180]); yticks(-180:90:180); ylabel(sprintf('bump - bar(t - %.2f s) (deg)', lag_sec))
+    ax4 = subplot(7, 1, 7); opl_draw_visual(visEp); xlabel('DAQ time (s)')
+    linkaxes([ax1 ax2 ax3 ax4], 'x'); xlim(xl); for ax = [ax2 ax3 ax4], ax.Position([1 3]) = ax1.Position([1 3]); end
     opl_export(figure(3), fullfile(trialDir, sprintf('bumpVsBar_%s.png', tag)));
 end
 
@@ -291,6 +322,85 @@ end
 function opl_shade_pulses(onsets, offsets, yl)
 for k = 1:numel(onsets), patch([onsets(k) offsets(k) offsets(k) onsets(k)], [yl(1) yl(1) yl(2) yl(2)], [1 0.55 0.55], 'EdgeColor', 'none', 'FaceAlpha', 0.35, 'HandleVisibility', 'off'); end
 ylim(yl)
+end
+function ep = opl_visual_epochs(trialDir, vrStart, vrEnd, patternNames)
+% piecewise-constant visual scene: prefer the per-iteration log (actual
+% values, DAQ clock), else the protocol csv (VR clock -> + vrStart)
+ep = struct('t0', {}, 't1', {}, 'pattern_idx', {}, 'pattern_brightness', {}, 'dot_brightness', {}, 'is_cl', {}, 'label', {}, 'src', {});
+t = []; src = ''; cols = {'pattern_idx', 'pattern_brightness', 'dot_brightness', 'pattern_is_cl', 'dot_is_cl'};
+f = fullfile(trialDir, 'sync_info.mat');
+vars = {}; if isfile(f), w = whos('-file', f); vars = {w.name}; end
+if all(ismember({'iter', 'iter_times_on_daq'}, vars))
+    S = load(f, 'iter', 'iter_times_on_daq');
+    if all(isfield(S.iter, cols(1:3)))
+        t = S.iter_times_on_daq(:); X = zeros(numel(t), numel(cols));
+        for c = 1:numel(cols), if isfield(S.iter, cols{c}), v = double(S.iter.(cols{c})(:)); X(:, c) = v(1:numel(t)); end, end
+        src = 'sync_info.mat iteration log';
+    end
+end
+if isempty(src)
+    csvs = dir(fullfile(trialDir, '*.csv')); csvs = csvs(~endsWith({csvs.name}, '_metadata.csv'));
+    for k = 1:numel(csvs)
+        T = readtable(fullfile(csvs(k).folder, csvs(k).name));
+        if ~all(ismember([{'time'} cols(1:3)], T.Properties.VariableNames)), continue, end
+        t = vrStart + T.time(:); X = zeros(numel(t), numel(cols));
+        for c = 1:numel(cols), if ismember(cols{c}, T.Properties.VariableNames), X(:, c) = T.(cols{c})(:); end, end
+        src = csvs(k).name; break
+    end
+end
+if isempty(src), return, end
+ok = ~isnan(t); t = t(ok); X = X(ok, :);
+ch = [1; find(any(diff(X(:, 1:3)) ~= 0, 2)) + 1]; tEnd = [t(ch(2:end)); max(vrEnd, t(end))];
+for k = 1:numel(ch)
+    x = X(ch(k), :); parts = {};
+    if x(1) > 0
+        if isKey(patternNames, x(1)), nm = patternNames(x(1)); else, nm = sprintf('pattern %d', x(1)); end
+        parts{end+1} = sprintf('%s @ %g', nm, x(2)); %#ok<AGROW>
+    end
+    if x(3) > 0, parts{end+1} = sprintf('dot @ %g', x(3)); end %#ok<AGROW>
+    if isempty(parts), lbl = 'dark'; else, lbl = strjoin(parts, ' + '); end
+    isCl = (x(1) > 0 && x(4) > 0) || (x(3) > 0 && x(5) > 0);
+    if ~isempty(parts) && isCl, lbl = [lbl ' (CL)']; end
+    ep(end+1) = struct('t0', t(ch(k)), 't1', tEnd(k), 'pattern_idx', x(1), 'pattern_brightness', x(2), 'dot_brightness', x(3), ...
+        'is_cl', isCl, 'label', lbl, 'src', src); %#ok<AGROW>
+end
+end
+function sync = opl_cue_from_iter_log(sync, trialDir)
+f = fullfile(trialDir, 'sync_info.mat'); vars = {};
+if isfile(f), w = whos('-file', f); vars = {w.name}; end
+assert(all(ismember({'iter', 'iter_times_on_daq'}, vars)), ...
+    'bar channel (vr_ao0_copy) is flat and %s has no iteration log -- cannot recover the cue angle.', f);
+S = load(f, 'iter', 'iter_times_on_daq'); it = S.iter; t = S.iter_times_on_daq(:); n = numel(t);
+deg = double(it.pattern_deg_ego(1:n)); deg = deg(:); src = 'pattern_deg_ego';
+if isfield(it, 'dot_brightness') && isfield(it, 'dot_deg_ego')
+    dotOn = double(it.dot_brightness(1:n)) > 0; dotDeg = double(it.dot_deg_ego(1:n));
+    deg(dotOn) = dotDeg(dotOn); if any(dotOn), src = 'pattern_deg_ego / dot_deg_ego'; end
+end
+ok = ~isnan(t) & ~isnan(deg); t = t(ok); deg = deg(ok);
+ang = interp1(t, unwrap(deg2rad(deg)), sync.t_fine, 'linear', NaN);
+ang(sync.t_fine < t(1)) = ang(find(sync.t_fine >= t(1), 1)); ang(sync.t_fine > t(end)) = ang(find(sync.t_fine <= t(end), 1, 'last'));
+sync.bar_rad = mod(ang, 2*pi); sync.vr_start = t(1); sync.vr_end = t(end); sync.barSource = ['iteration log ' src];
+end
+function opl_draw_visual(ep)
+% one patch per epoch, hue = what is shown, lightness = brightness (0-255)
+hold on
+if isempty(ep), text(0.5, 0.5, 'no visual-pattern log found', 'Units', 'normalized', 'HorizontalAlignment', 'center'); end
+pal = lines(7); dotCol = [1 0.75 0.1];
+for k = 1:numel(ep)
+    e = ep(k);
+    if e.pattern_idx > 0, base = pal(mod(e.pattern_idx - 1, 7) + 1, :); b = e.pattern_brightness;
+    elseif e.dot_brightness > 0, base = dotCol; b = e.dot_brightness;
+    else, base = [0 0 0]; b = 0; end
+    w = 0.25 + 0.75 * min(b / 255, 1); col = w * base + (1 - w) * [1 1 1];
+    if b == 0, col = [0.15 0.15 0.15]; end
+    patch([e.t0 e.t1 e.t1 e.t0], [0 0 1 1], col, 'EdgeColor', 'k', 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    if b == 0, tc = 'w'; else, tc = 'k'; end
+    text((e.t0 + e.t1) / 2, 0.5, e.label, 'HorizontalAlignment', 'center', 'Color', tc, 'FontSize', 8, 'Clipping', 'on', 'Interpreter', 'none');
+end
+ylim([0 1]); yticks([]); ylabel('visual')
+end
+function opl_mark_visual(ep)
+for k = 2:numel(ep), xline(ep(k).t0, ':', 'Color', [0.2 0.6 0.2], 'LineWidth', 1.25, 'HandleVisibility', 'off'); end
 end
 function m = opl_circ_mean(x), m = angle(mean(exp(1i * x(:)), 'omitnan')); end
 function s = opl_circ_std(x)
