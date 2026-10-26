@@ -63,7 +63,7 @@ addpath(fullfile(thisDir, '..', 'claude'));
 if isempty(which('graph_sort')), addpath(fullfile(thisDir, '..')); end
 if isempty(which('circ_mean')), addpath(fullfile(thisDir, '..', 'circ_stats')); end
 
-trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20261021-2_epg_syt8s_lpsp_cschrimson\trial_012\';
+trialDir = 'Z:\noah_np123\Data\flyg\overshoot\20261023-3_epg_syt8s_lpsp_cschrimson\trial_004\';
 if exist('opl_trialDir', 'var') && ~isempty(opl_trialDir), trialDir = opl_trialDir; end
 if trialDir(end) ~= '\' && trialDir(end) ~= '/', trialDir(end+1) = filesep; end
 parts = strsplit(trialDir, filesep); parts = parts(~cellfun(@isempty, parts));
