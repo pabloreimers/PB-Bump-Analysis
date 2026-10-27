@@ -966,7 +966,12 @@ sgtitle('Figure 3 (draft). Supplements S1-S5: Figure_3_supplements.m','FontSize'
 if ~isfolder(export_dir); mkdir(export_dir); end
 exportgraphics(fig3, fullfile(export_dir,'Figure_3_claude.png'), 'Resolution', 300)
 if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
-exportgraphics(fig3, fullfile(all_figs_dir,'Fig3_V1.pdf'), 'ContentType', 'vector')
+try
+    exportgraphics(fig3, fullfile(all_figs_dir,'Fig3_V1.pdf'), 'ContentType', 'vector')
+catch err
+    % most likely the PDF is open in a viewer and locked (same guard as Figure_1_claude.m)
+    warning('Figure3:pdfExport','could not write Fig3_V1.pdf (%s) -- is it open in a viewer?', err.message);
+end
 fig3.Visible = 'on';
 
 %% ===================== SCRATCH: verbose walkthrough of the stim-side flip =====================

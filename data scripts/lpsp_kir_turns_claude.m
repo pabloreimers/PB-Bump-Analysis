@@ -75,7 +75,8 @@ export_dir    = fullfile('ugly_figures','kir_turns');
 per_fly_dir   = fullfile(export_dir,'per_fly');
 if ~exist(export_dir,'dir'), mkdir(export_dir); end
 if ~exist(per_fly_dir,'dir'), mkdir(per_fly_dir); end
-if ~exist('preview_png_dir','var'), preview_png_dir = ''; end
+if ~exist('preview_png_dir','var'), preview_png_dir = fullfile(export_dir,'pngs'); end % PNG copy of every PDF ('' = none)
+per_fly_png_dir = ''; if ~isempty(preview_png_dir), per_fly_png_dir = fullfile(preview_png_dir,'per_fly'); end
 if ~exist('make_per_fly_figs','var'), make_per_fly_figs = true; end
 
 %% 1) load data + labels (same parsing as lpsp_kir_claude.m)
@@ -222,7 +223,7 @@ for f = used_flies'
         if make_per_fly_figs
             sgtitle(sprintf('%s, %s -- fly %d (%s): fly heading (black) vs. bump (color), mean +/- SEM', ...
                 fly_geno{f},cond_name{cond_list(ci)+1},f,fly_short_label(fly_list{f})),'Interpreter','none')
-            export_fig(per_fly_dir,preview_png_dir,sprintf('%s_fig2_overlay_%s_%s_fly%02d',export_prefix,strrep(fly_geno{f},'>','-'),strrep(cond_name{cond_list(ci)+1},' ',''),f))
+            export_fig(per_fly_dir,per_fly_png_dir,sprintf('%s_fig2_overlay_%s_%s_fly%02d',export_prefix,strrep(fly_geno{f},'>','-'),strrep(cond_name{cond_list(ci)+1},' ',''),f))
             close(fig)
         end
     end
@@ -537,7 +538,7 @@ function plot_sem(t,X,c)
 end
 
 function export_fig(out_dir,png_dir,name)
-    % PDF into out_dir, plus a PNG preview into png_dir if given (same helper as lpsp_rnai_turns_claude.m)
+    % PDF into out_dir, plus a PNG copy into png_dir if given (same helper as lpsp_rnai_turns_claude.m)
     for a = findall(gcf,'-property','Toolbar')'
         try, a.Toolbar.Visible = 'off'; catch, end
     end
@@ -551,7 +552,7 @@ function export_fig(out_dir,png_dir,name)
             lastwarn('');
             try
                 if endsWith(targets{t},'.png')
-                    exportgraphics(gcf,targets{t},'Resolution',120)
+                    exportgraphics(gcf,targets{t},'Resolution',200)
                 else
                     exportgraphics(gcf,targets{t})
                 end
