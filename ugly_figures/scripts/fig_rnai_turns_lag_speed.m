@@ -27,15 +27,27 @@
 %      Speed and size are correlated (r ~ 0.6 over these turns), so the
 %      fast bins also hold bigger turns on average.
 %
+% geno_set picks the genotypes: 'th' (above) or 'vglut' (lpsp>vglut,
+% empty>vglut, lpsp>mcherry); VGlut exports are tagged _vglut.
 % Run from the repo root.
 
 %% load turn cache
-cache_file = fullfile('.data','lpsp_rnai_turns_cache.mat');
+geno_set = 'vglut'; % 'th' or 'vglut'
+if exist('.data','dir'), data_dir = '.data'; else, data_dir = 'data'; end
+cache_file = fullfile(data_dir,'lpsp_rnai_turns_cache.mat');
 load(cache_file,'turns','turn_bin','turn_quiet','turn_fly','turn_dark','bin_labels','n_bins', ...
     'turn_t','turn_win_s','turn_bin_edges_deg','min_turns_per_bin','fly_geno','n_flies','geno_keep','geno_colors');
 
-plot_geno  = {'lpsp>th','empty>th','lpsp>mcherry'};
-plot_label = {'LPsP > TH-RNAi','Empty > TH-RNAi','LPsP > mCherry'};
+switch geno_set
+    case 'th'
+        plot_geno  = {'lpsp>th','empty>th','lpsp>mcherry'};
+        plot_label = {'LPsP > TH-RNAi','Empty > TH-RNAi','LPsP > mCherry'};
+        set_tag = '';
+    case 'vglut'
+        plot_geno  = {'lpsp>vglut','empty>vglut','lpsp>mcherry'};
+        plot_label = {'LPsP > VGlut-RNAi','Empty > VGlut-RNAi','LPsP > mCherry'};
+        set_tag = '_vglut';
+end
 n_g = numel(plot_geno);
 gcol = zeros(n_g,3); for gi = 1:n_g, gcol(gi,:) = geno_colors(strcmp(geno_keep,plot_geno{gi}),:); end
 size_bins = find(turn_bin_edges_deg(2:end) <= 97.5); % 15..90 deg
@@ -71,8 +83,8 @@ for k = 1:2
 end
 title(tl,{'closed loop, quiet-baseline turns: bump vs. fly rotational velocity, per-fly mean traces cross-correlated', ...
     sprintf('faint = flies, thick = mean \\pm SEM; lag searched over \\pm%.1f s, positive = bump lags',max_lag_s)})
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_lag_by_size.pdf'),'ContentType','vector')
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_lag_by_size.png'),'Resolution',200)
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_lag_by_size' set_tag '.pdf']),'ContentType','vector')
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_lag_by_size' set_tag '.png']),'Resolution',200)
 
 for gi = 1:n_g
     g = strcmp(fly_geno,plot_geno{gi});
@@ -131,8 +143,8 @@ for gi = 1:n_g
 end
 for b = 1:n_sb, linkaxes(ax(:,b),'y'), end
 title(tl,{'closed loop, quiet-baseline turns binned by mean speed: fly heading (black) vs. bump (color)','mean \pm SEM across flies; dashed = 0.8 \times fly'})
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_by_speed_overlay.pdf'),'ContentType','vector')
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_by_speed_overlay.png'),'Resolution',200)
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_by_speed_overlay' set_tag '.pdf']),'ContentType','vector')
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_by_speed_overlay' set_tag '.png']),'Resolution',200)
 
 %% 2b) bump vs. fly displacement per speed bin -- two measures
 % row 1: displacement over the turn itself (onset -> offset; bump 0.13 s
@@ -193,8 +205,8 @@ end
 legend(h,plot_label,'Location','northwest')
 title(tl,{'closed loop, quiet-baseline turns binned by mean speed: bump vs. fly displacement', ...
     'dots = flies (mean over their turns in the bin), outlined = mean \pm SEM; dotted = 1, dashed = 0.8'})
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_by_speed_displacement.pdf'),'ContentType','vector')
-exportgraphics(gcf,fullfile(out_dir,'fig_rnai_turns_by_speed_displacement.png'),'Resolution',200)
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_by_speed_displacement' set_tag '.pdf']),'ContentType','vector')
+exportgraphics(gcf,fullfile(out_dir,['fig_rnai_turns_by_speed_displacement' set_tag '.png']),'Resolution',200)
 
 %% functions
 function [lag_s,r_pk] = peak_lag(fv,bv,lags,dt)

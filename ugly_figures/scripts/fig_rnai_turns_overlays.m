@@ -13,13 +13,15 @@
 % bump, dashed = 0.8 x fly (closed-loop cue gain). Shared y within a row.
 % The cached traces only run turn_win_s = -1..3 s around onset.
 %
-% geno_set picks the genotypes ('vglut' or 'th'), turn_set the turns
+% geno_set picks the genotypes ('vglut', 'th', or 'th_split' = TH set with
+% LPsP>TH split into low- / high-gain flies at gain_split, by closed-loop
+% integrative gain; needs the fig_rnai_integrative_gain.m cache), turn_set the turns
 % ('quiet' = quiet baseline only, 'all' = every turn, counter-corrections
 % of a preceding opposite turn included); exports are tagged with both.
 % Run from the repo root.
 
 %% parameters + load turn cache
-geno_set = 'vglut';
+geno_set = 'th_split'; % 'vglut', 'th' or 'th_split'
 turn_set = 'all'; % 'quiet' or 'all'
 switch geno_set
     case 'vglut'
@@ -28,12 +30,35 @@ switch geno_set
     case 'th'
         plot_geno  = {'lpsp>th','empty>th','lpsp>mcherry'};
         plot_label = {'LPsP > TH-RNAi','Empty > TH-RNAi','LPsP > mCherry'};
+    case 'th_split'
+        % LPsP>TH split by closed-loop integrative gain (fig_rnai_th_gain_bimodality.m)
+        plot_geno  = {'lpsp>th lo','lpsp>th hi','empty>th','lpsp>mcherry'};
+        plot_label = {'LPsP > TH-RNAi, low gain','LPsP > TH-RNAi, high gain','Empty > TH-RNAi','LPsP > mCherry'};
 end
+gain_split = 0.85; % th_split only
 speed_edges = [20, 35, 50, 65, 80, 100, 150]; % deg/s
 
-cache_file = fullfile('.data','lpsp_rnai_turns_cache.mat');
+cache_file = fullfile('data','lpsp_rnai_turns_cache.mat');
 load(cache_file,'turns','turn_bin','turn_quiet','turn_fly','turn_dark','bin_labels','n_bins', ...
     'turn_t','turn_win_s','turn_bin_edges_deg','min_turns_per_bin','fly_geno','n_flies','geno_keep','geno_colors');
+if strcmp(geno_set,'th_split')
+    % per-fly closed-loop integrative gain from the fig_rnai_integrative_gain.m
+    % cache (its own fly numbering, matched to the turn cache's flies via
+    % trial index), then relabel LPsP>TH flies 'lpsp>th lo' / 'lpsp>th hi'
+    IG = load(fullfile('data','lpsp_rnai_intgain_cache.mat'),'is_dark','fly_num','inc','g_trial');
+    ig_use = IG.inc & ~cellfun(@isempty,IG.g_trial) & ~IG.is_dark;
+    turn_trial = [turns.trial]';
+    for f = find(strcmp(fly_geno,'lpsp>th'))'
+        tr_f = unique(turn_trial(turn_fly==f));
+        if isempty(tr_f), continue, end
+        tr_i = find(ig_use & IG.fly_num==IG.fly_num(tr_f(1)));
+        g = mean(vertcat(IG.g_trial{tr_i}),'omitnan');
+        if isnan(g), fly_geno{f} = 'lpsp>th no gain'; elseif g > gain_split, fly_geno{f} = 'lpsp>th hi'; else, fly_geno{f} = 'lpsp>th lo'; end
+    end
+    geno_keep   = [geno_keep(:)', {'lpsp>th lo','lpsp>th hi'}];
+    geno_colors = [geno_colors; 0.95,0.62,0.45; 0.60,0.15,0.00];
+    fprintf('LPsP>TH: %d low-gain, %d high-gain flies (split %.2f)\n',sum(strcmp(fly_geno,'lpsp>th lo')),sum(strcmp(fly_geno,'lpsp>th hi')),gain_split);
+end
 n_g = numel(plot_geno);
 gcol = zeros(n_g,3); for gi = 1:n_g, gcol(gi,:) = geno_colors(strcmp(geno_keep,plot_geno{gi}),:); end
 sel = turn_dark==0;
@@ -92,7 +117,7 @@ exportgraphics(gcf,fullfile(out_dir,sprintf('fig_rnai_turns_%s_speed_overlay%s.p
 % peak of each fly's mean trace (>= min_turns_per_bin turns in the bin)
 % within 0..peak_win_s after onset, displacement from the onset value.
 % Faint = flies, thick = genotype mean +/- SEM, genotypes side by side.
-peak_win_s = 1.5;
+peak_win_s = 3;
 t_pk = turn_t >= 0 & turn_t <= peak_win_s;
 binnings = struct('row_of',{bin_of,spd_bin},'labels',{size_labels,spd_labels},'xlab',{'turn size','mean turn speed (all sizes)'});
 figure('Color','w','Position',[60,60,1500,820]); clf
@@ -127,6 +152,50 @@ title(tl,{sprintf('closed loop, %s: peak of per-fly mean trace, max over 0-%.1f 
     'top: binned by size; bottom: binned by mean speed (all sizes); faint = flies, thick = mean \pm SEM; dashed = 0.8 cue gain'})
 exportgraphics(gcf,fullfile(out_dir,sprintf('fig_rnai_turns_%s_peak_summary%s.pdf',geno_set,set_tag)),'ContentType','vector')
 exportgraphics(gcf,fullfile(out_dir,sprintf('fig_rnai_turns_%s_peak_summary%s.png',geno_set,set_tag)),'Resolution',200)
+
+%% (d) bump peak / fly peak for a sub-range of turn sizes, with stats
+% The ratio panel of (c), restricted to the size bins whose center lies
+% strictly inside ratio_range_deg (e.g. [90,Inf] -> 105..135, [0,90] ->
+% 15..75). Ranksum for every pair of genotypes, per bin and pooled (each
+% fly's mean ratio over the bins it has in the range).
+ratio_range_deg = [0,Inf];
+ratio_ymax = 3; % y-axis cap; tiny fly peaks on small turns can give very large ratios
+bin_ctr = mean([size_edges(1:n_keep); size_edges(2:n_keep+1)]);
+rb = find(bin_ctr > ratio_range_deg(1) & bin_ctr < ratio_range_deg(2)); n_rb = numel(rb);
+fly_pk = nan(n_flies,n_rb); bump_pk = nan(n_flies,n_rb);
+for f = unique(turn_fly(sel & ismember(fly_geno(turn_fly),plot_geno)))'
+    for j = 1:n_rb
+        idx = find(sel & turn_fly==f & bin_of==rb(j));
+        if numel(idx) < min_turns_per_bin, continue, end
+        F = cat(2,turns(idx).fly_trace); B = cat(2,turns(idx).bump_trace);
+        fly_pk(f,j) = max(mean(F(t_pk,:),2,'omitnan')); bump_pk(f,j) = max(mean(B(t_pk,:),2,'omitnan'));
+    end
+end
+R = bump_pk./fly_pk;
+figure('Color','w','Position',[100,100,140+110*n_rb,560]); clf; hold on
+groupbins(R,fly_geno,plot_geno,plot_label,gcol)
+yline(1,':k','HandleVisibility','off'); yline(0.8,'--','Color',[.5,.5,.5],'HandleVisibility','off'); yline(0,'-','Color',[.85,.85,.85],'HandleVisibility','off')
+xticks(1:n_rb); xticklabels(size_labels(rb)); xlim([0.5,n_rb+0.5]); ylim([-0.2,ratio_ymax])
+xlabel('turn size'); ylabel('bump peak / fly peak'); legend('Location','southoutside')
+range_lbl = sprintf('%s-%s%s',num2str(bin_ctr(rb(1))),num2str(bin_ctr(rb(end))),char(176));
+n_off = sum(R(ismember(fly_geno,plot_geno),:) > ratio_ymax,'all'); % fly values above the axis (still in mean/SEM and stats)
+title({sprintf('closed loop, %s, %s: bump peak / fly peak (0-%g s)',set_lbl,range_lbl,peak_win_s), ...
+    sprintf('dots = flies, mean \\pm SEM; dotted = 1, dashed = 0.8; %d fly value(s) > %g off-axis',n_off,ratio_ymax)},'FontWeight','normal')
+range_tag = sprintf('_%g-%gdeg',bin_ctr(rb(1)),bin_ctr(rb(end)));
+exportgraphics(gcf,fullfile(out_dir,sprintf('fig_rnai_turns_%s_peak_ratio%s%s.png',geno_set,range_tag,set_tag)),'Resolution',200)
+exportgraphics(gcf,fullfile(out_dir,sprintf('fig_rnai_turns_%s_peak_ratio%s%s.pdf',geno_set,range_tag,set_tag)),'ContentType','vector')
+for j = 0:n_rb
+    if j == 0, V = mean(R,2,'omitnan'); lbl = ['pooled ' range_lbl]; else, V = R(:,j); lbl = size_labels{rb(j)}; end
+    Vg = cellfun(@(g) V(strcmp(fly_geno,g) & ~isnan(V)),plot_geno,'UniformOutput',false);
+    s = [sprintf('%-14s',lbl), strjoin(cellfun(@(g,v) sprintf('%s %.2f (n=%d)',g,mean(v),numel(v)),plot_geno,Vg,'UniformOutput',false),', ')];
+    for g1 = 1:n_g-1
+        for g2 = g1+1:n_g
+            if numel(Vg{g1}) < 2 || numel(Vg{g2}) < 2, continue, end
+            s = [s sprintf(' | %s vs %s p=%.3f',plot_geno{g1},plot_geno{g2},ranksum(Vg{g1},Vg{g2}))]; %#ok<AGROW>
+        end
+    end
+    disp(s)
+end
 
 %% functions
 function groupbins(V,fly_geno,plot_geno,plot_label,gcol)
