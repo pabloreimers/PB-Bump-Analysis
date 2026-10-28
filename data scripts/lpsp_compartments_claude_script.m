@@ -2121,7 +2121,12 @@ end
 
 function ind = trial_indicator(meta_path)
     % every dataset spells out its sensor/indicator in the raw folder name
-    if contains(meta_path,'syt7f','IgnoreCase',true)
+    if contains(meta_path,'_EPG_syt7f','IgnoreCase',true)
+        % mislabeled at acquisition: the 5 lpsp_cl "EPG_syt7f" trials
+        % (20221117-7/8/9, 20221121-2/3) are really EPG>GRAB(DA2m) -- their
+        % PB heatmaps show a moving EPG bump, not whole-PB LPsP activation
+        ind = 'GRAB(DA2m)';
+    elseif contains(meta_path,'syt7f','IgnoreCase',true)
         ind = 'syt7f';
     elseif contains(meta_path,'syt8m','IgnoreCase',true)
         ind = 'syt8m';
