@@ -37,6 +37,17 @@
 % -> fig08_figure3_p2x2_lpsp_minus_empty.pdf (5-stim bins, 0-10 s mean).
 % To explore, set bin_size and/or pk_metric ('mean' | 'max' = peak in 0-8 s)
 % before running; non-default settings are saved with a _binN / _max suffix.
+% ej_only = true keeps only CONFIRMED ejections (same detector as
+% fig_ionto_celltypes.m: whole-PB summed dye, median over 0-3 s more than 3
+% baseline SDs above the -5..0 s median). Walking ejections are then split
+% into rounds: within each fly's same-side run of trials (restarting when
+% the ejection side switches, as in fig07), round 1 = the run's first
+% trial and round 2 = its second (~5 min later; later trials left out).
+% Ejections are numbered 1..n within each trial and binned by bin_size;
+% round-1 bins, a dotted line, then round-2 bins. Saved with an _ej suffix.
+% ej_trials = true keeps every commanded stim but only from trials with >= 1
+% confirmed ejection, split into round 1 | round 2 (..._ejtrials); add
+% split_rounds = false to pool all such trials by stim # (..._ejtrials_pooled).
 
 data_dir = '.data';
 out_dir  = fullfile('ugly_figures','ionto_celltypes');
@@ -45,7 +56,17 @@ cl = [0.90 0.45 0.05]; ce = [0.10 0.40 0.80]; % lpsp>P2X2, empty>P2X2
 %% left: reredo, 2 s pulses
 L.t = -10:0.1:30; L.base = [-5 0]; L.side_win = 3;
 tmp = load(fullfile(data_dir,'lpsp_p2x2_reredo_20260518.mat'),'all_data'); ad = tmp.all_data(:); clear tmp
+if ~exist('ej_only','var'); ej_only = false; end
+% ej_trials = true: keep ALL commanded stims, but only from trials with at
+% least one confirmed ejection (saved with an _ejtrials suffix)
+if ~exist('ej_trials','var'); ej_trials = false; end
+% split_rounds (ej_trials mode only): true = round 1 | round 2 panels;
+% false = all kept trials pooled by stim # (saved as ..._ejtrials_pooled)
+if ~exist('split_rounds','var'); split_rounds = true; end
 L = collect(L,ad,@reredo_labels,inf);
+n_all_L = numel(L.fly);
+if ej_only; L = keep_rows(L,L.ej); end
+if ej_trials && ~ej_only; L = keep_rows(L,trial_has_ej(L)); end
 fprintf('reredo: %d stims, lpsp %d flies, empty %d flies\n',numel(L.fly),numel(unique(L.fly(L.is_lpsp))),numel(unique(L.fly(~L.is_lpsp))));
 
 %% right: walking post0708, 0.5 s pulses, binned by stim number within trial
@@ -57,18 +78,73 @@ if ~exist('pk_metric','var'); pk_metric = 'mean'; end
 out_name = 'fig08_figure3_p2x2_lpsp_minus_empty';
 if bin_size ~= 5; out_name = sprintf('%s_bin%d',out_name,bin_size); end
 if ~strcmp(pk_metric,'mean'); out_name = [out_name '_' pk_metric]; end
+if ej_only; out_name = [out_name '_ej']; elseif ej_trials; out_name = [out_name '_ejtrials']; end
+if ej_trials && ~ej_only && ~split_rounds; out_name = [out_name '_pooled']; end
 tmp = load(fullfile(data_dir,'lpsp_p2x2_walking_20260728_post0708.mat'),'all_data'); ad = tmp.all_data(:); clear tmp
 max_stims = 30; % drop the 600 s / 59-pulse trials (no dye response, see header)
 R = collect(R,ad,@walking_labels,max_stims);
-R.bin = ceil(R.snum/bin_size);
-nb = max(R.bin);
-keep_bin = arrayfun(@(b) numel(unique(R.fly(R.bin==b & R.is_lpsp)))>=2 && numel(unique(R.fly(R.bin==b & ~R.is_lpsp)))>=2, 1:nb);
-nb = find(keep_bin,1,'last'); % bins past this have <2 flies of a genotype (only the 59-stim trials reach them)
+n_all = numel(R.fly);
+new_trial_bin = []; % first panel of round 2 (ejection mode)
+if ej_only || (ej_trials && split_rounds)
+    % ROUNDS: within each fly's same-side run of trials (count restarts at a
+    % side switch), round 1 = the run's first trial, round 2 = its second
+    % (~5 min later); later trials are left out. Round-1 bins are followed
+    % by round-2 bins, separated by a dotted line.
+    %  ej_only  : confirmed ejections only, numbered 1..n WITHIN each trial
+    %  ej_trials: every commanded stim (stim # within the trial), but only
+    %             trials with >= 1 confirmed ejection -- rounds are counted
+    %             over those trials
+    if ej_only
+        R = keep_rows(R,R.ej);
+        fprintf('walking: %d/%d stims are confirmed ejections\n',numel(R.fly),n_all);
+        R.cnt = nan(numel(R.fly),1);
+        [gid,~] = findgroups(R.fly,R.tkey);
+        for g = 1:max(gid)
+            j = find(gid==g); [~,o] = sort(R.snum(j)); R.cnt(j(o)) = 1:numel(j);
+        end
+        unit = 'ej'; cnt_x = 'confirmed ejection # within trial (round 1 | round 2)';
+    else
+        n_tr = numel(unique(findgroups(R.fly,R.tkey)));
+        R = keep_rows(R,trial_has_ej(R));
+        fprintf('walking: kept %d/%d trials with >=1 confirmed ejection (%d of %d commanded stims)\n', ...
+            numel(unique(findgroups(R.fly,R.tkey))),n_tr,numel(R.fly),n_all);
+        R.cnt = R.snum;
+        unit = 'stims'; cnt_x = 'stim # within trial (round 1 | round 2)';
+    end
+    [~,R.tord] = ejection_rank(R);
+    nbr = ceil(max_stims/bin_size); % bins per round
+    rb  = ceil(R.cnt/bin_size);
+    col = (R.tord-1)*nbr + rb; col(R.tord > 2) = nan;
+    fprintf('round 1: %d %s, round 2: %d, later rounds (left out): %d\n',sum(R.tord==1),unit,sum(R.tord==2),sum(R.tord>2));
+    % keep a bin only if both genotypes have >= 2 flies in it
+    ok = arrayfun(@(c) numel(unique(R.fly(col==c & R.is_lpsp)))>=2 && numel(unique(R.fly(col==c & ~R.is_lpsp)))>=2, 1:2*nbr);
+    cols = find(ok); nb = numel(cols);
+    R.bin = nan(numel(R.fly),1);
+    for b = 1:nb; R.bin(col==cols(b)) = b; end
+    col_round = ceil(cols/nbr); col_rb = cols - (col_round-1)*nbr;
+    col_lbl = arrayfun(@(b) sprintf('%d-%d',(col_rb(b)-1)*bin_size+1,min(col_rb(b)*bin_size,max(R.cnt(R.tord==col_round(b))))),1:nb,'UniformOutput',false);
+    col_ttl = arrayfun(@(b) sprintf('R%d %s',col_round(b),col_lbl{b}),1:nb,'UniformOutput',false);
+    new_trial_bin = find(col_round==2,1);
+else
+    if ej_trials % pooled: all kept trials together, binned by stim # within the trial
+        n_tr = numel(unique(findgroups(R.fly,R.tkey)));
+        R = keep_rows(R,trial_has_ej(R));
+        fprintf('walking: kept %d/%d trials with >=1 confirmed ejection (%d of %d commanded stims)\n', ...
+            numel(unique(findgroups(R.fly,R.tkey))),n_tr,numel(R.fly),n_all);
+    end
+    R.cnt = R.snum; cnt_x = 'stim # in trial';
+    R.bin = ceil(R.cnt/bin_size);
+    nb = max(R.bin);
+    keep_bin = arrayfun(@(b) numel(unique(R.fly(R.bin==b & R.is_lpsp)))>=2 && numel(unique(R.fly(R.bin==b & ~R.is_lpsp)))>=2, 1:nb);
+    nb = find(keep_bin,1,'last'); % bins past this have <2 flies of a genotype
+    col_lbl = arrayfun(@(b) sprintf('%d-%d',(b-1)*bin_size+1,min(b*bin_size,max(R.cnt))),1:nb,'UniformOutput',false);
+    col_ttl = strcat({'stims '},col_lbl);
+end
 fprintf('walking: %d stims, lpsp %d flies, empty %d flies, %d bins of %d (%d long trials skipped)\n',numel(R.fly), ...
     numel(unique(R.fly(R.is_lpsp))),numel(unique(R.fly(~R.is_lpsp))),nb,bin_size,R.n_skipped);
 
 %% figure
-figure(8); clf; set(gcf,'Position',[20 40 1300+110*nb 680],'Color','w')
+figure(8); clf; set(gcf,'Position',[20 40 min(1900,1300+110*nb) 720],'Color','w') % capped at screen width: wider canvases get squeezed
 wL = 3; wS = 3;    % grid columns for the reredo and summary panels; each bin panel gets 1 (compressed)
 nc = wL+nb+wS;
 tl = tiledlayout(2,nc,'TileSpacing','compact','Padding','compact');
@@ -94,8 +170,7 @@ for row = 1:2
         ax.XAxis.Visible = 'off';
         if b > 1; ax.YAxis.Visible = 'off'; end
         if row == 1
-            stim_lbl = sprintf('%d-%d',(b-1)*bin_size+1,min(b*bin_size,max(R.snum)));
-            title(ax,sprintf('stims %s',stim_lbl),'FontSize',8)
+            title(ax,sprintf('%s\nn = %d/%d',col_ttl{b},nf(1),nf(2)),'FontSize',8) % flies lpsp/empty in this bin
         end
     end
     linkaxes(axR(row,:),'y')
@@ -151,8 +226,11 @@ for gi = 1:2
     end
     yyaxis(ax,'left');  ylabel(ax,[met_lbl ' GCaMP \DeltaF/F (ejection side)']); ax.YColor = 'k';
     yyaxis(ax,'right'); ylabel(ax,[met_lbl ' dye \Sigma\DeltaF/F (ejection side)']); ax.YColor = cdye;
-    xlim(ax,[0.5 nb+0.5]); set(ax,'XTick',1:nb,'XTickLabel',arrayfun(@(b) sprintf('%d-%d',(b-1)*bin_size+1,min(b*bin_size,max(R.snum))),1:nb,'UniformOutput',false),'XTickLabelRotation',0)
-    xlabel(ax,'stim # in trial')
+    xlim(ax,[0.5 nb+0.5]); set(ax,'XTick',1:nb,'XTickLabel',col_lbl,'XTickLabelRotation',90*(nb>8))
+    xlabel(ax,cnt_x)
+    if ~isempty(new_trial_bin) && new_trial_bin > 1 && new_trial_bin <= nb
+        xline(ax,new_trial_bin-0.5,':k','LineWidth',1.2,'HandleVisibility','off')
+    end
     title(ax,sprintf('%s: per-fly %s (%s %g-%g s), %d flies',geno_lbl{gi},met_lbl,pk_metric,pk_win,size(P{gi,1},1)),'FontSize',9)
     for row = 1:2
         fprintf('%-11s %-5s %s by bin (mean +/- SEM over flies): %s\n',geno_lbl{gi},sig{row},met_lbl, ...
@@ -165,11 +243,38 @@ for side = {'left','right'}
     for gi = 1:2; yyaxis(axP(gi),side{1}); lims(gi,:) = ylim(axP(gi)); end
     for gi = 1:2; yyaxis(axP(gi),side{1}); ylim(axP(gi),[min(0,min(lims(:,1))) max(lims(:,2))]); end
 end
-title(tl,{'LPsP stimulation: lpsp>P2X2 (orange), empty>P2X2 (blue), lpsp - empty (black); mean \pm SEM across flies, all delivered stims', ...
+if ej_only
+    ej_txt = sprintf(['confirmed ejections only (walking: %d of %d stims shown); ejections numbered within each trial, ' ...
+        'round 1 / round 2 = first / second trial of a same-side run'],sum(~isnan(R.bin)),n_all);
+elseif ej_trials && ~split_rounds
+    ej_txt = sprintf(['all commanded stims, binned by stim # within the trial, from trials with >=1 confirmed ejection only ' ...
+        '(walking: %d of %d stims; reredo: %d of %d)'],sum(~isnan(R.bin)),n_all,numel(L.fly),n_all_L);
+elseif ej_trials
+    ej_txt = sprintf(['all commanded stims (stim # within trial) from trials with >=1 confirmed ejection only; ' ...
+        'round 1 / round 2 = first / second such trial of a same-side run (walking: %d of %d stims shown; reredo: %d of %d)'], ...
+        sum(~isnan(R.bin)),n_all,numel(L.fly),n_all_L);
+else
+    ej_txt = 'all delivered stims, binned by stim # within the trial';
+end
+title(tl,{'LPsP stimulation: lpsp>P2X2 (orange), empty>P2X2 (blue), lpsp - empty (black); mean \pm SEM across flies', ej_txt, ...
     'left: lpsp\_p2x2\_reredo (Figure 3 main set)', ...
-    sprintf('middle: lpsp\\_p2x2\\_walking post-7/8, 300 s trials (29 x 0.5 s pulses every 10 s; lpsp %d / empty %d flies), binned by stim number within the trial (shared y axis; \\^ = stim onset)', ...
+    sprintf('middle: lpsp\\_p2x2\\_walking post-7/8, 300 s trials (29 x 0.5 s pulses every 10 s; lpsp %d / empty %d flies; shared y axis; \\^ = stim onset)', ...
         numel(unique(R.fly(R.is_lpsp))),numel(unique(R.fly(~R.is_lpsp)))), ...
     sprintf('%d walking trials of 600 s / 59 pulses excluded: no dye response at any stim',R.n_skipped)})
+% dotted line through both trace rows in the gap before new_trial_bin: from
+% there on, ejections mostly come from a later trial (~5 min after the
+% previous trial's last pulse)
+if ~isempty(new_trial_bin) && new_trial_bin > 1 && new_trial_bin <= nb
+    drawnow
+    fp = getpixelposition(gcf);
+    pa = getpixelposition(axR(1,new_trial_bin-1),true); pb = getpixelposition(axR(1,new_trial_bin),true);
+    pbot = getpixelposition(axR(2,new_trial_bin),true);
+    xg = ((pa(1)+pa(3)) + pb(1))/2 / fp(3);
+    y0 = pbot(2)/fp(4); y1 = (pb(2)+pb(4))/fp(4);
+    annotation(gcf,'line',[xg xg],[y0-0.01 y1],'LineStyle',':','LineWidth',1.2,'Color','k')
+    annotation(gcf,'textbox',[xg-0.06 y0-0.045 0.12 0.03],'String','round 2: next trial (~5 min later)','EdgeColor','none', ...
+        'HorizontalAlignment','center','VerticalAlignment','top','FontSize',7) % under the bottom row
+end
 exportgraphics(gcf,fullfile(out_dir,[out_name '.pdf']))
 fprintf('figure written to %s\n',out_dir);
 
@@ -179,6 +284,7 @@ function D = collect(D,ad,label_fun,max_stims)
     % D.t, the stim's number within its trial, fly id and genotype; trials
     % with more than max_stims stims are skipped
     D.g = []; D.r = []; D.snum = []; D.fly = {}; D.is_lpsp = []; D.n_skipped = 0;
+    D.ej = []; D.tkey = []; D.side = [];
     bidx = D.t >= D.base(1) & D.t < D.base(2);
     for i = 1:numel(ad)
         tr = ad(i);
@@ -200,16 +306,55 @@ function D = collect(D,ad,label_fun,max_stims)
             if any(p) && any(b); ev = ev + max(mean(A(:,p),2) - mean(A(:,b),2),0); end
         end
         half = size(A,1)/2;
-        if sum(ev(1:half)) >= sum(ev(half+1:end)); rows = 1:half; else; rows = half+1:2*half; end
+        if sum(ev(1:half)) >= sum(ev(half+1:end)); rows = 1:half; side = 1; else; rows = half+1:2*half; side = 2; end
+        tk = regexp(tr.meta,'(\d{8})-(\d+)','tokens','once'); tkey = str2double(tk{1})*1e4 + str2double(tk{2});
+        asum = sum(A,1)'; % whole-PB dye, for the confirmed-ejection call (as in fig_ionto_celltypes.m)
         gs = mean(tr.im.d(rows,1:n),1)'; rs = sum(A(rows,:),1)';
         for s = 1:numel(on)
             g = interp1(xb-on(s),gs,D.t,'linear',nan); r = interp1(xb-on(s),rs,D.t,'linear',nan);
             if all(isnan(g(bidx))); continue; end
             D.g(end+1,:) = g - mean(g(bidx),'omitnan'); D.r(end+1,:) = r - mean(r(bidx),'omitnan'); %#ok<AGROW>
             D.snum(end+1,1) = s; D.fly{end+1,1} = fid; D.is_lpsp(end+1,1) = is_lpsp; %#ok<AGROW>
+            bw = xb >= on(s)-5 & xb < on(s); pw = xb > on(s) & xb <= on(s)+3;
+            bm = median(asum(bw)); bs = std(asum(bw));
+            D.ej(end+1,1) = (median(asum(pw)) - bm) > 3*bs; D.tkey(end+1,1) = tkey; D.side(end+1,1) = side; %#ok<AGROW>
         end
     end
     D.is_lpsp = logical(D.is_lpsp);
+end
+
+function keep = trial_has_ej(D)
+    % true for every stim whose trial (fly + trial key) has >= 1 confirmed ejection
+    g = findgroups(D.fly,D.tkey);
+    keep = ismember(g,unique(g(logical(D.ej))));
+end
+
+function D = keep_rows(D,m)
+    % subset every per-stim field of D to the rows in logical mask m
+    m = logical(m);
+    for f = {'g','r','snum','fly','is_lpsp','ej','tkey','side'}
+        D.(f{1}) = D.(f{1})(m,:);
+    end
+end
+
+function [rk,tord] = ejection_rank(D)
+    % confirmed-ejection number within each fly: trials in chronological
+    % order, stims in order within a trial; restarts at 1 whenever the
+    % trial's ejection side differs from the previous trial's (fig07 rule).
+    % tord = which trial of that same-side run (1st, 2nd, ...) each stim is from
+    rk = nan(numel(D.fly),1); tord = nan(numel(D.fly),1);
+    for f = unique(D.fly)'
+        j = find(strcmp(D.fly,f{1}));
+        [~,~,it] = unique(D.tkey(j));
+        tside = accumarray(it,D.side(j),[],@(x) x(1));
+        seg = cumsum([1; diff(tside) ~= 0]);
+        for s = 1:seg(end)
+            js = j(seg(it) == s);
+            [~,o] = sortrows([D.tkey(js) D.snum(js)]);
+            rk(js(o)) = 1:numel(js);
+            [~,~,tt] = unique(D.tkey(js)); tord(js) = tt;
+        end
+    end
 end
 
 function [v,lo,hi,tp,dots] = diff_peak(t,X,sel,is_lpsp,fly,win,n_boot)
