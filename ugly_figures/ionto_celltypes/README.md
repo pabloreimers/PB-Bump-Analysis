@@ -22,6 +22,7 @@ Effect of iontophoresis on each imaged cell type, pooled across every dataset (b
 | `fig06_atp_vs_dopamine_calls.pdf` | Per-fly substance evidence and calls. |
 | `fig07_stim_order.pdf` | Dye and dye-adjusted response vs ejection number (count restarts at each side switch). |
 | `fig_figure3_p2x2_traces.m` | Makes fig08 from the two Figure 3 lpsp_p2x2 datasets (reredo, walking post-7/8). |
+| `fig09_figure3_p2x2_lme.m` / `fig09_figure3_p2x2_lme.pdf` | Mixed models on the fig08 ejection-trials data (one row per stim): `resp ~ dye + sat * lpsp + (1 \| fly)`, `sat = 1 - exp(-x/tau)`, tau profiled; rounds pooled vs continuous, compared with linear / log2 shapes by AIC (`tables/fig09_model_comparison.csv`). Best: pooled, tau ~ 1 stim; lpsp - empty after stim 1 = +0.0093 dF/F, p = 0.0005. |
 | `fig08_figure3_p2x2_lpsp_minus_empty_ejtrials.pdf` | As fig08, but only trials with >= 1 confirmed ejection (all their commanded stims), split into round 1 / round 2 = first / second such trial of a same-side run (dotted line between). `ej_trials = true;` before running. |
 | `fig08_figure3_p2x2_lpsp_minus_empty_ejtrials_pooled.pdf` | Same trial selection, all such trials pooled by stim # (no round split). `ej_trials = true; split_rounds = false;` |
 | `fig08_figure3_p2x2_lpsp_minus_empty.pdf` | lpsp>P2X2, empty>P2X2 and lpsp - empty, ejection-side GCaMP + dye: reredo 2 s pulses (left), walking 0.5 s pulses in 5-stim bins (middle), per-fly mean over the 0-10 s inter-pulse interval per bin (right). 600 s / 59-pulse walking trials excluded (no dye response). |
