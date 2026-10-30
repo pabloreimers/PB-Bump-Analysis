@@ -139,14 +139,15 @@ else
     nb = find(keep_bin,1,'last'); % bins past this have <2 flies of a genotype
     col_lbl = arrayfun(@(b) sprintf('%d-%d',(b-1)*bin_size+1,min(b*bin_size,max(R.cnt))),1:nb,'UniformOutput',false);
     col_ttl = strcat({'stims '},col_lbl);
+    col_round = ones(1,nb); col_rb = 1:nb;
 end
 fprintf('walking: %d stims, lpsp %d flies, empty %d flies, %d bins of %d (%d long trials skipped)\n',numel(R.fly), ...
     numel(unique(R.fly(R.is_lpsp))),numel(unique(R.fly(~R.is_lpsp))),nb,bin_size,R.n_skipped);
 
 %% figure
-figure(8); clf; set(gcf,'Position',[20 40 min(1900,1300+110*nb) 720],'Color','w') % capped at screen width: wider canvases get squeezed
-wL = 3; wS = 3;    % grid columns for the reredo and summary panels; each bin panel gets 1 (compressed)
-nc = wL+nb+wS;
+figure(8); clf; set(gcf,'Position',[20 40 min(1900,1500+110*nb) 720],'Color','w') % capped at screen width: wider canvases get squeezed
+wL = 3; wS = 3; wB = 2; % grid columns for the reredo, summary and slope panels; each bin panel gets 1 (compressed)
+nc = wL+nb+wS+wB;
 tl = tiledlayout(2,nc,'TileSpacing','compact','Padding','compact');
 sig = {'g','r'}; ylab = {'EPG green \DeltaF/F (ejection-side 16 glom.)','red (ATP dye) \Sigma\DeltaF/F (ejection side)'};
 axR = gobjects(2,nb);
@@ -243,6 +244,41 @@ for side = {'left','right'}
     for gi = 1:2; yyaxis(axP(gi),side{1}); lims(gi,:) = ylim(axP(gi)); end
     for gi = 1:2; yyaxis(axP(gi),side{1}); ylim(axP(gi),[min(0,min(lims(:,1))) max(lims(:,2))]); end
 end
+% far right: build-up slope from a linear mixed model on the per-fly bin
+% values of the summary panels (one row per fly x stim bin; stim # = the
+% bin's middle stim within the trial, so both rounds share one axis):
+%   resp ~ dye + stim*lpsp + (1|fly)
+% dye has one shared slope; 'stim' = empty's GCaMP change per stim at
+% matched dye, 'stim:lpsp' = how much steeper lpsp is. Plotted: each
+% genotype's stim slope (does it still rise at matched ejection strength?),
+% with 95% CIs from the fixed-effect covariance.
+x_stim = (col_rb-1)*bin_size + (bin_size+1)/2;
+T = table;
+for gi = 1:2
+    [fi,bi] = ndgrid(1:size(P{gi,1},1),1:nb); okm = ~isnan(P{gi,1}(:)) & ~isnan(P{gi,2}(:));
+    T = [T; table(strcat(geno_lbl{gi},'_',string(fi(okm))),x_stim(bi(okm))',P{gi,2}(okm),P{gi,1}(okm),repmat(double(gi==1),sum(okm),1), ...
+        'VariableNames',{'fly','stim','dye','resp','lpsp'})]; %#ok<AGROW>
+end
+T.fly = categorical(T.fly);
+lm = fitlme(T,'resp ~ dye + stim*lpsp + (1|fly)');
+cn = lm.CoefficientNames;
+cv = @(nm) double(strcmp(cn,nm));
+c_int = double(ismember(cn,{'stim:lpsp','lpsp:stim'}));
+C = {cv('stim')+c_int, cv('stim')}; % lpsp slope, empty slope
+c_lbl = {'lpsp>P2X2','empty>P2X2'}; c_col = {cl,ce};
+tq = tinv(0.975,lm.DFE);
+ax = nexttile(tl,wL+nb+wS+1,[2 wB]); hold(ax,'on')
+for k = 1:2
+    est = C{k}*lm.Coefficients.Estimate; se = sqrt(C{k}*lm.CoefficientCovariance*C{k}');
+    errorbar(ax,k,1e3*est,1e3*tq*se,'o','Color',c_col{k},'MarkerFaceColor',c_col{k},'MarkerSize',8,'LineWidth',2,'CapSize',10) % 10^-3 dF/F per stim
+    p0 = coefTest(lm,C{k}); % H0: slope = 0
+    text(ax,k+0.12,1e3*(est+tq*se),sprintf('p = %.2g',p0),'VerticalAlignment','bottom','FontSize',9)
+    fprintf('LME stim slope %-12s %+.3f x10^-3 dF/F per stim [%+.3f, %+.3f], p = %.3g\n',c_lbl{k},1e3*est,1e3*(est-tq*se),1e3*(est+tq*se),p0);
+end
+fprintf('LME dye slope %+.4f dF/F per dye unit, p = %.3g; %d rows, %d flies\n',lm.Coefficients.Estimate(strcmp(cn,'dye')),lm.Coefficients.pValue(strcmp(cn,'dye')),height(T),numel(categories(T.fly)));
+yline(ax,0,':k'); xlim(ax,[0.4 2.6]); set(ax,'XTick',1:2,'XTickLabel',c_lbl,'XTickLabelRotation',30)
+ylabel(ax,'GCaMP \DeltaF/F per stim (\times10^{-3}, dye-adjusted; 95% CI)')
+title(ax,{'build-up slope (mixed model)','resp ~ dye + stim\timeslpsp + (1|fly)',sprintf('(%d-stim bins per fly, %d flies)',bin_size,numel(categories(T.fly)))},'FontSize',9)
 if ej_only
     ej_txt = sprintf(['confirmed ejections only (walking: %d of %d stims shown); ejections numbered within each trial, ' ...
         'round 1 / round 2 = first / second trial of a same-side run'],sum(~isnan(R.bin)),n_all);
