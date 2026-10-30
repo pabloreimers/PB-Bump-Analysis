@@ -21,6 +21,8 @@ Effect of iontophoresis on each imaged cell type, pooled across every dataset (b
 | `fig05_glomerulus_heatmaps.pdf` | Glomerulus heatmaps, ejection side on top. |
 | `fig06_atp_vs_dopamine_calls.pdf` | Per-fly substance evidence and calls. |
 | `fig07_stim_order.pdf` | Dye and dye-adjusted response vs ejection number (count restarts at each side switch). |
+| `fig_figure3_p2x2_traces.m` | Makes fig08 from the two Figure 3 lpsp_p2x2 datasets (reredo, walking post-7/8). |
+| `fig08_figure3_p2x2_lpsp_minus_empty.pdf` | lpsp>P2X2, empty>P2X2 and lpsp - empty, ejection-side GCaMP + dye: reredo 2 s pulses (left), walking 0.5 s pulses in 5-stim bins (middle), per-fly mean over the 0-10 s inter-pulse interval per bin (right). 600 s / 59-pulse walking trials excluded (no dye response). |
 | `tables/p2x2_fly_ledger.csv`, `tables/p2x2_trial_ledger.csv` | Every p2x2 fly / trial on Z:, .mat coverage, duplicates, used or why not, substance call. |
 | `tables/p2x2_z_trial_status.csv` | Current Z: folder status + genotype per trial; **input** to the main script. |
 | `tables/per_fly_ejection_features.csv` | Per-fly dye / green features, votes, call, confidence. |
