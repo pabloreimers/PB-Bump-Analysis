@@ -15,6 +15,17 @@ function out = pb_read_raw_tif_planes(tifPath, framesPerVol, groups, varargin)
 % 'maxVolumes' : stop after this many complete volumes (default Inf)
 % 'planeMeans' : also accumulate the mean image of every plane (default false)
 % 'verbose'    : progress every 1000 volumes (default true)
+% 'photonThreshold' : if set, binarise each frame (raw > thr = one photon)
+%                before summing, so stacks are photon counts (default [])
+% 'splitHalves' : with photonThreshold, also return out.halves{g} = {A, B},
+%                two independent photon halves (A + B = stacks{g}). Each run
+%                of above-threshold pixels along a scan line is ONE photon
+%                pulse (~6% of pulses spill into the next pixel) and goes to
+%                A or B whole; thinning the summed counts pixel by pixel
+%                instead would split a pulse across halves and make them
+%                share noise. Same z for both halves, unlike an odd/even
+%                plane split. For pb_lowrank_denoise's cross-validation.
+% 'seed'       : rng seed for splitHalves (default 1)
 %
 % out.stacks{g}   H x W x nVolumes single, sum over groups{g}
 % out.planeMean   H x W x framesPerVol single (if 'planeMeans')
@@ -38,8 +49,14 @@ p.addParameter('planeMeans', false, @islogical);
 p.addParameter('verbose', true, @islogical);
 p.addParameter('separate', [], @(v) islogical(v) || isnumeric(v));   % per group: true = keep planes separate (H x W x nPlanes x nVol) instead of summing
 p.addParameter('crop', [], @(v) isempty(v) || (iscell(v) && numel(v) == numel(groups)));  % per group: [] or [row1 row2 col1 col2] applied to that group's output
+p.addParameter('photonThreshold', [], @(v) isempty(v) || isscalar(v));  % if set, each frame becomes (raw > thr) BEFORE summing/planeMeans -- see pb_photon_movie
+p.addParameter('splitHalves', false, @islogical);  % with photonThreshold: also return two independent random photon halves
+p.addParameter('seed', 1, @isnumeric);
 p.parse(varargin{:});
 maxVol = p.Results.maxVolumes; doPlane = p.Results.planeMeans; verbose = p.Results.verbose;
+thr = p.Results.photonThreshold; doSplit = p.Results.splitHalves;
+assert(~doSplit || ~isempty(thr), 'pb_read_raw_tif_planes: splitHalves needs photonThreshold');
+if doSplit, rng(p.Results.seed); end
 nGroups = numel(groups);
 sep = logical(p.Results.separate); if isempty(sep), sep = false(1, nGroups); end
 crop = p.Results.crop; if isempty(crop), crop = repmat({[]}, 1, nGroups); end
@@ -78,6 +95,7 @@ while ptr > 0 && v < maxVol
             if sep(g), stacks{g} = zeros(numel(rows{g}), numel(cols{g}), numel(groups{g}), nVolAlloc, 'single');
             else, stacks{g} = zeros(numel(rows{g}), numel(cols{g}), nVolAlloc, 'single'); end
         end
+        if doSplit, stacksA = stacks; volA = zeros(H, W, framesPerVol, 'single'); end
         if doPlane, planeMean = zeros(H, W, framesPerVol, 'double'); end
         vol = zeros(H, W, framesPerVol, 'single');
     end
@@ -85,12 +103,28 @@ while ptr > 0 && v < maxVol
     frame = fread(fid, [W H], 'int16=>single');
     if numel(frame) ~= W*H, chainOk = false; if verbose, fprintf('  note: frame %d truncated.\n', k+1); end, break, end
     k = k + 1; f = f + 1;
+    if ~isempty(thr)
+        ev = frame > thr;                     % W x H: dim 1 runs along each scan line
+        if doSplit
+            % one photon pulse can span adjacent pixels along the line, so
+            % assign whole runs (not pixels) to half A or B
+            starts = ev & ~[false(1, H); ev(1:end-1, :)];
+            id = cumsum(starts(:)); coin = rand(id(end), 1) < 0.5;
+            inA = false(size(ev)); inA(ev) = coin(id(ev));
+            volA(:,:,f) = single(inA)';
+        end
+        frame = single(ev);
+    end
     vol(:,:,f) = frame';
     if f == framesPerVol
         v = v + 1;
         for g = 1:nGroups
             if sep(g), stacks{g}(:,:,:,v) = vol(rows{g}, cols{g}, groups{g});
             else, stacks{g}(:,:,v) = sum(vol(rows{g}, cols{g}, groups{g}), 3); end
+            if doSplit
+                if sep(g), stacksA{g}(:,:,:,v) = volA(rows{g}, cols{g}, groups{g});
+                else, stacksA{g}(:,:,v) = sum(volA(rows{g}, cols{g}, groups{g}), 3); end
+            end
         end
         if doPlane, planeMean = planeMean + double(vol); end
         f = 0;
@@ -101,6 +135,10 @@ end
 assert(v > 0, 'pb_read_raw_tif_planes: no complete volumes read from %s', tifPath);
 for g = 1:nGroups
     if sep(g), stacks{g} = stacks{g}(:,:,:,1:v); else, stacks{g} = stacks{g}(:,:,1:v); end
+    if doSplit
+        if sep(g), stacksA{g} = stacksA{g}(:,:,:,1:v); else, stacksA{g} = stacksA{g}(:,:,1:v); end
+        out.halves{g} = {stacksA{g}, stacks{g} - stacksA{g}};
+    end
 end
 out.stacks = stacks; out.rows = rows; out.cols = cols; out.separate = sep;
 out.nVolumes = v; out.nFramesRead = k; out.chainOk = chainOk && (ptr == 0 || v >= maxVol); out.H = H; out.W = W;

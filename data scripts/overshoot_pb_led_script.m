@@ -220,7 +220,7 @@ z_cluster = (f_cluster - mean(f_cluster, 2, 'omitnan')) ./ std(f_cluster, 0, 2, 
 for zoomPass = 1:(1 + ~isempty(zoomWin))
     if zoomPass == 1, xl = [t_vol(1) t_vol(end)]; tag = 'fullTrial'; else, xl = zoomWin; tag = 'stim'; end
     figure(2); clf; set(gcf, 'Position', [50 50 1600 900], 'Color', 'w')
-    ax1 = subplot(7, 1, 1:3);
+    ax1 = subplot(7, 1, 1:3);file:///C:/Users/ReimersPabloAlejandr/Documents/GitHub/LPsP_2p/MelData/PB-Bump-Analysis/ugly_figures/exports/dopamine_ionto_celltypes/fig1_timecourses.png
     imagesc(t_vol, 1:nClusters, z_cluster, 'AlphaData', double(~isnan(z_cluster))); colormap(ax1, rwb); clim([-3 3]); hold on
     set(ax1, 'Color', [0.7 0.7 0.7]); opl_mark_holds(holdSegs); opl_mark_visual(visEp); ylabel('glomerulus (1-16 left, 17-32 right)')
     title(sprintf('%s: z-scored glomerulus activity (background-subtracted, %d glomeruli); dashed = held-bar segments (%d)', trialName, nClusters, size(holdSegs, 1)), 'Interpreter', 'none')
