@@ -28,7 +28,7 @@
 repo_root  = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 if isempty(repo_root), repo_root = pwd; end % evaluated as a cell from repo root
 data_dir   = fullfile(repo_root,'.data');
-export_dir = fullfile(repo_root,'ugly_figures','exports');
+export_dir = fullfile(repo_root,'ugly_figures','grab_gcamp_tau');
 
 flash_mad_thresh      = 8;
 min_forward_speed     = 0.5;
