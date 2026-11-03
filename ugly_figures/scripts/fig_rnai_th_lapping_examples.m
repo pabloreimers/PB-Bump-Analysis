@@ -194,6 +194,7 @@ n_f = accumarray(E.fly(strcmp(E.geno,'lpsp>th')),1,[max(IG.fly_num),1]); n_f = n
 fprintf('LPsP>TH high gain: %d of %d flies with >=1 episode, %.2f episodes/fly; low gain: %d of %d, %.2f/fly; ranksum p = %.3g\n', ...
     sum(n_f(hi) > 0),sum(hi),mean(n_f(hi)),sum(n_f(~hi) > 0),sum(~hi),mean(n_f(~hi)),ranksum(n_f(hi),n_f(~hi)));
 E = sortrows(E,'excess','descend');
+save(fullfile(data_dir,sprintf('lpsp_rnai_lap_episodes_%s.mat',strrep(cond_lbl,' ','_'))),'E','lap_min_excess_deg','lap_win_s','light_cond'); % for fig_rnai_th_lap_onset.m
 % disp(E(:,{'geno','date','fly_n','trial_n','t0','t1','dbump','dfly','rho','gain'})) % full episode list
 
 %% pick one episode per main-genotype fly: the named example first (TH set), then by excess
