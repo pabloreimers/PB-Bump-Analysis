@@ -1016,7 +1016,7 @@ if ~isfolder(export_dir); mkdir(export_dir); end
 exportgraphics(gcf, fullfile(export_dir,'Figure_1_claude.png'), 'Resolution', 300)
 savefig(gcf, fullfile(export_dir,'Figure_1_claude.fig')) % so the PDF/PNG can be re-exported (openfig + exportgraphics) without the ~7 min recompute
 
-all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs','V1');
 if ~isfolder(all_figs_dir); mkdir(all_figs_dir); end
 try
     exportgraphics(gcf, fullfile(all_figs_dir,'Fig1_V1.pdf'), 'ContentType', 'auto') % 'auto' rasterizes the dense heatmaps but keeps text/lines vector -- 'vector' would bloat the file turning each heatmap pixel into its own path

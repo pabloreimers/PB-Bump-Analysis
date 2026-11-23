@@ -24,7 +24,7 @@ addpath(fullfile(repo_root,'circ_stats'))
 data_dir = fullfile(repo_root,'.data'); % Windows machine keeps datasets in .data/, the Mac in data/
 if ~isfolder(data_dir); data_dir = fullfile(repo_root,'data'); end
 export_dir = fullfile(repo_root,'ugly_figures','exports');
-all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs','V1');
 
 %% load lpsp_p2x2_reredo data
 source_file = 'lpsp_p2x2_reredo_20260518.mat';

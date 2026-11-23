@@ -1,6 +1,6 @@
 %% Figure_3_supplements
 % Figure 3 supplements S1-S4. Exported as vector PDFs to
-% ugly_figures/all_figs/supplements/Fig3_S<N>_<name>_V1.pdf (PNG previews in
+% ugly_figures/all_figs/V1/supplements/Fig3_S<N>_<name>_V1.pdf (PNG previews in
 % ugly_figures/exports/supplements/):
 %   S1  bump position by stim number        (its lpsp stim-number panel is also Figure 3 row 3 col 2)
 %   S2  whole-PB atp by stim number
@@ -64,7 +64,7 @@ if ~isempty(missing)
 end
 repo_root  = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 export_dir = fullfile(repo_root,'ugly_figures','exports','supplements');
-supp_dir   = fullfile(repo_root,'ugly_figures','all_figs','supplements');
+supp_dir   = fullfile(repo_root,'ugly_figures','all_figs','V1','supplements');
 if ~isfolder(export_dir); mkdir(export_dir); end
 if ~isfolder(supp_dir);   mkdir(supp_dir);   end
 

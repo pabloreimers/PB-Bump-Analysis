@@ -186,7 +186,7 @@
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
 data_dir    = fullfile(repo_root,'data');
 export_dir  = fullfile(repo_root,'ugly_figures','exports');
-all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs','V1');
 base_dir    = 'Z:\pablo\lpsp_kir_redo\'; % raw-session tree; needed for trialSettings.csv (light condition) -- see below
 
 %% load data
