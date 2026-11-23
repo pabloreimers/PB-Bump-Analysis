@@ -187,7 +187,7 @@ repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figur
 data_dir    = fullfile(repo_root,'.data'); % Windows machine keeps datasets in .data/, the Mac in data/
 if ~isfolder(data_dir); data_dir = fullfile(repo_root,'data'); end
 export_dir  = fullfile(repo_root,'ugly_figures','exports');
-all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs','V1');
 base_dir    = 'Z:\pablo\lpsp_kir_redo\'; % raw-session tree; needed for trialSettings.csv (light condition) -- see below
 
 %% load data

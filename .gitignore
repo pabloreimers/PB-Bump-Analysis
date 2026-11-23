@@ -35,3 +35,6 @@ data_20230104_includeidx.mat
 *.mat
 *.avi
 ugly_figures/exports/
+
+# FlyWire mesh cache (re-downloadable, see fig_lpsp_morphology_flywire.py)
+data/flywire_lpsp/

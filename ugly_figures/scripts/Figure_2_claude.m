@@ -155,7 +155,7 @@
 repo_root = fileparts(fileparts(fileparts(mfilename('fullpath')))); % ugly_figures/scripts -> repo root
 data_dir = fullfile(repo_root,'.data');
 export_dir = fullfile(repo_root,'ugly_figures','exports');
-all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs');
+all_figs_dir = fullfile(repo_root,'ugly_figures','all_figs','V1');
 
 %% shared analysis constants
 flash_mad_thresh       = 8;    % detect_flash_frames: brightness-outlier MAD multiple
